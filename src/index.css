@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  --brand: #2563EB;
+  --brand-hover: #1D4ED8;
+  --sidebar: #0F172A;
+  --bg: #F1F5F9;
+  --card-bg: #FFFFFF;
+  --line: #E2E8F0;
+  --text-muted: #64748B;
+  --text-main: #0F172A;
+  --f-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+@layer base {
+  body {
+    background-color: var(--bg);
+    color: var(--text-main);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Custom scrollbars for high-density UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-voucher, #printable-voucher * {
+    visibility: visible;
+  }
+  #printable-voucher {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 20px;
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
