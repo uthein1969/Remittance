@@ -262,14 +262,42 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const itemEn = (item.fullNameEn || '').trim().toLowerCase();
       const itemMm = (item.fullNameMm || '').trim().toLowerCase();
 
-      if (cleanNrc && itemNrc && (cleanNrc === itemNrc || cleanNrc.includes(itemNrc) || itemNrc.includes(cleanNrc))) {
-        return item;
+      // NRC screening: require at least 8 characters to avoid false alarms on partial prefixes (e.g. "12", "12/", "1")
+      if (cleanNrc && itemNrc && cleanNrc.length >= 8) {
+        const normCleanNrc = cleanNrc.replace(/[^a-z0-9]/g, '');
+        const normItemNrc = itemNrc.replace(/[^a-z0-9]/g, '');
+        if (
+          cleanNrc === itemNrc ||
+          normCleanNrc === normItemNrc ||
+          (cleanNrc.length >= itemNrc.length && cleanNrc.includes(itemNrc)) ||
+          (itemNrc.length >= 8 && cleanNrc.length >= itemNrc.length - 2 && itemNrc.includes(cleanNrc))
+        ) {
+          return item;
+        }
       }
-      if (cleanPass && itemPass && (cleanPass === itemPass || cleanPass.includes(itemPass))) {
-        return item;
+
+      // Passbook screening: require at least 6 characters
+      if (cleanPass && itemPass && cleanPass.length >= 6) {
+        const normCleanPass = cleanPass.replace(/[^a-z0-9]/g, '');
+        const normItemPass = itemPass.replace(/[^a-z0-9]/g, '');
+        if (
+          cleanPass === itemPass ||
+          normCleanPass === normItemPass ||
+          (cleanPass.length >= itemPass.length && cleanPass.includes(itemPass)) ||
+          (itemPass.length >= 6 && cleanPass.length >= itemPass.length - 2 && itemPass.includes(cleanPass))
+        ) {
+          return item;
+        }
       }
-      if (cleanName && ((itemEn && cleanName.includes(itemEn)) || (itemMm && cleanName.includes(itemMm)))) {
-        return item;
+
+      // Name screening: require at least 4 characters
+      if (cleanName && cleanName.length >= 4) {
+        if (
+          (itemEn && itemEn.length >= 4 && (cleanName === itemEn || (cleanName.length >= itemEn.length && cleanName.includes(itemEn)))) ||
+          (itemMm && itemMm.length >= 4 && (cleanName === itemMm || (cleanName.length >= itemMm.length && cleanName.includes(itemMm))))
+        ) {
+          return item;
+        }
       }
     }
     return null;

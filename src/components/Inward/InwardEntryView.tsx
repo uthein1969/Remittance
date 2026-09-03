@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   DownloadCloud, 
   Search, 
@@ -10,16 +10,34 @@ import {
   UserCheck2, 
   CheckCircle2, 
   AlertCircle,
+  AlertTriangle,
   QrCode,
-  FileText
+  FileText,
+  Plus,
+  Edit2,
+  Trash2,
+  X,
+  Check,
+  Building
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
-import { RemittanceTransaction, PayoutMethod, BlacklistEntry } from '../../types';
+import { RemittanceTransaction, PayoutMethod, BlacklistEntry, Company } from '../../types';
 import { VoucherModal } from '../VoucherModal';
 
 export const InwardEntryView: React.FC = () => {
-  const { db, language, t, lookupTransactionByMtcn, checkBlacklist, getExchangeRate, createInwardRemittance, currentUser } = useRemittance();
+  const { 
+    db, 
+    language, 
+    t, 
+    lookupTransactionByMtcn, 
+    checkBlacklist, 
+    getExchangeRate, 
+    createInwardRemittance, 
+    currentUser,
+    saveCompany,
+    deleteCompany
+  } = useRemittance();
 
   // Search MTCN
   const [searchMtcn, setSearchMtcn] = useState('');
@@ -35,6 +53,8 @@ export const InwardEntryView: React.FC = () => {
   const [receiverPassbook, setReceiverPassbook] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
   const [receiverAddress, setReceiverAddress] = useState('');
+  const [isManualNrc, setIsManualNrc] = useState(false);
+  const [isManualPassbook, setIsManualPassbook] = useState(false);
   
   // Origin Sender
   const [senderName, setSenderName] = useState('');
@@ -57,6 +77,12 @@ export const InwardEntryView: React.FC = () => {
   const [purposeId, setPurposeId] = useState('PUR-004');
   const [senderNote, setSenderNote] = useState('');
 
+  // Partner Management Modal
+  const [isPartnerModalOpen, setIsPartnerModalOpen] = useState(false);
+  const [isNewPartner, setIsNewPartner] = useState(true);
+  const [editingPartner, setEditingPartner] = useState<Partial<Company>>({});
+  const [partnerDeleteConfirmId, setPartnerDeleteConfirmId] = useState<string | null>(null);
+
   // Screening
   const [receiverMatch, setReceiverMatch] = useState<BlacklistEntry | null>(null);
   const [senderMatch, setSenderMatch] = useState<BlacklistEntry | null>(null);
@@ -65,6 +91,148 @@ export const InwardEntryView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdTx, setCreatedTx] = useState<RemittanceTransaction | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Consolidated beneficiary/customer list for Dropdown selection
+  const beneficiaryOptions = useMemo(() => {
+    const map = new Map<string, {
+      id: string;
+      nrc: string;
+      passbook: string;
+      nameEn: string;
+      nameMm: string;
+      phone: string;
+      address: string;
+    }>();
+
+    // From registered customers
+    db.customers.forEach(c => {
+      if (c.nrcNumber) {
+        map.set(c.nrcNumber, {
+          id: c.id,
+          nrc: c.nrcNumber,
+          passbook: c.passbookNumber || '',
+          nameEn: c.fullNameEn,
+          nameMm: c.fullNameMm || '',
+          phone: c.phone || '',
+          address: c.address || '',
+        });
+      }
+    });
+
+    // From previous transactions
+    db.transactions.forEach(t => {
+      if (t.receiverNrc && !map.has(t.receiverNrc) && !t.receiverNrc.includes('Foreign')) {
+        map.set(t.receiverNrc, {
+          id: `BEN-${t.receiverNrc}`,
+          nrc: t.receiverNrc,
+          passbook: t.receiverPassbook || '',
+          nameEn: t.receiverName,
+          nameMm: t.receiverNameMm || '',
+          phone: t.receiverPhone || '',
+          address: t.receiverAddress || '',
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [db.customers, db.transactions]);
+
+  // Beneficiary selection handlers
+  const handleSelectNrc = (nrcVal: string) => {
+    if (nrcVal === '__NEW_NRC__') {
+      setIsManualNrc(true);
+      setReceiverNrc('');
+      return;
+    }
+    setReceiverNrc(nrcVal);
+    const found = beneficiaryOptions.find(b => b.nrc === nrcVal);
+    if (found) {
+      if (found.passbook) setReceiverPassbook(found.passbook);
+      if (found.nameEn) setReceiverName(found.nameEn);
+      if (found.nameMm) setReceiverNameMm(found.nameMm);
+      if (found.phone) setReceiverPhone(found.phone);
+      if (found.address) setReceiverAddress(found.address);
+    }
+  };
+
+  const handleSelectPassbook = (passVal: string) => {
+    if (passVal === '__NEW_PASSBOOK__') {
+      setIsManualPassbook(true);
+      setReceiverPassbook('');
+      return;
+    }
+    setReceiverPassbook(passVal);
+    const found = beneficiaryOptions.find(b => b.passbook === passVal);
+    if (found) {
+      if (found.nrc) setReceiverNrc(found.nrc);
+      if (found.nameEn) setReceiverName(found.nameEn);
+      if (found.nameMm) setReceiverNameMm(found.nameMm);
+      if (found.phone) setReceiverPhone(found.phone);
+      if (found.address) setReceiverAddress(found.address);
+    }
+  };
+
+  // Partner CRUD Handlers
+  const handleOpenAddPartner = () => {
+    setIsNewPartner(true);
+    setEditingPartner({
+      id: `CMP-${Date.now()}`,
+      code: `CMP-00${db.companies.length + 1}`,
+      nameEn: '',
+      nameMm: '',
+      countryCode: senderCountryCode || 'TH',
+      type: 'AGENT',
+      swiftCode: '',
+      licenseNo: `LIC-${Date.now().toString().slice(-4)}`,
+      phone: '+66-',
+      email: '',
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString()
+    });
+    setIsPartnerModalOpen(true);
+  };
+
+  const handleOpenEditPartner = () => {
+    const existing = db.companies.find(c => c.id === partnerCompanyId);
+    if (!existing) return;
+    setIsNewPartner(false);
+    setEditingPartner({ ...existing });
+    setIsPartnerModalOpen(true);
+  };
+
+  const handleDeletePartner = () => {
+    if (!partnerCompanyId) return;
+    deleteCompany(partnerCompanyId);
+    const remaining = db.companies.filter(c => c.id !== partnerCompanyId);
+    if (remaining.length > 0) {
+      setPartnerCompanyId(remaining[0].id);
+    } else {
+      setPartnerCompanyId('');
+    }
+    setPartnerDeleteConfirmId(null);
+  };
+
+  const handleSavePartner = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPartner.nameEn) return;
+    const toSave: Company = {
+      id: editingPartner.id || `CMP-${Date.now()}`,
+      code: editingPartner.code || `CMP-00${db.companies.length + 1}`,
+      nameEn: editingPartner.nameEn,
+      nameMm: editingPartner.nameMm || editingPartner.nameEn,
+      countryCode: editingPartner.countryCode || senderCountryCode || 'TH',
+      type: (editingPartner.type as any) || 'AGENT',
+      swiftCode: editingPartner.swiftCode || '',
+      licenseNo: editingPartner.licenseNo || `LIC-${Date.now().toString().slice(-4)}`,
+      phone: editingPartner.phone || '',
+      email: editingPartner.email || '',
+      status: editingPartner.status || 'ACTIVE',
+      createdAt: editingPartner.createdAt || new Date().toISOString(),
+    };
+    saveCompany(toSave);
+    setPartnerCompanyId(toSave.id);
+    setIsPartnerModalOpen(false);
+  };
 
   // Handle MTCN Lookup
   const handleLookup = () => {
@@ -212,7 +380,9 @@ export const InwardEntryView: React.FC = () => {
         <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
           <Building2 className="w-4 h-4 text-sky-400" />
           <span>{t.payoutBranch}: </span>
-          <strong className="text-white font-semibold">Yangon HQ (BR-001)</strong>
+          <strong className="text-white font-semibold">
+            {db.branches.find(b => b.id === payoutBranchId)?.nameEn || 'Yangon HQ'} ({db.branches.find(b => b.id === payoutBranchId)?.code || payoutBranchId})
+          </strong>
         </div>
       </div>
 
@@ -305,31 +475,108 @@ export const InwardEntryView: React.FC = () => {
                 />
               </div>
 
+              {/* Beneficiary Myanmar NRC - Dropdown List with Manual Entry option */}
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">
-                  {t.beneficiaryNrc} * {receiverMatch ? <span className="text-rose-400">(BLACKLIST MATCH)</span> : ''}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={receiverNrc}
-                  onChange={(e) => setReceiverNrc(e.target.value)}
-                  placeholder="12/DAGANA(N)019482"
-                  className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:outline-none ${
-                    receiverMatch ? 'border-rose-500 bg-rose-950/30' : 'border-slate-700 focus:border-indigo-500'
-                  }`}
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-400 font-medium">
+                    {t.beneficiaryNrc} * {receiverMatch ? <span className="text-rose-400 font-bold">(BLACKLIST MATCH)</span> : ''}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManualNrc(!isManualNrc);
+                      if (!isManualNrc) setReceiverNrc('');
+                    }}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-normal transition-colors"
+                  >
+                    {isManualNrc 
+                      ? (language === 'my' ? '← စာရင်းမှ ရွေးမည်' : '← Select from List') 
+                      : (language === 'my' ? '+ အသစ်ရိုက်မည်' : '+ Enter Manual')}
+                  </button>
+                </div>
+
+                {isManualNrc ? (
+                  <input
+                    type="text"
+                    required
+                    value={receiverNrc}
+                    onChange={(e) => setReceiverNrc(e.target.value)}
+                    placeholder="12/DAGANA(N)019482"
+                    className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:outline-none ${
+                      receiverMatch ? 'border-rose-500 bg-rose-950/30 text-rose-200' : 'border-slate-700 focus:border-indigo-500'
+                    }`}
+                  />
+                ) : (
+                  <select
+                    required
+                    value={receiverNrc}
+                    onChange={(e) => handleSelectNrc(e.target.value)}
+                    className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono focus:outline-none ${
+                      receiverMatch ? 'border-rose-500 bg-rose-950/30 text-rose-200' : 'border-slate-700 focus:border-indigo-500'
+                    }`}
+                  >
+                    <option value="">
+                      -- {language === 'my' ? 'မှတ်ပုံတင် ရွေးချယ်ပါ (Select Beneficiary NRC)' : 'Select Beneficiary NRC'} --
+                    </option>
+                    {beneficiaryOptions.map(b => (
+                      <option key={b.nrc} value={b.nrc}>
+                        {b.nrc} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
+                      </option>
+                    ))}
+                    <option value="__NEW_NRC__">
+                      + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom NRC)...' : 'Enter Custom NRC...'}
+                    </option>
+                  </select>
+                )}
               </div>
 
+              {/* Passbook / Account No - Dropdown List with Manual Entry option */}
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.beneficiaryPassbook}</label>
-                <input
-                  type="text"
-                  value={receiverPassbook}
-                  onChange={(e) => setReceiverPassbook(e.target.value)}
-                  placeholder="109-291-8472910"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-400 font-medium">
+                    {t.beneficiaryPassbook}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManualPassbook(!isManualPassbook);
+                      if (!isManualPassbook) setReceiverPassbook('');
+                    }}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-normal transition-colors"
+                  >
+                    {isManualPassbook 
+                      ? (language === 'my' ? '← စာရင်းမှ ရွေးမည်' : '← Select from List') 
+                      : (language === 'my' ? '+ အသစ်ရိုက်မည်' : '+ Enter Manual')}
+                  </button>
+                </div>
+
+                {isManualPassbook ? (
+                  <input
+                    type="text"
+                    value={receiverPassbook}
+                    onChange={(e) => setReceiverPassbook(e.target.value)}
+                    placeholder="109-291-8472910"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                ) : (
+                  <select
+                    value={receiverPassbook}
+                    onChange={(e) => handleSelectPassbook(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none"
+                  >
+                    <option value="">
+                      -- {language === 'my' ? 'ဘဏ်စာအုပ်/အကောင့် ရွေးချယ်ပါ' : 'Select Passbook / Account'} --
+                    </option>
+                    {beneficiaryOptions.filter(b => b.passbook).map(b => (
+                      <option key={b.passbook} value={b.passbook}>
+                        {b.passbook} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
+                      </option>
+                    ))}
+                    <option value="__NEW_PASSBOOK__">
+                      + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom Account)...' : 'Enter Custom Account...'}
+                    </option>
+                  </select>
+                )}
               </div>
 
               <div className="sm:col-span-2">
@@ -395,16 +642,111 @@ export const InwardEntryView: React.FC = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.partnerCompany}</label>
+              {/* Partner Bank / Agent with Add New, Edit, Delete */}
+              <div className="sm:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-400 font-medium">
+                    {t.partnerCompany} *
+                  </label>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      type="button"
+                      onClick={handleOpenAddPartner}
+                      className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                      title={language === 'my' ? 'မိတ်ဖက်အသစ် ထည့်သွင်းမည်' : 'Add New Partner Bank/Agent'}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{language === 'my' ? 'အသစ်ထည့်' : 'Add New'}</span>
+                    </button>
+                    {partnerCompanyId && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleOpenEditPartner}
+                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
+                          title={language === 'my' ? 'လက်ရှိမိတ်ဖက် ပြင်ဆင်မည်' : 'Edit Selected Partner'}
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>{language === 'my' ? 'ပြင်မည်' : 'Edit'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPartnerDeleteConfirmId(partnerCompanyId)}
+                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-950 hover:bg-rose-900 border border-rose-700/50 text-rose-300 transition-colors"
+                          title={language === 'my' ? 'လက်ရှိမိတ်ဖက် ဖျက်ပစ်မည်' : 'Delete Selected Partner'}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>{language === 'my' ? 'ဖျက်မည်' : 'Delete'}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
                 <select
                   value={partnerCompanyId}
                   onChange={(e) => setPartnerCompanyId(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
                 >
-                  {db.companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.code} - {c.nameEn}</option>
-                  ))}
+                  {db.companies.map(c => {
+                    const country = db.countries.find(cty => cty.code === c.countryCode);
+                    return (
+                      <option key={c.id} value={c.id}>
+                        [{c.code}] {c.nameEn} ({country?.flagEmoji || '🌐'} {c.type} - {c.countryCode})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Partner Delete Confirmation alert if active */}
+              {partnerDeleteConfirmId && (
+                <div className="sm:col-span-2 p-3 bg-rose-950/60 border border-rose-800 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-rose-200 text-xs">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span>
+                      {language === 'my' 
+                        ? `ဤမိတ်ဖက် (${db.companies.find(c => c.id === partnerDeleteConfirmId)?.nameEn}) ကို ဖျက်ရန် သေချာပါသလား?` 
+                        : `Delete partner (${db.companies.find(c => c.id === partnerDeleteConfirmId)?.nameEn})?`}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={handleDeletePartner}
+                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition-colors"
+                    >
+                      {language === 'my' ? 'သေချာသည် ဖျက်မည်' : 'Yes, Delete'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPartnerDeleteConfirmId(null)}
+                      className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-xs transition-colors"
+                    >
+                      {language === 'my' ? 'မဖျက်တော့ပါ' : 'Cancel'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Branch Selection in Overseas Sender & Partner */}
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">
+                  {language === 'my' ? 'ဆောင်ရွက်မည့် ဘဏ်ခွဲ (Branch)' : 'Processing / Payout Branch'} *
+                </label>
+                <select
+                  value={payoutBranchId}
+                  onChange={(e) => setPayoutBranchId(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none font-medium"
+                >
+                  {db.branches.map(b => {
+                    const country = db.countries.find(c => c.code === (b.countryCode || 'MM'));
+                    return (
+                      <option key={b.id} value={b.id}>
+                        {b.code} - {b.nameEn} ({country?.flagEmoji || '🇲🇲'} {b.city})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -523,6 +865,160 @@ export const InwardEntryView: React.FC = () => {
         transaction={createdTx}
         onClose={() => setCreatedTx(null)}
       />
+
+      {/* Partner Bank / Agent Add & Edit Modal */}
+      {isPartnerModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs overflow-y-auto flex justify-center items-start sm:items-center p-2 sm:p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsPartnerModalOpen(false);
+          }}
+        >
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
+              <div className="flex items-center space-x-2">
+                <Building className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-bold text-white text-sm">
+                  {isNewPartner 
+                    ? (language === 'my' ? 'မိတ်ဖက်ဘဏ် / အေဂျင်စီ အသစ်ထည့်မည်' : 'Add New Partner Bank / Agent')
+                    : (language === 'my' ? 'မိတ်ဖက်ဘဏ် / အေဂျင်စီ ပြင်ဆင်မည်' : 'Edit Partner Bank / Agent')}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPartnerModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePartner} className="p-6 space-y-4 text-xs overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Company Code *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingPartner.code || ''}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, code: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    {language === 'my' ? 'နိုင်ငံ (Country) *' : 'Country *'}
+                  </label>
+                  <select
+                    value={editingPartner.countryCode || 'TH'}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, countryCode: e.target.value })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium"
+                  >
+                    {db.countries.map(c => (
+                      <option key={c.id} value={c.code}>
+                        {c.flagEmoji} {language === 'my' ? c.nameMm : c.nameEn} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Partner Name (English) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingPartner.nameEn || ''}
+                  onChange={(e) => setEditingPartner({ ...editingPartner, nameEn: e.target.value })}
+                  placeholder="e.g. Western Union Thailand"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Partner Name (Myanmar)
+                </label>
+                <input
+                  type="text"
+                  value={editingPartner.nameMm || ''}
+                  onChange={(e) => setEditingPartner({ ...editingPartner, nameMm: e.target.value })}
+                  placeholder="e.g. ဝက်စတန်ယူနီယံ ထိုင်း"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Entity Type</label>
+                  <select
+                    value={editingPartner.type || 'AGENT'}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, type: e.target.value as any })}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium"
+                  >
+                    <option value="BANK">BANK (ဘဏ်)</option>
+                    <option value="AGENT">AGENT (အေဂျင်စီ)</option>
+                    <option value="FINTECH">FINTECH (ဖင်တက်)</option>
+                    <option value="MONEY_CHANGER">MONEY CHANGER</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">SWIFT / BIC Code</label>
+                  <input
+                    type="text"
+                    value={editingPartner.swiftCode || ''}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, swiftCode: e.target.value })}
+                    placeholder="e.g. BKKBTHBK"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">License / Reg No</label>
+                  <input
+                    type="text"
+                    value={editingPartner.licenseNo || ''}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, licenseNo: e.target.value })}
+                    placeholder="BOT-FX-2026-01"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Phone</label>
+                  <input
+                    type="text"
+                    value={editingPartner.phone || ''}
+                    onChange={(e) => setEditingPartner({ ...editingPartner, phone: e.target.value })}
+                    placeholder="+66-2-123-4567"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsPartnerModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors"
+                >
+                  {language === 'my' ? 'မလုပ်တော့ပါ' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-colors flex items-center space-x-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{language === 'my' ? 'သိမ်းဆည်းမည်' : 'Save Partner'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

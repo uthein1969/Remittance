@@ -24,6 +24,7 @@ export interface Branch {
   code: string;
   nameEn: string;
   nameMm: string;
+  countryCode?: string;
   city: string;
   phone: string;
   address: string;

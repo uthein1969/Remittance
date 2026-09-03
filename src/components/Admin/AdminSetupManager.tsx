@@ -93,6 +93,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
         code: `BR-00${db.branches.length + 1}`,
         nameEn: '',
         nameMm: '',
+        countryCode: 'MM',
         city: 'Yangon',
         phone: '01-',
         address: '',
@@ -577,6 +578,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                 <tr>
                   <th className="px-4 py-3">{t.branchCode}</th>
                   <th className="px-4 py-3">{t.name}</th>
+                  <th className="px-4 py-3">{language === 'my' ? 'နိုင်ငံ' : 'Country'}</th>
                   <th className="px-4 py-3">{t.city}</th>
                   <th className="px-4 py-3">{t.phone}</th>
                   <th className="px-4 py-3">{t.address}</th>
@@ -584,19 +586,28 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredBranches.map(b => (
-                  <tr key={b.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-mono font-bold text-blue-600">{b.code}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{b.nameEn} ({b.nameMm})</td>
-                    <td className="px-4 py-3 text-slate-600">{b.city}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{b.phone}</td>
-                    <td className="px-4 py-3 text-slate-500 truncate max-w-xs">{b.address}</td>
-                    <td className="px-4 py-3 text-right space-x-1.5">
-                      <button onClick={() => handleOpenEdit('branch', b)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
-                      <button onClick={() => setDeleteConfirmId(b.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5 inline" /></button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredBranches.map(b => {
+                  const country = db.countries.find(c => c.code === (b.countryCode || 'MM'));
+                  return (
+                    <tr key={b.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3 font-mono font-bold text-blue-600">{b.code}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{b.nameEn} ({b.nameMm})</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-medium">
+                          <span>{country?.flagEmoji || '🇲🇲'}</span>
+                          <span>{country ? (language === 'my' ? country.nameMm : country.nameEn) : 'Myanmar'}</span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{b.city}</td>
+                      <td className="px-4 py-3 font-mono text-slate-600">{b.phone}</td>
+                      <td className="px-4 py-3 text-slate-500 truncate max-w-xs">{b.address}</td>
+                      <td className="px-4 py-3 text-right space-x-1.5">
+                        <button onClick={() => handleOpenEdit('branch', b)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
+                        <button onClick={() => setDeleteConfirmId(b.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5 inline" /></button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1060,13 +1071,41 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                       />
                     </div>
                     <div>
-                      <label className="block text-slate-700 font-semibold mb-1">City *</label>
+                      <label className="block text-slate-700 font-semibold mb-1">
+                        {language === 'my' ? 'နိုင်ငံ (Country) *' : 'Country *'}
+                      </label>
+                      <select
+                        value={editingItem.countryCode || 'MM'}
+                        onChange={(e) => setEditingItem({ ...editingItem, countryCode: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-medium"
+                      >
+                        {db.countries.map(c => (
+                          <option key={c.id} value={c.code}>
+                            {c.flagEmoji} {language === 'my' ? c.nameMm : c.nameEn} ({c.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">City / Township *</label>
                       <input
                         type="text"
                         required
                         value={editingItem.city || ''}
                         onChange={(e) => setEditingItem({ ...editingItem, city: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">Phone *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editingItem.phone || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, phone: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
                       />
                     </div>
                   </div>
@@ -1092,16 +1131,6 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Phone *</label>
-                      <input
-                        type="text"
-                        required
-                        value={editingItem.phone || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, phone: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
-                      />
-                    </div>
-                    <div>
                       <label className="block text-slate-700 font-semibold mb-1">Manager Name</label>
                       <input
                         type="text"
@@ -1109,6 +1138,17 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                         onChange={(e) => setEditingItem({ ...editingItem, managerName: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-medium"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">Status</label>
+                      <select
+                        value={editingItem.status || 'ACTIVE'}
+                        onChange={(e) => setEditingItem({ ...editingItem, status: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-medium"
+                      >
+                        <option value="ACTIVE">ACTIVE</option>
+                        <option value="INACTIVE">INACTIVE</option>
+                      </select>
                     </div>
                   </div>
                   <div>

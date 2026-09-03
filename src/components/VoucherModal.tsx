@@ -23,6 +23,16 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
   const { db, language, t } = useRemittance();
   const [copied, setCopied] = React.useState(false);
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !transaction) return null;
 
   const branch = db.branches.find(b => b.id === transaction.sendingBranchId) || db.branches[0];
@@ -39,35 +49,60 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4">
-      <div className="bg-white text-slate-900 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
-        {/* Top Header bar with Action buttons */}
-        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between no-print">
-          <div className="flex items-center space-x-2">
-            <ShieldCheck className="w-5 h-5 text-emerald-400" />
-            <h3 className="text-base font-bold">
-              {language === 'my' ? 'တရားဝင် ငွေလွှဲပြေစာ (Official Remittance Voucher)' : 'Official Remittance Voucher & Receipt'}
-            </h3>
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-xs flex justify-center items-start p-2 sm:p-4 md:p-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white text-slate-900 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150 relative border border-slate-700/40">
+        {/* Top Header bar with Action buttons - Sticky so it is ALWAYS visible and never clipped */}
+        <div className="bg-slate-900 text-white px-5 sm:px-6 py-3.5 flex items-center justify-between no-print flex-shrink-0 sticky top-0 z-20 border-b border-slate-800 shadow-md">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 flex-shrink-0">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">
+                  {language === 'my' ? 'တရားဝင် ငွေလွှဲပြေစာ' : 'Official Remittance Voucher & Receipt'}
+                </h3>
+                <span className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded ${
+                  transaction.type === 'OUTWARD' 
+                    ? 'bg-indigo-900/80 text-indigo-200 border border-indigo-700' 
+                    : 'bg-emerald-900/80 text-emerald-200 border border-emerald-700'
+                }`}>
+                  {transaction.type === 'OUTWARD' ? 'OUTWARD' : 'INWARD'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-mono">
+                Ref: {transaction.transactionNo} • MTCN: <strong className="text-amber-400 font-bold">{transaction.mtcn}</strong>
+              </p>
+            </div>
           </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={handlePrint}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition-colors"
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4" />
-              <span>{language === 'my' ? 'ပြေစာ ပုံနှိပ်မည် (Print)' : 'Print Voucher'}</span>
+              <span>{language === 'my' ? 'ပြေစာ ပုံနှိပ်မည်' : 'Print Voucher'}</span>
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Close (Esc)"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Printable Voucher Paper */}
-        <div className="p-8 space-y-6 print:p-4" id="printable-voucher">
+        {/* Printable Voucher Paper - Scrollable body with smooth up/down scrolling */}
+        <div 
+          className="p-6 sm:p-8 space-y-6 print:p-4 overflow-y-auto flex-1 overscroll-contain" 
+          id="printable-voucher"
+        >
           {/* Header & Logo */}
           <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
             <div>
@@ -313,6 +348,32 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
             {language === 'my'
               ? 'ဤငွေလွှဲပြောင်းမှုသည် မြန်မာနိုင်ငံတော်ဗဟိုဘဏ်၏ ငွေကြေးခဝါချမှုနှင့် အကြမ်းဖက်မှုကို ငွေကြေးထောက်ပံ့မှု တိုက်ဖျက်ရေး (AML/CFT) ညွှန်ကြားချက်များနှင့်အညီ စိစစ်အတည်ပြုထားပြီး ဖြစ်ပါသည်။'
               : 'This remittance transaction has been screened in compliance with the Central Bank of Myanmar Anti-Money Laundering (AML) & Counter-Terrorism Financing (CFT) guidelines. Keep this voucher and MTCN code secure. Beneficiary must present valid original Myanmar NRC for counter collection.'}
+          </div>
+        </div>
+
+        {/* Bottom Actions Bar (no-print) */}
+        <div className="bg-slate-100 border-t border-slate-200 px-5 sm:px-6 py-3 flex items-center justify-between no-print flex-shrink-0">
+          <div className="text-xs text-slate-500 font-medium">
+            {language === 'my' 
+              ? '↕ ပြေစာကို အပေါ်/အောက် scroll လုပ်၍ အပြည့်အစုံ ကြည့်ရှုနိုင်ပါသည်' 
+              : '↕ Scroll up/down to review full voucher details'}
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>{language === 'my' ? 'ပုံနှိပ်မည် (Print)' : 'Print Voucher'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+            >
+              {language === 'my' ? 'ပိတ်မည် (Close)' : 'Close'}
+            </button>
           </div>
         </div>
       </div>
