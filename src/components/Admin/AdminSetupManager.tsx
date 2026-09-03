@@ -24,7 +24,8 @@ import {
   DollarSign,
   Tag,
   AlertTriangle,
-  Info
+  Info,
+  History
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { SetupSubTab } from '../Sidebar';
@@ -43,9 +44,10 @@ import {
 interface AdminSetupProps {
   currentSubTab: SetupSubTab;
   onSelectSubTab: (tab: SetupSubTab) => void;
+  onNavigateAudit?: (module?: string) => void;
 }
 
-export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, onSelectSubTab }) => {
+export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, onSelectSubTab, onNavigateAudit }) => {
   const { 
     db, 
     language, 
@@ -104,6 +106,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
         username: '',
         fullName: '',
         email: '',
+        password: 'password123',
         role: 'MAKER',
         branchId: db.branches[0]?.id || 'BR-001',
         phone: '09-',
@@ -601,42 +604,74 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
 
         {/* 2. USER MODULE */}
         {currentSubTab === 'user' && (
-          <div className="overflow-x-auto border border-slate-200 rounded-lg">
-            <table className="w-full text-left text-xs text-slate-700">
-              <thead className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-200 text-[11px]">
-                <tr>
-                  <th className="px-4 py-3">{t.username}</th>
-                  <th className="px-4 py-3">{t.fullName}</th>
-                  <th className="px-4 py-3">{t.role}</th>
-                  <th className="px-4 py-3">{t.branch}</th>
-                  <th className="px-4 py-3">{t.phone}</th>
-                  <th className="px-4 py-3 text-right">{t.actions}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filteredUsers.map(u => (
-                  <tr key={u.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-mono font-bold text-blue-600">@{u.username}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{u.fullName}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
-                        u.role === 'CHECKER' ? 'bg-amber-100 text-amber-800' :
-                        'bg-blue-100 text-blue-800'
-                      }`}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{db.branches.find(b => b.id === u.branchId)?.nameEn || u.branchId}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{u.phone}</td>
-                    <td className="px-4 py-3 text-right space-x-1.5">
-                      <button onClick={() => handleOpenEdit('user', u)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
-                      <button onClick={() => setDeleteConfirmId(u.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5 inline" /></button>
-                    </td>
+          <div className="space-y-3">
+            {/* Audit Trail Shortcut Banner */}
+            <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-white border border-purple-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center space-x-2.5">
+                <span className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </span>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-xs">
+                    {language === 'my' ? 'User ထည့်သွင်း/ပြင်ဆင်မှု မှတ်တမ်း (User Audit Trail)' : 'User Security & Activity Audit Trail'}
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {language === 'my' 
+                      ? 'User အသစ်သွင်းခြင်း၊ အချက်အလက်ပြင်ဆင်ခြင်းနှင့် ဖျက်သိမ်းခြင်းများအားလုံးကို Audit Trail တွင် အလိုအလျောက် မှတ်တမ်းတင်ထားပါသည်' 
+                      : 'All user creations, edits, and deletions are immutably logged with timestamp, operator, and details.'}
+                  </p>
+                </div>
+              </div>
+
+              {onNavigateAudit && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateAudit('USER')}
+                  className="inline-flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs transition-colors shrink-0 shadow-xs"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>{language === 'my' ? 'User မှတ်တမ်းများ သွားရောက်ကြည့်ရှုမည်' : 'View User Audit Trail'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-50 text-slate-600 uppercase font-bold border-b border-slate-200 text-[11px]">
+                  <tr>
+                    <th className="px-4 py-3">{t.username}</th>
+                    <th className="px-4 py-3">{t.fullName}</th>
+                    <th className="px-4 py-3">{t.role}</th>
+                    <th className="px-4 py-3">{t.branch}</th>
+                    <th className="px-4 py-3">{t.phone}</th>
+                    <th className="px-4 py-3 text-right">{t.actions}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {filteredUsers.map(u => (
+                    <tr key={u.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3 font-mono font-bold text-blue-600">@{u.username}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{u.fullName}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
+                          u.role === 'CHECKER' ? 'bg-amber-100 text-amber-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{db.branches.find(b => b.id === u.branchId)?.nameEn || u.branchId}</td>
+                      <td className="px-4 py-3 font-mono text-slate-600">{u.phone}</td>
+                      <td className="px-4 py-3 text-right space-x-1.5">
+                        <button onClick={() => handleOpenEdit('user', u)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
+                        <button onClick={() => setDeleteConfirmId(u.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5 inline" /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -1145,6 +1180,27 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                         type="text"
                         value={editingItem.phone || ''}
                         onChange={(e) => setEditingItem({ ...editingItem, phone: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={editingItem.email || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, email: e.target.value })}
+                        placeholder="user@cbmremit.gov.mm"
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-semibold mb-1">Login Password *</label>
+                      <input
+                        type="text"
+                        value={editingItem.password || 'password123'}
+                        onChange={(e) => setEditingItem({ ...editingItem, password: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
                       />
                     </div>

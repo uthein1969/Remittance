@@ -6,7 +6,8 @@ import {
   UserCheck, 
   ArrowLeftRight,
   Menu,
-  ShieldCheck
+  ShieldCheck,
+  LogOut
 } from 'lucide-react';
 import { useRemittance } from '../lib/store';
 
@@ -17,7 +18,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenBackup, onOpenSupabase, onToggleMobileMenu }) => {
-  const { db, language, setLanguage, currentUser, switchUser, t } = useRemittance();
+  const { db, language, setLanguage, currentUser, switchUser, logout, t } = useRemittance();
 
   const pendingCount = db.transactions.filter(t => t.status === 'PENDING_APPROVAL').length;
   const currentBranch = db.branches.find(b => b.id === currentUser.branchId) || db.branches[0];
@@ -133,6 +134,17 @@ export const Header: React.FC<HeaderProps> = ({ onOpenBackup, onOpenSupabase, on
           title={t.backup}
         >
           <Download className="w-4 h-4" />
+        </button>
+
+        {/* Logout Action */}
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-semibold transition-colors cursor-pointer active:scale-95"
+          title={language === 'my' ? 'စနစ်မှ ထွက်မည် (Logout)' : 'Sign out'}
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">{language === 'my' ? 'ထွက်မည် (Logout)' : 'Logout'}</span>
         </button>
       </div>
     </header>

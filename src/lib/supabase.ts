@@ -32,24 +32,52 @@ export function resetSupabaseClient(config: SupabaseConfig): SupabaseClient | nu
   return null;
 }
 
-export async function testSupabaseConnection(url: string, anonKey: string): Promise<{ success: boolean; message: string }> {
+export async function testSupabaseConnection(url: string, anonKey: string): Promise<{ success: boolean; message: string; isRlsBlocked?: boolean }> {
   try {
-    if (!url || !anonKey) {
-      return { success: false, message: 'Please enter both Supabase URL and Anon Key.' };
+    const trimmedUrl = url.trim();
+    const trimmedKey = anonKey.trim();
+
+    if (!trimmedUrl || !trimmedKey) {
+      return { success: false, message: 'Please enter both Supabase Project URL and Anon API Key.' };
     }
-    if (!url.startsWith('https://')) {
+    if (!trimmedUrl.startsWith('https://')) {
       return { success: false, message: 'Supabase URL must start with https:// (e.g. https://your-project.supabase.co)' };
     }
-    const client = createClient(url, anonKey);
-    // Simple query test to verify connection
-    const { error } = await client.from('branches').select('count', { count: 'exact', head: true });
-    if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-      // 42P01 is table not exists yet, which means connection works!
-      return { success: true, message: 'Connected successfully! (Note: Tables will be created using our SQL script).' };
+    const client = createClient(trimmedUrl, trimmedKey);
+    
+    // Test query on branches table
+    const { count, error } = await client.from('branches').select('count', { count: 'exact', head: true });
+    
+    if (error) {
+      // 42P01: relation "branches" does not exist yet (Database reachable, but table not yet created)
+      if (error.code === '42P01') {
+        return { 
+          success: true, 
+          message: 'Connected to Supabase! (Note: Tables are not created yet. Please execute the SQL DDL script in Supabase SQL Editor).' 
+        };
+      }
+      // 42501: permission denied for table (RLS is active and blocking anon role)
+      if (error.code === '42501' || error.message.toLowerCase().includes('permission denied')) {
+        return { 
+          success: true, 
+          isRlsBlocked: true,
+          message: 'Connected to Supabase! (Notice: Row-Level Security is active. Please run the Disable RLS script in SQL Editor to permit syncing).' 
+        };
+      }
+      // Invalid JWT or API key
+      if (error.message.toLowerCase().includes('jwt') || error.message.toLowerCase().includes('api key') || error.code === 'PGRST301') {
+        return { success: false, message: `Authentication failed: ${error.message}. Please verify your anon/public key.` };
+      }
+      // Other error
+      return { success: true, message: `Connected to Supabase endpoint (${error.message || 'Status verified'}).` };
     }
-    return { success: true, message: 'Supabase connected and authenticated successfully!' };
+
+    return { 
+      success: true, 
+      message: `Supabase database connection established successfully! Found 'branches' table (${count ?? 0} existing records).` 
+    };
   } catch (err: any) {
-    return { success: false, message: err?.message || 'Connection failed. Please verify credentials and network.' };
+    return { success: false, message: err?.message || 'Connection failed. Please check network connectivity and Supabase project status.' };
   }
 }
 
@@ -78,6 +106,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     username TEXT UNIQUE NOT NULL,
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
+    password TEXT DEFAULT 'password123',
     role TEXT NOT NULL CHECK (role IN ('ADMIN', 'MAKER', 'CHECKER', 'AUDITOR')),
     branch_id TEXT REFERENCES public.branches(id),
     phone TEXT,
@@ -85,6 +114,9 @@ CREATE TABLE IF NOT EXISTS public.users (
     last_login TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure password column exists if table was previously created
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password TEXT DEFAULT 'password123';
 
 -- 3. Companies Table (Partner Banks, Agents, FinTechs)
 CREATE TABLE IF NOT EXISTS public.companies (
@@ -274,6 +306,32 @@ CREATE INDEX IF NOT EXISTS idx_transactions_receiver_nrc ON public.transactions(
 CREATE INDEX IF NOT EXISTS idx_blacklist_nrc ON public.blacklist(nrc_number);
 CREATE INDEX IF NOT EXISTS idx_blacklist_passbook ON public.blacklist(passbook_number);
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON public.audit_logs(timestamp DESC);
+
+-- Enable open read/write access for application integration (Disabling RLS)
+ALTER TABLE public.branches DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.companies DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.currencies DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.countries DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exchange_rates DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.blacklist DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purposes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
 `;
+
+export const SUPABASE_DISABLE_RLS_SQL = `-- Run this in Supabase SQL Editor if you encounter "permission denied" or RLS errors:
+ALTER TABLE public.branches DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.companies DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.currencies DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.countries DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.exchange_rates DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.blacklist DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purposes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;`;
 
 export const SUPABASE_SCHEMA_SQL = SUPABASE_SQL_DDL;

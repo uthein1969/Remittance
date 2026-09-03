@@ -43,6 +43,7 @@ export interface User {
   status: 'ACTIVE' | 'INACTIVE';
   lastLogin?: string;
   createdAt: string;
+  password?: string;
 }
 
 export interface Company {

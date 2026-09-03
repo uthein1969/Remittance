@@ -21,7 +21,8 @@ import {
   Target,
   UserCheck2,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  LogOut
 } from 'lucide-react';
 import { useRemittance } from '../lib/store';
 
@@ -66,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   setIsMobileOpen,
 }) => {
-  const { db, language, t } = useRemittance();
+  const { db, language, currentUser, logout, t } = useRemittance();
   const [setupExpanded, setSetupExpanded] = React.useState(true);
 
   const pendingOutward = db.transactions.filter(
@@ -338,6 +339,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
         </nav>
+
+        {/* Active Operator & Logout in Sidebar */}
+        <div className="p-3 border-t border-slate-800 bg-[#0E1626]">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 flex-1 pr-2">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  {currentUser.role}
+                </span>
+                <span className="text-xs font-semibold text-slate-200 truncate">
+                  {currentUser.fullName}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+                @{currentUser.username}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => logout()}
+              className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 active:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-colors cursor-pointer"
+              title={language === 'my' ? 'စနစ်မှ ထွက်မည် (Logout)' : 'Sign out'}
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
 
         {/* Footer info in sidebar */}
         <div className="p-3 border-t border-slate-800 text-[11px] text-slate-400 space-y-1.5 shrink-0 bg-[#0B1120]">

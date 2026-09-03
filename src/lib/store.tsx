@@ -93,31 +93,72 @@ interface RemittanceContextType {
   
   // Backup & Restore
   exportBackupJson: () => string;
+  exportDatabaseJson: () => string;
   restoreBackupJson: (jsonString: string) => boolean;
+  restoreDatabaseFromJson: (jsonString: string) => boolean;
   resetToDefaultData: () => void;
+  resetToDefaultSeed: () => void;
   
   // Supabase
   updateSupabaseConfig: (config: Partial<SupabaseConfig>) => void;
   syncDataToSupabase: () => Promise<{ success: boolean; message: string }>;
   fetchDataFromSupabase: () => Promise<{ success: boolean; message: string }>;
+
+  // Authentication & Supabase User Verification
+  isAuthenticated: boolean;
+  loginWithSupabase: (
+    usernameOrEmail: string, 
+    password?: string
+  ) => Promise<{
+    success: boolean;
+    message: string;
+    user?: User;
+    isRlsBlocked?: boolean;
+    isTableMissing?: boolean;
+    needsConfig?: boolean;
+  }>;
+  logout: () => void;
+  fetchSupabaseUsers: () => Promise<{ success: boolean; users?: User[]; message?: string }>;
+  seedUsersToSupabase: () => Promise<{ success: boolean; message: string }>;
 }
 
 const RemittanceContext = createContext<RemittanceContextType | null>(null);
 
 export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [db, setDb] = useState<AppDatabase>(() => {
+    const metaEnv = (import.meta as any)?.env || {};
+    const envUrl = (metaEnv.VITE_SUPABASE_URL || '').trim();
+    const envKey = (metaEnv.VITE_SUPABASE_ANON_KEY || '').trim();
+
     try {
       const saved = localStorage.getItem(DB_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.branches && parsed.users && parsed.transactions) {
+          // If env vars are provided and local config is empty, fill them in
+          if (envUrl && !parsed.supabaseConfig?.url) {
+            parsed.supabaseConfig = {
+              ...(parsed.supabaseConfig || initialDatabase.supabaseConfig),
+              url: envUrl,
+              anonKey: envKey,
+            };
+          }
           return parsed;
         }
       }
     } catch (err) {
       console.error('Failed to load local DB state:', err);
     }
-    return initialDatabase;
+
+    const base = { ...initialDatabase };
+    if (envUrl) {
+      base.supabaseConfig = {
+        ...base.supabaseConfig,
+        url: envUrl,
+        anonKey: envKey,
+      };
+    }
+    return base;
   });
 
   // Save to localStorage on state change
@@ -128,6 +169,22 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       console.error('Failed to persist database:', err);
     }
   }, [db]);
+
+  // Authentication state - Require Supabase user login
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION');
+      if (sessionStr) {
+        const session = JSON.parse(sessionStr);
+        if (session && session.userId) {
+          return true;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load auth session:', e);
+    }
+    return false;
+  });
 
   const language = db.activeLanguage || 'my';
   const t = translations[language] || translations.en;
@@ -861,70 +918,322 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         supabaseConfig: { ...prev.supabaseConfig, syncStatus: 'SYNCING' }
       }));
 
-      // Upsert branches
-      const branchPayload = db.branches.map(b => ({
-        id: b.id,
-        code: b.code,
-        name_en: b.nameEn,
-        name_mm: b.nameMm,
-        city: b.city,
-        phone: b.phone,
-        address: b.address,
-        manager_name: b.managerName,
-        status: b.status,
-      }));
-      await client.from('branches').upsert(branchPayload, { onConflict: 'id' });
+      const syncedTables: string[] = [];
+      const failedTables: string[] = [];
 
-      // Upsert transactions
-      const txPayload = db.transactions.map(t => ({
-        id: t.id,
-        transaction_no: t.transactionNo,
-        mtcn: t.mtcn,
-        type: t.type,
-        scope: t.scope,
-        status: t.status,
-        sender_name: t.senderName,
-        sender_name_mm: t.senderNameMm,
-        sender_nrc: t.senderNrc,
-        sender_phone: t.senderPhone,
-        sender_address: t.senderAddress,
-        sender_country_code: t.senderCountryCode,
-        receiver_name: t.receiverName,
-        receiver_name_mm: t.receiverNameMm,
-        receiver_nrc: t.receiverNrc,
-        receiver_phone: t.receiverPhone,
-        receiver_address: t.receiverAddress,
-        receiver_country_code: t.receiverCountryCode,
-        source_currency: t.sourceCurrency,
-        target_currency: t.targetCurrency,
-        send_amount: t.sendAmount,
-        exchange_rate: t.exchangeRate,
-        receive_amount: t.receiveAmount,
-        service_fee: t.serviceFee,
-        commission_fee: t.commissionFee,
-        total_payable_amount: t.totalPayableAmount,
-        payout_method: t.payoutMethod,
-        sending_branch_id: t.sendingBranchId,
-        purpose_id: t.purposeId,
-        purpose_name: t.purposeName,
-        creator_user_id: t.creatorUserId,
-        creator_name: t.creatorName,
-      }));
-      await client.from('transactions').upsert(txPayload, { onConflict: 'id' });
+      // 1. Branches
+      try {
+        const branchPayload = db.branches.map(b => ({
+          id: b.id,
+          code: b.code,
+          name_en: b.nameEn,
+          name_mm: b.nameMm,
+          city: b.city,
+          phone: b.phone,
+          address: b.address,
+          manager_name: b.managerName,
+          status: b.status,
+          created_at: b.createdAt,
+        }));
+        const { error: bErr } = await client.from('branches').upsert(branchPayload, { onConflict: 'id' });
+        if (bErr) throw bErr;
+        syncedTables.push(`Branches (${branchPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`branches: ${err.message}`);
+      }
+
+      // 2. Users
+      try {
+        const userPayload = db.users.map(u => ({
+          id: u.id,
+          username: u.username,
+          full_name: u.fullName,
+          email: u.email,
+          password: u.password || 'password123',
+          role: u.role,
+          branch_id: u.branchId,
+          phone: u.phone,
+          status: u.status,
+          last_login: u.lastLogin,
+          created_at: u.createdAt,
+        }));
+        const { error: uErr } = await client.from('users').upsert(userPayload, { onConflict: 'id' });
+        if (uErr) throw uErr;
+        syncedTables.push(`Users (${userPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`users: ${err.message}`);
+      }
+
+      // 3. Companies
+      try {
+        const companyPayload = db.companies.map(c => ({
+          id: c.id,
+          code: c.code,
+          name_en: c.nameEn,
+          name_mm: c.nameMm,
+          country_code: c.countryCode,
+          type: c.type,
+          swift_code: c.swiftCode,
+          license_no: c.licenseNo,
+          phone: c.phone,
+          email: c.email,
+          status: c.status,
+          created_at: c.createdAt,
+        }));
+        const { error: cErr } = await client.from('companies').upsert(companyPayload, { onConflict: 'id' });
+        if (cErr) throw cErr;
+        syncedTables.push(`Companies (${companyPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`companies: ${err.message}`);
+      }
+
+      // 4. Currencies
+      try {
+        const curPayload = db.currencies.map(cu => ({
+          id: cu.id,
+          code: cu.code,
+          name_en: cu.nameEn,
+          name_mm: cu.nameMm,
+          symbol: cu.symbol,
+          is_base_currency: cu.isBaseCurrency,
+          decimals: cu.decimals,
+          status: cu.status,
+        }));
+        const { error: cuErr } = await client.from('currencies').upsert(curPayload, { onConflict: 'id' });
+        if (cuErr) throw cuErr;
+        syncedTables.push(`Currencies (${curPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`currencies: ${err.message}`);
+      }
+
+      // 5. Countries
+      try {
+        const countryPayload = db.countries.map(co => ({
+          id: co.id,
+          code: co.code,
+          name_en: co.nameEn,
+          name_mm: co.nameMm,
+          dial_code: co.dialCode,
+          flag_emoji: co.flagEmoji,
+          currency_code: co.currencyCode,
+          is_domestic: co.isDomestic,
+          status: co.status,
+        }));
+        const { error: coErr } = await client.from('countries').upsert(countryPayload, { onConflict: 'id' });
+        if (coErr) throw coErr;
+        syncedTables.push(`Countries (${countryPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`countries: ${err.message}`);
+      }
+
+      // 6. Exchange Rates
+      try {
+        const ratePayload = db.exchangeRates.map(r => ({
+          id: r.id,
+          from_currency: r.fromCurrency,
+          to_currency: r.toCurrency,
+          buy_rate: r.buyRate,
+          sell_rate: r.sellRate,
+          transfer_rate: r.transferRate,
+          effective_date: r.effectiveDate,
+          effective_time: r.effectiveTime,
+          updated_by: r.updatedBy,
+          note: r.note,
+        }));
+        const { error: rErr } = await client.from('exchange_rates').upsert(ratePayload, { onConflict: 'id' });
+        if (rErr) throw rErr;
+        syncedTables.push(`Exchange Rates (${ratePayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`exchange_rates: ${err.message}`);
+      }
+
+      // 7. Blacklist
+      try {
+        const blPayload = db.blacklist.map(bl => ({
+          id: bl.id,
+          full_name_en: bl.fullNameEn,
+          full_name_mm: bl.fullNameMm,
+          nrc_number: bl.nrcNumber,
+          passbook_number: bl.passbookNumber,
+          passport_number: bl.passportNumber,
+          reason: bl.reason,
+          note: bl.note,
+          risk_level: bl.riskLevel,
+          added_by: bl.addedBy,
+          active: bl.active,
+          created_at: bl.createdAt,
+        }));
+        const { error: blErr } = await client.from('blacklist').upsert(blPayload, { onConflict: 'id' });
+        if (blErr) throw blErr;
+        syncedTables.push(`Blacklist (${blPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`blacklist: ${err.message}`);
+      }
+
+      // 8. Purposes
+      try {
+        const pPayload = db.purposes.map(p => ({
+          id: p.id,
+          code: p.code,
+          name_en: p.nameEn,
+          name_mm: p.nameMm,
+          category: p.category,
+          requires_doc_proof: p.requiresDocProof,
+          max_daily_limit_mmk: p.maxDailyLimitMmk,
+        }));
+        const { error: pErr } = await client.from('purposes').upsert(pPayload, { onConflict: 'id' });
+        if (pErr) throw pErr;
+        syncedTables.push(`Purposes (${pPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`purposes: ${err.message}`);
+      }
+
+      // 9. Customers
+      try {
+        const cuPayload = db.customers.map(c => ({
+          id: c.id,
+          customer_code: c.customerCode,
+          full_name_en: c.fullNameEn,
+          full_name_mm: c.fullNameMm,
+          nrc_number: c.nrcNumber,
+          passbook_number: c.passbookNumber,
+          passport_number: c.passportNumber,
+          phone: c.phone,
+          address: c.address,
+          customer_type: c.customerType,
+          risk_rating: c.riskRating,
+          total_transactions: c.totalTransactions,
+          total_volume_mmk: c.totalVolumeMmk,
+          notes: c.notes,
+          created_at: c.createdAt,
+        }));
+        const { error: cErr } = await client.from('customers').upsert(cuPayload, { onConflict: 'id' });
+        if (cErr) throw cErr;
+        syncedTables.push(`Customers (${cuPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`customers: ${err.message}`);
+      }
+
+      // 10. Transactions
+      try {
+        const txPayload = db.transactions.map(t => ({
+          id: t.id,
+          transaction_no: t.transactionNo,
+          mtcn: t.mtcn,
+          type: t.type,
+          scope: t.scope,
+          status: t.status,
+          sender_name: t.senderName,
+          sender_name_mm: t.senderNameMm,
+          sender_nrc: t.senderNrc,
+          sender_passbook: t.senderPassbook,
+          sender_passport: t.senderPassport,
+          sender_phone: t.senderPhone,
+          sender_address: t.senderAddress,
+          sender_country_code: t.senderCountryCode,
+          receiver_name: t.receiverName,
+          receiver_name_mm: t.receiverNameMm,
+          receiver_nrc: t.receiverNrc,
+          receiver_passbook: t.receiverPassbook,
+          receiver_passport: t.receiverPassport,
+          receiver_phone: t.receiverPhone,
+          receiver_address: t.receiverAddress,
+          receiver_country_code: t.receiverCountryCode,
+          source_currency: t.sourceCurrency,
+          target_currency: t.targetCurrency,
+          send_amount: t.sendAmount,
+          exchange_rate: t.exchangeRate,
+          receive_amount: t.receiveAmount,
+          service_fee: t.serviceFee,
+          commission_fee: t.commissionFee,
+          tax_amount: t.taxAmount,
+          total_payable_amount: t.totalPayableAmount,
+          payout_method: t.payoutMethod,
+          payout_bank_name: t.payoutBankName,
+          payout_account_number: t.payoutAccountNumber,
+          sending_branch_id: t.sendingBranchId,
+          payout_branch_id: t.payoutBranchId,
+          partner_company_id: t.partnerCompanyId,
+          purpose_id: t.purposeId,
+          purpose_name: t.purposeName,
+          sender_note: t.senderNote,
+          proof_document_name: t.proofDocumentName,
+          blacklist_checked: t.blacklistChecked,
+          blacklist_alert: t.blacklistAlert,
+          creator_user_id: t.creatorUserId,
+          creator_name: t.creatorName,
+          approver_user_id: t.approverUserId,
+          approver_name: t.approverName,
+          approval_note: t.approvalNote,
+          rejection_reason: t.rejectionReason,
+          created_date: t.createdDate,
+          approved_date: t.approvedDate,
+          paid_out_date: t.paidOutDate,
+        }));
+        const { error: tErr } = await client.from('transactions').upsert(txPayload, { onConflict: 'id' });
+        if (tErr) throw tErr;
+        syncedTables.push(`Transactions (${txPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`transactions: ${err.message}`);
+      }
+
+      // 11. Audit Logs
+      try {
+        const auditPayload = db.auditLogs.slice(0, 500).map(a => ({
+          id: a.id,
+          timestamp: a.timestamp,
+          user_id: a.userId,
+          user_name: a.userName,
+          user_role: a.userRole,
+          action: a.action,
+          entity_type: a.entityType,
+          entity_id: a.entityId,
+          details: a.details,
+          previous_value: a.previousValue,
+          new_value: a.newValue,
+        }));
+        const { error: aErr } = await client.from('audit_logs').upsert(auditPayload, { onConflict: 'id' });
+        if (aErr) throw aErr;
+        syncedTables.push(`Audit Logs (${auditPayload.length})`);
+      } catch (err: any) {
+        failedTables.push(`audit_logs: ${err.message}`);
+      }
 
       const now = new Date().toISOString();
-      setDb(prev => ({
-        ...prev,
-        supabaseConfig: {
-          ...prev.supabaseConfig,
-          isConnected: true,
-          syncStatus: 'SUCCESS',
-          lastSyncTime: now
-        }
-      }));
 
-      logActionDirect('SYNC', 'SYSTEM', 'SUPABASE-SYNC', 'Pushed local database state to Supabase PostgreSQL');
-      return { success: true, message: 'All local records successfully synchronized to Supabase PostgreSQL database.' };
+      if (syncedTables.length > 0) {
+        setDb(prev => ({
+          ...prev,
+          supabaseConfig: {
+            ...prev.supabaseConfig,
+            isConnected: true,
+            syncStatus: failedTables.length > 0 ? 'ERROR' : 'SUCCESS',
+            lastSyncTime: now,
+            errorMessage: failedTables.length > 0 ? failedTables.join('; ') : undefined,
+          }
+        }));
+
+        logActionDirect(
+          'SYNC',
+          'SYSTEM',
+          'SUPABASE-SYNC',
+          `Synced ${syncedTables.length} tables to Supabase. ${failedTables.length ? `(Pending: ${failedTables.join(', ')})` : ''}`
+        );
+
+        if (failedTables.length === 0) {
+          return {
+            success: true,
+            message: `အားလုံး အောင်မြင်စွာ ပို့ဆောင်ပြီးပါပြီ! (All ${syncedTables.length} tables synchronized to Supabase PostgreSQL: ${syncedTables.join(', ')})`
+          };
+        } else {
+          return {
+            success: true,
+            message: `Synchronized ${syncedTables.length} tables successfully. Notice for ${failedTables.length} tables: ${failedTables[0]}`
+          };
+        }
+      } else {
+        throw new Error(failedTables.join('; ') || 'No tables could be synchronized.');
+      }
     } catch (err: any) {
       setDb(prev => ({
         ...prev,
@@ -934,7 +1243,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           errorMessage: err.message
         }
       }));
-      return { success: false, message: `Sync failed: ${err.message || 'Make sure Supabase tables are created.'}` };
+      return { success: false, message: `Sync failed: ${err.message || 'Make sure Supabase tables are created and RLS is disabled.'}` };
     }
   };
 
@@ -950,37 +1259,107 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         supabaseConfig: { ...prev.supabaseConfig, syncStatus: 'SYNCING' }
       }));
 
+      // Pull branches
       const { data: remoteBranches, error: bErr } = await client.from('branches').select('*');
       if (bErr) throw bErr;
 
-      if (remoteBranches && remoteBranches.length > 0) {
-        const mappedBranches: Branch[] = remoteBranches.map(b => ({
-          id: b.id,
-          code: b.code,
-          nameEn: b.name_en,
-          nameMm: b.name_mm,
-          city: b.city,
-          phone: b.phone,
-          address: b.address,
-          managerName: b.manager_name,
-          status: b.status || 'ACTIVE',
-          createdAt: b.created_at || new Date().toISOString(),
-        }));
+      // Pull transactions
+      const { data: remoteTxs } = await client.from('transactions').select('*');
 
-        setDb(prev => ({
+      let updatedCount = 0;
+      setDb(prev => {
+        let updatedBranches = prev.branches;
+        let updatedTxs = prev.transactions;
+
+        if (remoteBranches && remoteBranches.length > 0) {
+          updatedBranches = remoteBranches.map(b => ({
+            id: b.id,
+            code: b.code,
+            nameEn: b.name_en,
+            nameMm: b.name_mm,
+            city: b.city,
+            phone: b.phone,
+            address: b.address,
+            managerName: b.manager_name,
+            status: b.status || 'ACTIVE',
+            createdAt: b.created_at || new Date().toISOString(),
+          }));
+          updatedCount += updatedBranches.length;
+        }
+
+        if (remoteTxs && remoteTxs.length > 0) {
+          updatedTxs = remoteTxs.map(t => ({
+            id: t.id,
+            transactionNo: t.transaction_no,
+            mtcn: t.mtcn,
+            type: t.type,
+            scope: t.scope,
+            status: t.status,
+            senderName: t.sender_name,
+            senderNameMm: t.sender_name_mm,
+            senderNrc: t.sender_nrc,
+            senderPassbook: t.sender_passbook,
+            senderPassport: t.sender_passport,
+            senderPhone: t.sender_phone,
+            senderAddress: t.sender_address,
+            senderCountryCode: t.sender_country_code,
+            receiverName: t.receiver_name,
+            receiverNameMm: t.receiver_name_mm,
+            receiverNrc: t.receiver_nrc,
+            receiverPassbook: t.receiver_passbook,
+            receiverPassport: t.receiver_passport,
+            receiverPhone: t.receiver_phone,
+            receiverAddress: t.receiver_address,
+            receiverCountryCode: t.receiver_country_code,
+            sourceCurrency: t.source_currency,
+            targetCurrency: t.target_currency,
+            sendAmount: Number(t.send_amount),
+            exchangeRate: Number(t.exchange_rate),
+            receiveAmount: Number(t.receive_amount),
+            serviceFee: Number(t.service_fee || 0),
+            commissionFee: Number(t.commission_fee || 0),
+            taxAmount: Number(t.tax_amount || 0),
+            totalPayableAmount: Number(t.total_payable_amount),
+            payoutMethod: t.payout_method,
+            payoutBankName: t.payout_bank_name,
+            payoutAccountNumber: t.payout_account_number,
+            sendingBranchId: t.sending_branch_id,
+            payoutBranchId: t.payout_branch_id,
+            partnerCompanyId: t.partner_company_id,
+            purposeId: t.purpose_id,
+            purposeName: t.purpose_name,
+            senderNote: t.sender_note,
+            proofDocumentName: t.proof_document_name,
+            blacklistChecked: Boolean(t.blacklist_checked),
+            blacklistAlert: t.blacklist_alert,
+            creatorUserId: t.creator_user_id,
+            creatorName: t.creator_name,
+            approverUserId: t.approver_user_id,
+            approverName: t.approver_name,
+            approvalNote: t.approval_note,
+            rejectionReason: t.rejection_reason,
+            createdDate: t.created_date,
+            approvedDate: t.approved_date,
+            paidOutDate: t.paid_out_date,
+          }));
+          updatedCount += updatedTxs.length;
+        }
+
+        return {
           ...prev,
-          branches: mappedBranches,
+          branches: updatedBranches,
+          transactions: updatedTxs,
           supabaseConfig: {
             ...prev.supabaseConfig,
             isConnected: true,
             syncStatus: 'SUCCESS',
             lastSyncTime: new Date().toISOString()
           }
-        }));
-      }
+        };
+      });
 
-      logActionDirect('SYNC', 'SYSTEM', 'SUPABASE-PULL', 'Pulled updated remote records from Supabase');
-      return { success: true, message: 'Successfully fetched and refreshed data from Supabase.' };
+      logActionDirect('SYNC', 'SYSTEM', 'SUPABASE-PULL', `Pulled ${updatedCount} remote records from Supabase`);
+      return { success: true, message: `Successfully fetched and refreshed data from Supabase (${updatedCount} records retrieved).` };
     } catch (err: any) {
       setDb(prev => ({
         ...prev,
@@ -991,6 +1370,264 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
       }));
       return { success: false, message: `Fetch failed: ${err.message}` };
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // Supabase User Authentication Handlers
+  // --------------------------------------------------------------------------
+  const loginWithSupabase = async (
+    usernameOrEmail: string,
+    password?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    user?: User;
+    isRlsBlocked?: boolean;
+    isTableMissing?: boolean;
+    needsConfig?: boolean;
+  }> => {
+    const trimmed = (usernameOrEmail || '').trim();
+    const trimmedPass = (password || '').trim();
+
+    if (!trimmed) {
+      return {
+        success: false,
+        message: language === 'my' 
+          ? 'ကျေးဇူးပြု၍ Username သို့မဟုတ် Email ထည့်သွင်းပါ' 
+          : 'Please enter your Username or Email'
+      };
+    }
+
+    const client = getSupabaseClient(db.supabaseConfig);
+    if (!client || !db.supabaseConfig.url || !db.supabaseConfig.anonKey) {
+      return {
+        success: false,
+        needsConfig: true,
+        message: language === 'my'
+          ? 'Supabase Database ချိတ်ဆက်မှု မရှိသေးပါ။ ကျေးဇူးပြု၍ Supabase URL နှင့် Anon Key ကို ထည့်သွင်းပေးပါခင်ဗျာ။'
+          : 'Supabase is not configured yet. Please configure your Supabase Project URL and Anon Key.'
+      };
+    }
+
+    try {
+      // 1. Query Supabase users table by username (case-insensitive)
+      let { data: remoteUsers, error } = await client
+        .from('users')
+        .select('*')
+        .ilike('username', trimmed);
+
+      // If not found by username, try by email
+      if (!error && (!remoteUsers || remoteUsers.length === 0)) {
+        const emailRes = await client
+          .from('users')
+          .select('*')
+          .ilike('email', trimmed);
+        remoteUsers = emailRes.data;
+        error = emailRes.error;
+      }
+
+      if (error) {
+        if (error.code === '42P01') {
+          return {
+            success: false,
+            isTableMissing: true,
+            message: language === 'my'
+              ? 'Supabase တွင် "users" table မရှိသေးပါ။ ကျေးဇူးပြု၍ Supabase SQL Editor တွင် Table DDL script ကို run ပေးပါခင်ဗျာ။'
+              : 'Table "users" does not exist in Supabase yet. Please execute the SQL DDL script in Supabase SQL Editor.'
+          };
+        }
+        if (error.code === '42501' || error.message?.toLowerCase().includes('permission denied')) {
+          return {
+            success: false,
+            isRlsBlocked: true,
+            message: language === 'my'
+              ? 'Supabase RLS (Row-Level Security) ပိတ်ထား၍ ဖတ်မရပါ။ ကျေးဇူးပြု၍ RLS Disable Script ကို Supabase SQL Editor တွင် Run ပေးပါခင်ဗျာ။'
+              : 'Supabase Row-Level Security (RLS) is blocking access. Please run the Disable RLS SQL script in Supabase.'
+          };
+        }
+        return {
+          success: false,
+          message: `Supabase Error: ${error.message}`
+        };
+      }
+
+      if (!remoteUsers || remoteUsers.length === 0) {
+        return {
+          success: false,
+          message: language === 'my'
+            ? `Supabase user table တွင် "${trimmed}" အသုံးပြုသူ အကောင့် မတွေ့ရှိပါ`
+            : `No user found in Supabase "users" table matching "${trimmed}"`
+        };
+      }
+
+      const found = remoteUsers[0];
+
+      // Check account status
+      if (found.status && found.status.toUpperCase() === 'INACTIVE') {
+        return {
+          success: false,
+          message: language === 'my'
+            ? 'ဤအသုံးပြုသူအကောင့်ကို ပိတ်ထားပါသည် (Account is Inactive)'
+            : 'This user account is currently deactivated.'
+        };
+      }
+
+      // Check password if provided in Supabase table
+      if (found.password && found.password.trim() !== '') {
+        if (trimmedPass && found.password !== trimmedPass) {
+          return {
+            success: false,
+            message: language === 'my'
+              ? 'လျှို့ဝှက်နံပါတ် (Password) မှားယွင်းနေပါသည်'
+              : 'Incorrect password entered.'
+          };
+        }
+      }
+
+      // Map remote user to User interface
+      const authenticatedUser: User = {
+        id: found.id,
+        username: found.username,
+        fullName: found.full_name,
+        email: found.email,
+        role: found.role as UserRole,
+        branchId: found.branch_id || 'BR-001',
+        phone: found.phone || '',
+        status: found.status || 'ACTIVE',
+        lastLogin: new Date().toISOString(),
+        createdAt: found.created_at || new Date().toISOString(),
+        password: found.password,
+      };
+
+      // Update last_login in Supabase asynchronously
+      try {
+        await client
+          .from('users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', authenticatedUser.id);
+      } catch (ignore) {}
+
+      // Upsert into local state & set active user
+      setDb(prev => {
+        const userExists = prev.users.some(u => u.id === authenticatedUser.id);
+        const updatedUsers = userExists
+          ? prev.users.map(u => u.id === authenticatedUser.id ? authenticatedUser : u)
+          : [...prev.users, authenticatedUser];
+
+        return {
+          ...prev,
+          users: updatedUsers,
+          currentUserId: authenticatedUser.id,
+          supabaseConfig: {
+            ...prev.supabaseConfig,
+            isConnected: true,
+          }
+        };
+      });
+
+      // Save session in sessionStorage
+      try {
+        sessionStorage.setItem('REMITTANCE_AUTH_SESSION', JSON.stringify({
+          userId: authenticatedUser.id,
+          username: authenticatedUser.username,
+          role: authenticatedUser.role,
+          fullName: authenticatedUser.fullName,
+          loginAt: new Date().toISOString(),
+        }));
+      } catch (e) {
+        console.error(e);
+      }
+
+      setIsAuthenticated(true);
+
+      logActionDirect(
+        'LOGIN',
+        'USER',
+        authenticatedUser.username,
+        `User ${authenticatedUser.fullName} (${authenticatedUser.role}) logged in successfully via Supabase user table`
+      );
+
+      return {
+        success: true,
+        message: language === 'my'
+          ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! Supabase user table မှ အောင်မြင်စွာ login ဝင်ရောက်ပြီးပါပြီ။`
+          : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated with Supabase user table.`,
+        user: authenticatedUser
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Login failed due to unexpected error.'
+      };
+    }
+  };
+
+  const logout = () => {
+    try {
+      sessionStorage.removeItem('REMITTANCE_AUTH_SESSION');
+    } catch (e) {}
+    setIsAuthenticated(false);
+    logActionDirect('LOGIN', 'SYSTEM', currentUser.id, `User ${currentUser.fullName} logged out`);
+  };
+
+  const fetchSupabaseUsers = async (): Promise<{ success: boolean; users?: User[]; message?: string }> => {
+    const client = getSupabaseClient(db.supabaseConfig);
+    if (!client) {
+      return { success: false, message: 'Supabase client is not configured' };
+    }
+    try {
+      const { data, error } = await client.from('users').select('*').order('username', { ascending: true });
+      if (error) throw error;
+      if (data) {
+        const mapped: User[] = data.map(u => ({
+          id: u.id,
+          username: u.username,
+          fullName: u.full_name,
+          email: u.email,
+          role: u.role as UserRole,
+          branchId: u.branch_id || 'BR-001',
+          phone: u.phone || '',
+          status: u.status || 'ACTIVE',
+          lastLogin: u.last_login,
+          createdAt: u.created_at,
+          password: u.password,
+        }));
+        return { success: true, users: mapped };
+      }
+      return { success: true, users: [] };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to fetch users from Supabase' };
+    }
+  };
+
+  const seedUsersToSupabase = async (): Promise<{ success: boolean; message: string }> => {
+    const client = getSupabaseClient(db.supabaseConfig);
+    if (!client) {
+      return { success: false, message: 'Supabase is not configured' };
+    }
+    try {
+      const userPayload = db.users.map(u => ({
+        id: u.id,
+        username: u.username,
+        full_name: u.fullName,
+        email: u.email,
+        password: u.password || 'password123',
+        role: u.role,
+        branch_id: u.branchId,
+        phone: u.phone,
+        status: u.status,
+        last_login: u.lastLogin,
+        created_at: u.createdAt,
+      }));
+      const { error } = await client.from('users').upsert(userPayload, { onConflict: 'id' });
+      if (error) throw error;
+      return {
+        success: true,
+        message: `Successfully uploaded ${userPayload.length} users to Supabase users table.`
+      };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to seed users to Supabase' };
     }
   };
 
@@ -1032,11 +1669,19 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         deleteCustomer,
         logAction,
         exportBackupJson,
+        exportDatabaseJson: exportBackupJson,
         restoreBackupJson,
+        restoreDatabaseFromJson: restoreBackupJson,
         resetToDefaultData,
+        resetToDefaultSeed: resetToDefaultData,
         updateSupabaseConfig,
         syncDataToSupabase,
         fetchDataFromSupabase,
+        isAuthenticated,
+        loginWithSupabase,
+        logout,
+        fetchSupabaseUsers,
+        seedUsersToSupabase,
       }}
     >
       {children}

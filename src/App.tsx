@@ -4,7 +4,8 @@
  */
 
 import React, { useState } from 'react';
-import { RemittanceProvider } from './lib/store';
+import { RemittanceProvider, useRemittance } from './lib/store';
+import { LoginView } from './components/Auth/LoginView';
 import { Header } from './components/Header';
 import { Sidebar, NavigationTab, SetupSubTab } from './components/Sidebar';
 import { DashboardView } from './components/Dashboard/DashboardView';
@@ -20,6 +21,7 @@ import { BackupRestoreView } from './components/Backup/BackupRestoreView';
 const MainLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>('branch');
+  const [auditModuleFilter, setAuditModuleFilter] = useState<string>('ALL');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleNavigate = (tab: NavigationTab, subTab?: SetupSubTab) => {
@@ -27,6 +29,11 @@ const MainLayout: React.FC = () => {
     if (subTab) {
       setSetupSubTab(subTab);
     }
+  };
+
+  const handleNavigateAudit = (module: string = 'ALL') => {
+    setAuditModuleFilter(module);
+    setActiveTab('audit_log');
   };
 
   return (
@@ -77,10 +84,14 @@ const MainLayout: React.FC = () => {
               <AdminSetupManager
                 currentSubTab={setupSubTab}
                 onSelectSubTab={setSetupSubTab}
+                onNavigateAudit={handleNavigateAudit}
               />
             )}
             {activeTab === 'audit_log' && (
-              <BackupRestoreView initialTab="audit" />
+              <BackupRestoreView 
+                initialTab="audit" 
+                initialModuleFilter={auditModuleFilter} 
+              />
             )}
             {activeTab === 'backup_restore' && (
               <BackupRestoreView initialTab="backup" />
@@ -95,10 +106,21 @@ const MainLayout: React.FC = () => {
   );
 };
 
+const RootApp: React.FC = () => {
+  const { isAuthenticated } = useRemittance();
+
+  // If user is not authenticated with a Supabase user account, display the Login View
+  if (!isAuthenticated) {
+    return <LoginView />;
+  }
+
+  return <MainLayout />;
+};
+
 export default function App() {
   return (
     <RemittanceProvider>
-      <MainLayout />
+      <RootApp />
     </RemittanceProvider>
   );
 }
