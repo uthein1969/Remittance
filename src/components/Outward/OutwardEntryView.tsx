@@ -29,7 +29,7 @@ export const OutwardEntryView: React.FC = () => {
   const [senderName, setSenderName] = useState('');
   const [senderNameMm, setSenderNameMm] = useState('');
   const [senderNrc, setSenderNrc] = useState('');
-  const [senderPassbook, setSenderPassbook] = useState('');
+  const [senderPassport, setSenderPassport] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [senderAddress, setSenderAddress] = useState('');
   const [senderCountryCode, setSenderCountryCode] = useState('MM');
@@ -38,7 +38,7 @@ export const OutwardEntryView: React.FC = () => {
   const [receiverName, setReceiverName] = useState('');
   const [receiverNameMm, setReceiverNameMm] = useState('');
   const [receiverNrc, setReceiverNrc] = useState('');
-  const [receiverPassbook, setReceiverPassbook] = useState('');
+  const [receiverPassport, setReceiverPassport] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
   const [receiverAddress, setReceiverAddress] = useState('');
   const [receiverCountryCode, setReceiverCountryCode] = useState('TH');
@@ -91,17 +91,17 @@ export const OutwardEntryView: React.FC = () => {
     }
   }, [scope]);
 
-  // Real-time screening on sender NRC / Passbook / Name
+  // Real-time screening on sender NRC / Passport / Name
   useEffect(() => {
-    const match = checkBlacklist(senderNrc, senderPassbook, senderName);
+    const match = checkBlacklist(senderNrc, senderPassport, senderName);
     setSenderMatch(match);
-  }, [senderNrc, senderPassbook, senderName, checkBlacklist]);
+  }, [senderNrc, senderPassport, senderName, checkBlacklist]);
 
-  // Real-time screening on receiver NRC / Passbook / Name
+  // Real-time screening on receiver NRC / Passport / Name
   useEffect(() => {
-    const match = checkBlacklist(receiverNrc, receiverPassbook, receiverName);
+    const match = checkBlacklist(receiverNrc, receiverPassport, receiverName);
     setReceiverMatch(match);
-  }, [receiverNrc, receiverPassbook, receiverName, checkBlacklist]);
+  }, [receiverNrc, receiverPassport, receiverName, checkBlacklist]);
 
   // Calculations
   const calculatedReceiveAmount = sourceCurrency === 'MMK' && targetCurrency !== 'MMK'
@@ -117,7 +117,7 @@ export const OutwardEntryView: React.FC = () => {
       setSenderName(cust.fullNameEn);
       setSenderNameMm(cust.fullNameMm || '');
       setSenderNrc(cust.nrcNumber);
-      setSenderPassbook(cust.passbookNumber || '');
+      setSenderPassport(cust.passportNumber || cust.passbookNumber || '');
       setSenderPhone(cust.phone);
       setSenderAddress(cust.address);
     }
@@ -129,7 +129,7 @@ export const OutwardEntryView: React.FC = () => {
       setReceiverName(cust.fullNameEn);
       setReceiverNameMm(cust.fullNameMm || '');
       setReceiverNrc(cust.nrcNumber);
-      setReceiverPassbook(cust.passbookNumber || '');
+      setReceiverPassport(cust.passportNumber || cust.passbookNumber || '');
       setReceiverPhone(cust.phone);
       setReceiverAddress(cust.address);
     }
@@ -182,14 +182,16 @@ export const OutwardEntryView: React.FC = () => {
         senderName,
         senderNameMm,
         senderNrc,
-        senderPassbook,
+        senderPassport: senderPassport || undefined,
+        senderPassbook: senderPassport || undefined,
         senderPhone,
         senderAddress,
         senderCountryCode,
         receiverName,
         receiverNameMm,
         receiverNrc,
-        receiverPassbook,
+        receiverPassport: receiverPassport || undefined,
+        receiverPassbook: receiverPassport || undefined,
         receiverPhone,
         receiverAddress,
         receiverCountryCode,
@@ -306,7 +308,7 @@ export const OutwardEntryView: React.FC = () => {
               </strong>
               <div className="text-slate-300">
                 <span>NRC: </span><span className="font-mono text-white">{senderMatch.nrcNumber}</span> | 
-                <span> Passbook: </span><span className="font-mono text-white">{senderMatch.passbookNumber}</span> | 
+                <span> Passport: </span><span className="font-mono text-white">{senderMatch.passportNumber || senderMatch.passbookNumber || '-'}</span> | 
                 <span> Risk: </span><span className="font-bold text-rose-400">{senderMatch.riskLevel}</span>
               </div>
               <div className="text-rose-200 italic mt-1 bg-black/30 p-2 rounded">
@@ -322,7 +324,7 @@ export const OutwardEntryView: React.FC = () => {
               </strong>
               <div className="text-slate-300">
                 <span>NRC: </span><span className="font-mono text-white">{receiverMatch.nrcNumber}</span> | 
-                <span> Passbook: </span><span className="font-mono text-white">{receiverMatch.passbookNumber}</span>
+                <span> Passport: </span><span className="font-mono text-white">{receiverMatch.passportNumber || receiverMatch.passbookNumber || '-'}</span>
               </div>
               <div className="text-rose-200 italic mt-1 bg-black/30 p-2 rounded">
                 Note: "{receiverMatch.note}"
@@ -401,9 +403,9 @@ export const OutwardEntryView: React.FC = () => {
                 <label className="block text-slate-400 mb-1 font-medium">{t.senderPassbook}</label>
                 <input
                   type="text"
-                  value={senderPassbook}
-                  onChange={(e) => setSenderPassbook(e.target.value)}
-                  placeholder="001-209-1823901"
+                  value={senderPassport}
+                  onChange={(e) => setSenderPassport(e.target.value)}
+                  placeholder="MB-102948 or Passport No"
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-sky-500 focus:outline-none"
                 />
               </div>
@@ -510,9 +512,9 @@ export const OutwardEntryView: React.FC = () => {
                 <label className="block text-slate-400 mb-1 font-medium">{t.receiverPassbook}</label>
                 <input
                   type="text"
-                  value={receiverPassbook}
-                  onChange={(e) => setReceiverPassbook(e.target.value)}
-                  placeholder="Bank Account / Wallet ID"
+                  value={receiverPassport}
+                  onChange={(e) => setReceiverPassport(e.target.value)}
+                  placeholder="Passport No / ID"
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-sky-500 focus:outline-none"
                 />
               </div>

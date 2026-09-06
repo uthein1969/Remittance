@@ -7,7 +7,8 @@ import {
   Filter, 
   DownloadCloud, 
   Coins, 
-  CheckCircle2
+  CheckCircle2,
+  Paperclip
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { RemittanceTransaction } from '../../types';
@@ -42,7 +43,7 @@ export const InwardReportView: React.FC = () => {
   const totalPayoutMMK = filteredTxs.reduce((sum, tx) => sum + tx.receiveAmount, 0);
 
   const exportCsv = () => {
-    const headers = ['Transaction No', 'MTCN', 'Date', 'Beneficiary', 'NRC', 'Sender', 'Origin Country', 'Origin Amount', 'Origin Currency', 'Exchange Rate', 'Payout Amount (MMK)', 'Payout Method', 'Status'];
+    const headers = ['Transaction No', 'MTCN', 'Date', 'Beneficiary', 'NRC', 'Sender', 'Sender Passport', 'Passport Attached', 'Origin Country', 'Origin Amount', 'Origin Currency', 'Exchange Rate', 'Payout Amount (MMK)', 'Payout Method', 'Status'];
     const rows = filteredTxs.map(tx => [
       tx.transactionNo,
       tx.mtcn,
@@ -50,6 +51,8 @@ export const InwardReportView: React.FC = () => {
       `"${tx.receiverName}"`,
       `"${tx.receiverNrc}"`,
       `"${tx.senderName}"`,
+      `"${tx.senderPassport || tx.senderPassbook || ''}"`,
+      (tx.senderPassportAttachment || tx.senderPassbookAttachment) ? 'YES' : 'NO',
       tx.senderCountryCode,
       tx.sendAmount,
       tx.sourceCurrency,
@@ -197,6 +200,21 @@ export const InwardReportView: React.FC = () => {
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-200">{tx.senderName}</div>
                       <div className="text-[10px] text-slate-500">From: {tx.senderCountryCode}</div>
+                      {(tx.senderPassport || tx.senderPassbook) && (
+                        <div className="text-[10px] text-slate-400 font-mono">Passport: {tx.senderPassport || tx.senderPassbook}</div>
+                      )}
+                      {(tx.senderPassportAttachment || tx.senderPassbookAttachment) && (
+                        <a 
+                          href={tx.senderPassportAttachment || tx.senderPassbookAttachment}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center space-x-1 text-[10px] text-indigo-300 hover:text-indigo-200 mt-0.5 bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-800/60"
+                          title="View attached passport"
+                        >
+                          <Paperclip className="w-2.5 h-2.5" />
+                          <span>Passport</span>
+                        </a>
+                      )}
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-emerald-400 text-sm">
                       {tx.receiveAmount.toLocaleString()} MMK

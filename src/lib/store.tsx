@@ -15,9 +15,10 @@ import {
   SupabaseConfig, 
   Language, 
   UserRole,
-  RemittanceStatus
+  RemittanceStatus,
+  OperatorProfile
 } from '../types';
-import { initialDatabase } from './mockData';
+import { initialDatabase, defaultOperatorProfile } from './mockData';
 import { translations } from '../i18n/translations';
 import { getSupabaseClient, resetSupabaseClient } from './supabase';
 
@@ -31,8 +32,12 @@ interface RemittanceContextType {
   currentUser: User;
   switchUser: (userId: string) => void;
   
+  // Operator / Licensee Profile (Software Company Profile)
+  operatorProfile: OperatorProfile;
+  updateOperatorProfile: (profile: OperatorProfile) => void;
+  
   // Screening
-  checkBlacklist: (nrc: string, passbook?: string, name?: string) => BlacklistEntry | null;
+  checkBlacklist: (nrc: string, passport?: string, name?: string) => BlacklistEntry | null;
   
   // Outward & Inward Transactions
   createOutwardRemittance: (txData: Partial<RemittanceTransaction>) => Promise<RemittanceTransaction>;
@@ -41,6 +46,7 @@ interface RemittanceContextType {
   rejectTransaction: (id: string, reason: string) => Promise<boolean>;
   holdTransaction: (id: string, note: string) => Promise<boolean>;
   payoutInwardTransaction: (id: string, note?: string) => Promise<boolean>;
+  updateTransaction: (updatedTx: RemittanceTransaction, editReason?: string) => Promise<boolean>;
   lookupTransactionByMtcn: (mtcn: string) => RemittanceTransaction | undefined;
   
   // Master Setups (Add, Edit, Delete)
@@ -135,6 +141,9 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.branches && parsed.users && parsed.transactions) {
+          if (!parsed.operatorProfile) {
+            parsed.operatorProfile = defaultOperatorProfile;
+          }
           // If env vars are provided and local config is empty, fill them in
           if (envUrl && !parsed.supabaseConfig?.url) {
             parsed.supabaseConfig = {
@@ -248,17 +257,17 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [currentUser]);
 
   // Blacklist screening
-  const checkBlacklist = useCallback((nrc: string, passbook?: string, name?: string): BlacklistEntry | null => {
-    if (!nrc && !passbook && !name) return null;
+  const checkBlacklist = useCallback((nrc: string, passport?: string, name?: string): BlacklistEntry | null => {
+    if (!nrc && !passport && !name) return null;
     const cleanNrc = (nrc || '').trim().toLowerCase().replace(/\s+/g, '');
-    const cleanPass = (passbook || '').trim().toLowerCase().replace(/\s+/g, '');
+    const cleanPass = (passport || '').trim().toLowerCase().replace(/\s+/g, '');
     const cleanName = (name || '').trim().toLowerCase();
 
     for (const item of db.blacklist) {
       if (!item.active) continue;
       
       const itemNrc = (item.nrcNumber || '').trim().toLowerCase().replace(/\s+/g, '');
-      const itemPass = (item.passbookNumber || '').trim().toLowerCase().replace(/\s+/g, '');
+      const itemPass = (item.passportNumber || item.passbookNumber || '').trim().toLowerCase().replace(/\s+/g, '');
       const itemEn = (item.fullNameEn || '').trim().toLowerCase();
       const itemMm = (item.fullNameMm || '').trim().toLowerCase();
 
@@ -276,7 +285,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }
       }
 
-      // Passbook screening: require at least 6 characters
+      // Passport / Passbook screening: require at least 6 characters
       if (cleanPass && itemPass && cleanPass.length >= 6) {
         const normCleanPass = cleanPass.replace(/[^a-z0-9]/g, '');
         const normItemPass = itemPass.replace(/[^a-z0-9]/g, '');
@@ -350,8 +359,10 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const mtcn = generateMtcn();
 
     // Check blacklist on sender and receiver
-    const senderBlacklist = checkBlacklist(txData.senderNrc || '', txData.senderPassbook, txData.senderName);
-    const receiverBlacklist = checkBlacklist(txData.receiverNrc || '', txData.receiverPassbook, txData.receiverName);
+    const senderPassportVal = txData.senderPassport || txData.senderPassbook || '';
+    const receiverPassportVal = txData.receiverPassport || txData.receiverPassbook || '';
+    const senderBlacklist = checkBlacklist(txData.senderNrc || '', senderPassportVal, txData.senderName);
+    const receiverBlacklist = checkBlacklist(txData.receiverNrc || '', receiverPassportVal, txData.receiverName);
     
     let blacklistAlert: string | undefined = undefined;
     if (senderBlacklist) {
@@ -371,8 +382,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       senderName: txData.senderName || '',
       senderNameMm: txData.senderNameMm || '',
       senderNrc: txData.senderNrc || '',
-      senderPassbook: txData.senderPassbook || '',
-      senderPassport: txData.senderPassport || '',
+      senderPassport: senderPassportVal,
+      senderPassbook: senderPassportVal,
       senderPhone: txData.senderPhone || '',
       senderAddress: txData.senderAddress || '',
       senderCountryCode: txData.senderCountryCode || 'MM',
@@ -380,8 +391,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       receiverName: txData.receiverName || '',
       receiverNameMm: txData.receiverNameMm || '',
       receiverNrc: txData.receiverNrc || '',
-      receiverPassbook: txData.receiverPassbook || '',
-      receiverPassport: txData.receiverPassport || '',
+      receiverPassport: receiverPassportVal,
+      receiverPassbook: receiverPassportVal,
       receiverPhone: txData.receiverPhone || '',
       receiverAddress: txData.receiverAddress || '',
       receiverCountryCode: txData.receiverCountryCode || 'TH',
@@ -438,8 +449,10 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const txNo = generateTxNo('INWARD');
     const mtcn = txData.mtcn || generateMtcn();
 
-    const receiverBlacklist = checkBlacklist(txData.receiverNrc || '', txData.receiverPassbook, txData.receiverName);
-    const senderBlacklist = checkBlacklist(txData.senderNrc || '', txData.senderPassbook, txData.senderName);
+    const senderPassportVal = txData.senderPassport || txData.senderPassbook || '';
+    const receiverPassportVal = txData.receiverPassport || txData.receiverPassbook || '';
+    const receiverBlacklist = checkBlacklist(txData.receiverNrc || '', receiverPassportVal, txData.receiverName);
+    const senderBlacklist = checkBlacklist(txData.senderNrc || '', senderPassportVal, txData.senderName);
 
     let blacklistAlert: string | undefined = undefined;
     if (receiverBlacklist) {
@@ -447,6 +460,11 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } else if (senderBlacklist) {
       blacklistAlert = `SENDER_MATCH: ${senderBlacklist.fullNameEn} (${senderBlacklist.reason})`;
     }
+
+    const senderPassportAttach = txData.senderPassportAttachment || txData.senderPassbookAttachment || '';
+    const senderPassportAttachName = txData.senderPassportAttachmentName || txData.senderPassbookAttachmentName || '';
+    const senderPassportAttachType = txData.senderPassportAttachmentType || txData.senderPassbookAttachmentType || '';
+    const senderPassportAttachSize = txData.senderPassportAttachmentSize || txData.senderPassbookAttachmentSize || '';
 
     const newTx: RemittanceTransaction = {
       id: `TX-${Date.now()}`,
@@ -459,8 +477,16 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       senderName: txData.senderName || '',
       senderNameMm: txData.senderNameMm || '',
       senderNrc: txData.senderNrc || '',
-      senderPassbook: txData.senderPassbook || '',
-      senderPassport: txData.senderPassport || '',
+      senderPassport: senderPassportVal,
+      senderPassbook: senderPassportVal,
+      senderPassportAttachment: senderPassportAttach,
+      senderPassportAttachmentName: senderPassportAttachName,
+      senderPassportAttachmentType: senderPassportAttachType,
+      senderPassportAttachmentSize: senderPassportAttachSize,
+      senderPassbookAttachment: senderPassportAttach,
+      senderPassbookAttachmentName: senderPassportAttachName,
+      senderPassbookAttachmentType: senderPassportAttachType,
+      senderPassbookAttachmentSize: senderPassportAttachSize,
       senderPhone: txData.senderPhone || '',
       senderAddress: txData.senderAddress || '',
       senderCountryCode: txData.senderCountryCode || 'TH',
@@ -468,8 +494,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       receiverName: txData.receiverName || '',
       receiverNameMm: txData.receiverNameMm || '',
       receiverNrc: txData.receiverNrc || '',
-      receiverPassbook: txData.receiverPassbook || '',
-      receiverPassport: txData.receiverPassport || '',
+      receiverPassport: receiverPassportVal,
+      receiverPassbook: receiverPassportVal,
       receiverPhone: txData.receiverPhone || '',
       receiverAddress: txData.receiverAddress || '',
       receiverCountryCode: txData.receiverCountryCode || 'MM',
@@ -517,6 +543,73 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       newTx.transactionNo,
       `Created Inward Remittance Claim ${newTx.transactionNo} (MTCN: ${newTx.mtcn}) for ${newTx.receiverName} (${newTx.receiveAmount} MMK payout)`
     );
+
+    // If Supabase client is connected, sync this inward transaction to Supabase table
+    try {
+      const client = getSupabaseClient(db.supabaseConfig);
+      if (client) {
+        client.from('transactions').upsert([{
+          id: newTx.id,
+          transaction_no: newTx.transactionNo,
+          mtcn: newTx.mtcn,
+          type: newTx.type,
+          scope: newTx.scope,
+          status: newTx.status,
+          sender_name: newTx.senderName,
+          sender_name_mm: newTx.senderNameMm,
+          sender_nrc: newTx.senderNrc,
+          sender_passport: newTx.senderPassport || newTx.senderPassbook,
+          sender_passport_attachment: newTx.senderPassportAttachment || newTx.senderPassbookAttachment,
+          sender_passport_attachment_name: newTx.senderPassportAttachmentName || newTx.senderPassbookAttachmentName,
+          sender_passport_attachment_type: newTx.senderPassportAttachmentType || newTx.senderPassbookAttachmentType,
+          sender_passport_attachment_size: newTx.senderPassportAttachmentSize || newTx.senderPassbookAttachmentSize,
+          sender_passbook: newTx.senderPassport || newTx.senderPassbook,
+          sender_passbook_attachment: newTx.senderPassportAttachment || newTx.senderPassbookAttachment,
+          sender_passbook_attachment_name: newTx.senderPassportAttachmentName || newTx.senderPassbookAttachmentName,
+          sender_passbook_attachment_type: newTx.senderPassportAttachmentType || newTx.senderPassbookAttachmentType,
+          sender_passbook_attachment_size: newTx.senderPassportAttachmentSize || newTx.senderPassbookAttachmentSize,
+          sender_phone: newTx.senderPhone,
+          sender_address: newTx.senderAddress,
+          sender_country_code: newTx.senderCountryCode,
+          receiver_name: newTx.receiverName,
+          receiver_name_mm: newTx.receiverNameMm,
+          receiver_nrc: newTx.receiverNrc,
+          receiver_passport: newTx.receiverPassport || newTx.receiverPassbook,
+          receiver_passbook: newTx.receiverPassport || newTx.receiverPassbook,
+          receiver_phone: newTx.receiverPhone,
+          receiver_address: newTx.receiverAddress,
+          receiver_country_code: newTx.receiverCountryCode,
+          source_currency: newTx.sourceCurrency,
+          target_currency: newTx.targetCurrency,
+          send_amount: newTx.sendAmount,
+          exchange_rate: newTx.exchangeRate,
+          receive_amount: newTx.receiveAmount,
+          service_fee: newTx.serviceFee,
+          commission_fee: newTx.commissionFee,
+          tax_amount: newTx.taxAmount,
+          total_payable_amount: newTx.totalPayableAmount,
+          payout_method: newTx.payoutMethod,
+          payout_bank_name: newTx.payoutBankName,
+          payout_account_number: newTx.payoutAccountNumber,
+          sending_branch_id: newTx.sendingBranchId,
+          payout_branch_id: newTx.payoutBranchId,
+          partner_company_id: newTx.partnerCompanyId,
+          purpose_id: newTx.purposeId,
+          purpose_name: newTx.purposeName,
+          sender_note: newTx.senderNote,
+          proof_document_name: newTx.proofDocumentName,
+          blacklist_checked: newTx.blacklistChecked,
+          blacklist_alert: newTx.blacklistAlert,
+          creator_user_id: newTx.creatorUserId,
+          creator_name: newTx.creatorName,
+          created_date: newTx.createdDate
+        }], { onConflict: 'id' }).then(({ error }) => {
+          if (error) console.warn('Supabase auto-sync inward transaction error:', error.message);
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
 
     return newTx;
   };
@@ -636,6 +729,87 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return true;
   };
 
+  // 7. Update Transaction (e.g. Inward revision by Checker/Maker)
+  const updateTransaction = async (updatedTx: RemittanceTransaction, editReason?: string): Promise<boolean> => {
+    setDb(prev => ({
+      ...prev,
+      transactions: prev.transactions.map(t => t.id === updatedTx.id ? updatedTx : t)
+    }));
+
+    logActionDirect(
+      'UPDATE',
+      updatedTx.type === 'INWARD' ? 'INWARD' : 'OUTWARD',
+      updatedTx.transactionNo,
+      `Transaction ${updatedTx.transactionNo} (MTCN: ${updatedTx.mtcn}) edited by ${currentUser.fullName}${editReason ? `. Reason: ${editReason}` : ''}`
+    );
+
+    if (db.supabaseConfig.connected && db.supabaseConfig.autoSync) {
+      const client = getSupabaseClient(db.supabaseConfig);
+      if (client) {
+        client.from('transactions').upsert([{
+          id: updatedTx.id,
+          transaction_no: updatedTx.transactionNo,
+          mtcn: updatedTx.mtcn,
+          type: updatedTx.type,
+          scope: updatedTx.scope,
+          status: updatedTx.status,
+          sender_name: updatedTx.senderName,
+          sender_name_mm: updatedTx.senderNameMm,
+          sender_nrc: updatedTx.senderNrc,
+          sender_passport: updatedTx.senderPassport || updatedTx.senderPassbook,
+          sender_passport_attachment: updatedTx.senderPassportAttachment || updatedTx.senderPassbookAttachment,
+          sender_passport_attachment_name: updatedTx.senderPassportAttachmentName || updatedTx.senderPassbookAttachmentName,
+          sender_passport_attachment_type: updatedTx.senderPassportAttachmentType || updatedTx.senderPassbookAttachmentType,
+          sender_passport_attachment_size: updatedTx.senderPassportAttachmentSize || updatedTx.senderPassbookAttachmentSize,
+          sender_passbook: updatedTx.senderPassport || updatedTx.senderPassbook,
+          sender_passbook_attachment: updatedTx.senderPassportAttachment || updatedTx.senderPassbookAttachment,
+          sender_passbook_attachment_name: updatedTx.senderPassportAttachmentName || updatedTx.senderPassbookAttachmentName,
+          sender_passbook_attachment_type: updatedTx.senderPassportAttachmentType || updatedTx.senderPassbookAttachmentType,
+          sender_passbook_attachment_size: updatedTx.senderPassportAttachmentSize || updatedTx.senderPassbookAttachmentSize,
+          sender_phone: updatedTx.senderPhone,
+          sender_address: updatedTx.senderAddress,
+          sender_country_code: updatedTx.senderCountryCode,
+          receiver_name: updatedTx.receiverName,
+          receiver_name_mm: updatedTx.receiverNameMm,
+          receiver_nrc: updatedTx.receiverNrc,
+          receiver_passport: updatedTx.receiverPassport || updatedTx.receiverPassbook,
+          receiver_passbook: updatedTx.receiverPassport || updatedTx.receiverPassbook,
+          receiver_phone: updatedTx.receiverPhone,
+          receiver_address: updatedTx.receiverAddress,
+          receiver_country_code: updatedTx.receiverCountryCode,
+          source_currency: updatedTx.sourceCurrency,
+          target_currency: updatedTx.targetCurrency,
+          send_amount: updatedTx.sendAmount,
+          exchange_rate: updatedTx.exchangeRate,
+          receive_amount: updatedTx.receiveAmount,
+          service_fee: updatedTx.serviceFee,
+          commission_fee: updatedTx.commissionFee,
+          tax_amount: updatedTx.taxAmount,
+          total_payable_amount: updatedTx.totalPayableAmount,
+          payout_method: updatedTx.payoutMethod,
+          payout_bank_name: updatedTx.payoutBankName,
+          payout_account_number: updatedTx.payoutAccountNumber,
+          sending_branch_id: updatedTx.sendingBranchId,
+          payout_branch_id: updatedTx.payoutBranchId,
+          partner_company_id: updatedTx.partnerCompanyId,
+          purpose_id: updatedTx.purposeId,
+          purpose_name: updatedTx.purposeName,
+          sender_note: updatedTx.senderNote,
+          proof_document_name: updatedTx.proofDocumentName,
+          blacklist_checked: updatedTx.blacklistChecked,
+          blacklist_alert: updatedTx.blacklistAlert,
+          creator_user_id: updatedTx.creatorUserId,
+          creator_name: updatedTx.creatorName,
+          created_date: updatedTx.createdDate
+        }], { onConflict: 'id' }).then(({ error }) => {
+          if (error) console.warn('Supabase auto-sync update transaction error:', error.message);
+        });
+      }
+    }
+
+    return true;
+  };
+
   // Lookup MTCN
   const lookupTransactionByMtcn = useCallback((mtcn: string): RemittanceTransaction | undefined => {
     const clean = mtcn.trim();
@@ -687,6 +861,20 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (item) {
       logActionDirect('DELETE', 'USER', item.username, `Deleted user account ${item.username} (${item.fullName})`);
     }
+  };
+
+  // Operator Company Profile
+  const updateOperatorProfile = (profile: OperatorProfile) => {
+    setDb(prev => ({
+      ...prev,
+      operatorProfile: profile
+    }));
+    logActionDirect(
+      'UPDATE',
+      'SYSTEM',
+      'OPERATOR_PROFILE',
+      `Updated Remittance Operating Company Profile: ${profile.companyNameEn} (${profile.companyNameMm}) • Phone: ${profile.phone} • Address: ${profile.addressEn}`
+    );
   };
 
   // 3. Company
@@ -781,7 +969,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  // 7. Blacklist (with Myanmar NRC & Passbook note text box)
+  // 7. Blacklist (with Myanmar NRC & Passport note text box)
   const saveBlacklist = (entry: BlacklistEntry) => {
     const isNew = !db.blacklist.some(b => b.id === entry.id);
     setDb(prev => ({
@@ -792,7 +980,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       isNew ? 'CREATE' : 'UPDATE',
       'BLACKLIST',
       entry.nrcNumber || entry.id,
-      `${isNew ? 'Added to Blacklist' : 'Updated Blacklist target'}: ${entry.fullNameEn} (NRC: ${entry.nrcNumber}, Passbook: ${entry.passbookNumber}, Risk: ${entry.riskLevel}). Note: ${entry.note}`
+      `${isNew ? 'Added to Blacklist' : 'Updated Blacklist target'}: ${entry.fullNameEn} (NRC: ${entry.nrcNumber}, Passport: ${entry.passportNumber || entry.passbookNumber}, Risk: ${entry.riskLevel}). Note: ${entry.note}`
     );
   };
 
@@ -1082,8 +1270,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           full_name_en: bl.fullNameEn,
           full_name_mm: bl.fullNameMm,
           nrc_number: bl.nrcNumber,
-          passbook_number: bl.passbookNumber,
-          passport_number: bl.passportNumber,
+          passport_number: bl.passportNumber || bl.passbookNumber || '',
+          passbook_number: bl.passportNumber || bl.passbookNumber || '',
           reason: bl.reason,
           note: bl.note,
           risk_level: bl.riskLevel,
@@ -1124,8 +1312,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           full_name_en: c.fullNameEn,
           full_name_mm: c.fullNameMm,
           nrc_number: c.nrcNumber,
-          passbook_number: c.passbookNumber,
-          passport_number: c.passportNumber,
+          passport_number: c.passportNumber || c.passbookNumber || '',
+          passbook_number: c.passportNumber || c.passbookNumber || '',
           phone: c.phone,
           address: c.address,
           customer_type: c.customerType,
@@ -1154,16 +1342,24 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           sender_name: t.senderName,
           sender_name_mm: t.senderNameMm,
           sender_nrc: t.senderNrc,
-          sender_passbook: t.senderPassbook,
-          sender_passport: t.senderPassport,
+          sender_passport: t.senderPassport || t.senderPassbook,
+          sender_passport_attachment: t.senderPassportAttachment || t.senderPassbookAttachment,
+          sender_passport_attachment_name: t.senderPassportAttachmentName || t.senderPassbookAttachmentName,
+          sender_passport_attachment_type: t.senderPassportAttachmentType || t.senderPassbookAttachmentType,
+          sender_passport_attachment_size: t.senderPassportAttachmentSize || t.senderPassbookAttachmentSize,
+          sender_passbook: t.senderPassport || t.senderPassbook,
+          sender_passbook_attachment: t.senderPassportAttachment || t.senderPassbookAttachment,
+          sender_passbook_attachment_name: t.senderPassportAttachmentName || t.senderPassbookAttachmentName,
+          sender_passbook_attachment_type: t.senderPassportAttachmentType || t.senderPassbookAttachmentType,
+          sender_passbook_attachment_size: t.senderPassportAttachmentSize || t.senderPassbookAttachmentSize,
           sender_phone: t.senderPhone,
           sender_address: t.senderAddress,
           sender_country_code: t.senderCountryCode,
           receiver_name: t.receiverName,
           receiver_name_mm: t.receiverNameMm,
           receiver_nrc: t.receiverNrc,
-          receiver_passbook: t.receiverPassbook,
-          receiver_passport: t.receiverPassport,
+          receiver_passport: t.receiverPassport || t.receiverPassbook,
+          receiver_passbook: t.receiverPassport || t.receiverPassbook,
           receiver_phone: t.receiverPhone,
           receiver_address: t.receiverAddress,
           receiver_country_code: t.receiverCountryCode,
@@ -1326,16 +1522,24 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             senderName: t.sender_name,
             senderNameMm: t.sender_name_mm,
             senderNrc: t.sender_nrc,
-            senderPassbook: t.sender_passbook,
-            senderPassport: t.sender_passport,
+            senderPassport: t.sender_passport || t.sender_passbook,
+            senderPassportAttachment: t.sender_passport_attachment || t.sender_passbook_attachment,
+            senderPassportAttachmentName: t.sender_passport_attachment_name || t.sender_passbook_attachment_name,
+            senderPassportAttachmentType: t.sender_passport_attachment_type || t.sender_passbook_attachment_type,
+            senderPassportAttachmentSize: t.sender_passport_attachment_size || t.sender_passbook_attachment_size,
+            senderPassbook: t.sender_passport || t.sender_passbook,
+            senderPassbookAttachment: t.sender_passport_attachment || t.sender_passbook_attachment,
+            senderPassbookAttachmentName: t.sender_passport_attachment_name || t.sender_passbook_attachment_name,
+            senderPassbookAttachmentType: t.sender_passport_attachment_type || t.sender_passbook_attachment_type,
+            senderPassbookAttachmentSize: t.sender_passport_attachment_size || t.sender_passbook_attachment_size,
             senderPhone: t.sender_phone,
             senderAddress: t.sender_address,
             senderCountryCode: t.sender_country_code,
             receiverName: t.receiver_name,
             receiverNameMm: t.receiver_name_mm,
             receiverNrc: t.receiver_nrc,
-            receiverPassbook: t.receiver_passbook,
-            receiverPassport: t.receiver_passport,
+            receiverPassport: t.receiver_passport || t.receiver_passbook,
+            receiverPassbook: t.receiver_passport || t.receiver_passbook,
             receiverPhone: t.receiver_phone,
             receiverAddress: t.receiver_address,
             receiverCountryCode: t.receiver_country_code,
@@ -1675,7 +1879,10 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         rejectTransaction,
         holdTransaction,
         payoutInwardTransaction,
+        updateTransaction,
         lookupTransactionByMtcn,
+        operatorProfile: db.operatorProfile || defaultOperatorProfile,
+        updateOperatorProfile,
         saveBranch,
         deleteBranch,
         saveUser,

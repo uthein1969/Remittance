@@ -42,6 +42,8 @@ const MainLayout: React.FC = () => {
       <Header 
         onOpenBackup={() => handleNavigate('backup_restore')}
         onOpenSupabase={() => handleNavigate('backup_restore')}
+        onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        onNavigateCompanySetting={() => handleNavigate('admin_setup', 'operator_profile')}
       />
 
       {/* Main App Body */}

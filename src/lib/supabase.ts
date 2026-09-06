@@ -173,14 +173,14 @@ CREATE TABLE IF NOT EXISTS public.exchange_rates (
     note TEXT
 );
 
--- 7. Blacklist & Compliance Table (Myanmar NRC & Passbook Screening)
+-- 7. Blacklist & Compliance Table (Myanmar NRC & Passport Screening)
 CREATE TABLE IF NOT EXISTS public.blacklist (
     id TEXT PRIMARY KEY,
     full_name_en TEXT NOT NULL,
     full_name_mm TEXT NOT NULL,
     nrc_number TEXT NOT NULL,
-    passbook_number TEXT NOT NULL,
-    passport_number TEXT,
+    passport_number TEXT NOT NULL,
+    passbook_number TEXT,
     reason TEXT NOT NULL,
     note TEXT NOT NULL,
     risk_level TEXT NOT NULL CHECK (risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'WATCHLIST')),
@@ -231,8 +231,16 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     sender_name TEXT NOT NULL,
     sender_name_mm TEXT,
     sender_nrc TEXT NOT NULL,
-    sender_passbook TEXT,
     sender_passport TEXT,
+    sender_passport_attachment TEXT,
+    sender_passport_attachment_name TEXT,
+    sender_passport_attachment_type TEXT,
+    sender_passport_attachment_size TEXT,
+    sender_passbook TEXT,
+    sender_passbook_attachment TEXT,
+    sender_passbook_attachment_name TEXT,
+    sender_passbook_attachment_type TEXT,
+    sender_passbook_attachment_size TEXT,
     sender_phone TEXT NOT NULL,
     sender_address TEXT,
     sender_country_code TEXT NOT NULL,
@@ -240,8 +248,8 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     receiver_name TEXT NOT NULL,
     receiver_name_mm TEXT,
     receiver_nrc TEXT NOT NULL,
-    receiver_passbook TEXT,
     receiver_passport TEXT,
+    receiver_passbook TEXT,
     receiver_phone TEXT NOT NULL,
     receiver_address TEXT,
     receiver_country_code TEXT NOT NULL,
@@ -319,6 +327,17 @@ ALTER TABLE public.purposes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
+
+-- Ensure sender passport attachment columns exist if transactions table was already created
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment_name TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment_type TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment_size TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_name TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_type TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_size TEXT;
 `;
 
 export const SUPABASE_DISABLE_RLS_SQL = `-- Run this in Supabase SQL Editor if you encounter "permission denied" or RLS errors:
@@ -332,6 +351,67 @@ ALTER TABLE public.blacklist DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purposes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;`;
+ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
+
+-- Ensure sender passport attachment columns exist
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment_name TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment_type TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment_size TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_name TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_type TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_size TEXT;`;
 
 export const SUPABASE_SCHEMA_SQL = SUPABASE_SQL_DDL;
+
+export async function uploadPassportToSupabase(
+  config: SupabaseConfig,
+  file: File,
+  prefix: string = 'inward_passports'
+): Promise<{ success: boolean; url?: string; storagePath?: string; error?: string }> {
+  const client = getSupabaseClient(config);
+  if (!client) {
+    return { success: false, error: 'Supabase client not connected' };
+  }
+
+  try {
+    // Attempt passports bucket first, then passbooks as fallback
+    const bucketsToTry = ['passports', 'passbooks'];
+    const timestamp = Date.now();
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `${prefix}/${timestamp}_${sanitizedName}`;
+
+    let lastError: string = '';
+    for (const bucket of bucketsToTry) {
+      const { data, error } = await client.storage
+        .from(bucket)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true,
+        });
+
+      if (!error && data) {
+        const { data: publicUrlData } = client.storage
+          .from(bucket)
+          .getPublicUrl(data.path);
+
+        return {
+          success: true,
+          url: publicUrlData.publicUrl,
+          storagePath: data.path,
+        };
+      } else if (error) {
+        lastError = error.message;
+      }
+    }
+
+    return { success: false, error: lastError || 'Storage upload failed' };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Storage upload failed' };
+  }
+}
+
+// Backward compatibility alias
+export const uploadPassbookToSupabase = uploadPassportToSupabase;

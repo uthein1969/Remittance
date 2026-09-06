@@ -16,11 +16,15 @@ import {
   AlertTriangle,
   ArrowRight,
   RefreshCw,
-  ChevronRight
+  ChevronRight,
+  MapPin,
+  Phone,
+  Edit3
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { RemittanceTransaction } from '../../types';
 import { VoucherModal } from '../VoucherModal';
+import { CompanyProfileModal } from '../CompanyProfileModal';
 import { NavigationTab, SetupSubTab } from '../Sidebar';
 
 interface DashboardViewProps {
@@ -28,9 +32,10 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
-  const { db, language, t, approveTransaction, currentUser } = useRemittance();
+  const { db, language, t, approveTransaction, currentUser, operatorProfile } = useRemittance();
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<RemittanceTransaction | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [showCompanyModal, setShowCompanyModal] = useState(false);
 
   // Calculations
   const outwardTxs = db.transactions.filter(t => t.type === 'OUTWARD');
@@ -101,6 +106,73 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
             <span>{language === 'my' ? 'Blacklist စစ်ဆေး' : 'Blacklist'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* Official Orange Rectangular Box: Remittance Software Operating Company (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) */}
+      <div className="border-2 border-orange-500 bg-orange-50/60 rounded-xl p-4 shadow-xs relative">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-orange-200/80 pb-3">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+              <Building2 className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider bg-orange-600 text-white px-2 py-0.5 rounded">
+                  {language === 'my' ? 'Remittance Software အသုံးပြုသည့် ကုမ္ပဏီ (Orange Box)' : 'REMITTANCE OPERATING INSTITUTION'}
+                </span>
+                {operatorProfile.licenseNo && (
+                  <span className="text-[10px] font-mono font-bold text-orange-950 bg-orange-100 border border-orange-300 px-1.5 py-0.5 rounded">
+                    {operatorProfile.licenseNo}
+                  </span>
+                )}
+              </div>
+              <h3 className="text-base sm:text-lg font-black text-orange-950 mt-0.5 tracking-tight leading-snug">
+                {language === 'my' 
+                  ? `${operatorProfile.companyNameMm} (${operatorProfile.companyNameEn})`
+                  : operatorProfile.companyNameEn}
+              </h3>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('admin_setup', 'operator_profile')}
+            className="self-start md:self-center flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-orange-100 text-orange-700 border border-orange-300 font-bold text-xs transition-colors cursor-pointer shadow-2xs active:scale-95"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-orange-600" />
+            <span>{language === 'my' ? 'ကုမ္ပဏီ အချက်အလက် ပြင်ဆင်ရန် (Setting)' : 'Edit Company Info (Setting)'}</span>
+          </button>
+        </div>
+
+        {/* Address & Phone details inside the Orange Rectangular Box */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 text-xs text-slate-800">
+          <div className="flex items-start space-x-2.5">
+            <div className="p-1 rounded bg-orange-100 text-orange-700 mt-0.5 shrink-0">
+              <MapPin className="w-3.5 h-3.5" />
+            </div>
+            <div className="leading-snug">
+              <span className="font-bold text-orange-950 block">{language === 'my' ? 'ရုံးချုပ် လိပ်စာ' : 'Head Office Address'}:</span>
+              <span className="text-slate-700 font-medium">
+                {language === 'my' ? operatorProfile.addressMm : operatorProfile.addressEn}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-start space-x-2.5">
+            <div className="p-1 rounded bg-orange-100 text-orange-700 mt-0.5 shrink-0">
+              <Phone className="w-3.5 h-3.5" />
+            </div>
+            <div className="leading-snug">
+              <span className="font-bold text-orange-950 block">{language === 'my' ? 'ဆက်သွယ်ရန် ဖုန်းနံပါတ်' : 'Contact Phone / Hotline'}:</span>
+              <span className="font-mono font-bold text-slate-900">{operatorProfile.phone}</span>
+              {operatorProfile.hotline && (
+                <span className="text-slate-600 ml-2">
+                  (Hotline: <strong className="font-mono text-orange-700">{operatorProfile.hotline}</strong>)
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -211,7 +283,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             </span>
           </div>
           <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span className="text-rose-700 font-medium">NRC & Passbook</span>
+            <span className="text-rose-700 font-medium">NRC & Passport</span>
             <button 
               onClick={() => onNavigate('admin_setup', 'blacklist')}
               className="text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-0.5"
@@ -404,7 +476,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                     </div>
                     <button
                       onClick={() => setSelectedVoucherTx(tx)}
-                      className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 border border-slate-200"
+                      className="p-1.5 rounded-lg hover:bg-orange-50 text-slate-500 hover:text-orange-600 border border-slate-200 hover:border-orange-300 transition-colors cursor-pointer"
                       title={t.printVoucher}
                     >
                       <Printer className="w-3.5 h-3.5" />
@@ -442,7 +514,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                     </span>
                   </div>
                   <div className="text-[10px] font-mono text-slate-500 mt-0.5">
-                    NRC: {item.nrcNumber || 'N/A'} • PB: {item.passbookNumber || 'N/A'}
+                    NRC: {item.nrcNumber || 'N/A'} • Passport: {item.passportNumber || item.passbookNumber || 'N/A'}
                   </div>
                   <p className="text-[10px] text-rose-900 mt-0.5 line-clamp-1 italic">
                     {item.reason}
@@ -459,6 +531,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         isOpen={!!selectedVoucherTx}
         transaction={selectedVoucherTx}
         onClose={() => setSelectedVoucherTx(null)}
+      />
+
+      {/* Edit Operating Company Profile Modal */}
+      <CompanyProfileModal
+        isOpen={showCompanyModal}
+        onClose={() => setShowCompanyModal(false)}
       />
     </div>
   );

@@ -10,8 +10,22 @@ import {
   RemittancePurpose, 
   Customer, 
   RemittanceTransaction,
-  AuditRecord
+  AuditRecord,
+  OperatorProfile
 } from '../types';
+
+export const defaultOperatorProfile: OperatorProfile = {
+  companyNameEn: 'Kanbawza Remittance Services Co., Ltd. (KBZ Remittance)',
+  companyNameMm: 'ကမ္ဘောဇ ငွေလွှဲလုပ်ငန်း ဝန်ဆောင်မှု ကုမ္ပဏီ လီမိတက်',
+  licenseNo: 'CBM-NB-001/2021 (မြန်မာနိုင်ငံတော်ဗဟိုဘဏ် ငွေလွှဲလိုင်စင်)',
+  phone: '01-2307000, 01-379841',
+  hotline: '09-790123456, 09-977123456',
+  addressEn: 'No. 124, Merchant Road, Kyauktada Township, Yangon, Myanmar',
+  addressMm: 'အမှတ် (၁၂၄)၊ ကုန်သည်လမ်း၊ ကျောက်တံတားမြို့နယ်၊ ရန်ကုန်မြို့။',
+  email: 'remittance@kbzbank.com',
+  website: 'www.kbzbank.com',
+  taxId: 'TX-CBM-889021',
+};
 
 export const initialBranches: Branch[] = [
   {
@@ -762,6 +776,7 @@ export const initialCustomers: Customer[] = [
     fullNameMm: 'ဒေါ်သင်းသင်းအေး',
     nrcNumber: '7/PATANA(N)102948',
     passbookNumber: '401-291-0491823',
+    passportNumber: 'MN-102948',
     phone: '09-250194820',
     address: 'Bogyoke Road, Pyay, Bago Region',
     customerType: 'BOTH',
@@ -785,6 +800,7 @@ export const initialTransactions: RemittanceTransaction[] = [
     senderName: 'U Zaw Win Htet',
     senderNameMm: 'ဦးဇော်ဝင်းထက်',
     senderNrc: '12/BAHANA(N)184920',
+    senderPassport: 'MA-918234',
     senderPassbook: '001-209-1823901',
     senderPhone: '09-420019283',
     senderAddress: 'No. 45, Kabar Aye Pagoda Road, Bahan, Yangon',
@@ -838,6 +854,7 @@ export const initialTransactions: RemittanceTransaction[] = [
     senderName: 'Daw Hnin Wai Phyo',
     senderNameMm: 'ဒေါ်နှင်းဝေဖြိုး',
     senderNrc: '9/MAHANA(N)291834',
+    senderPassport: 'MB-102948',
     senderPassbook: '020-192-3849102',
     senderPhone: '09-780918234',
     senderAddress: 'No. 88, 30th Street, Mandalay',
@@ -952,6 +969,7 @@ export const initialTransactions: RemittanceTransaction[] = [
     receiverName: 'Ko Aung Kyaw Moe',
     receiverNameMm: 'ကိုအောင်ကျော်မိုး',
     receiverNrc: '12/DAGANA(N)019482',
+    receiverPassport: 'ME-491820',
     receiverPassbook: '109-291-8472910',
     receiverPhone: '09-974820194',
     receiverAddress: 'Room 402, Building 8, South Dagon, Yangon',
@@ -1132,6 +1150,7 @@ export const initialAuditLogs: AuditRecord[] = [
 ];
 
 export const initialDatabase: AppDatabase = {
+  operatorProfile: defaultOperatorProfile,
   branches: initialBranches,
   users: initialUsers,
   companies: initialCompanies,

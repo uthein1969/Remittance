@@ -8,10 +8,19 @@ import {
   Building2, 
   ShieldCheck,
   ArrowRight,
-  Download
+  Download,
+  Paperclip,
+  Eye,
+  Phone,
+  MapPin,
+  Edit3,
+  ExternalLink,
+  Check
 } from 'lucide-react';
 import { RemittanceTransaction } from '../types';
 import { useRemittance } from '../lib/store';
+import { CompanyProfileModal } from './CompanyProfileModal';
+import { generateVoucherHtml, printVoucherDocument, downloadVoucherHtml } from '../utils/voucherPrint';
 
 interface VoucherModalProps {
   transaction: RemittanceTransaction | null;
@@ -20,8 +29,10 @@ interface VoucherModalProps {
 }
 
 export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen, onClose }) => {
-  const { db, language, t } = useRemittance();
+  const { db, language, t, operatorProfile } = useRemittance();
   const [copied, setCopied] = React.useState(false);
+  const [showCompanyEdit, setShowCompanyEdit] = React.useState(false);
+  const [feedbackMsg, setFeedbackMsg] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -33,10 +44,32 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !transaction) return null;
+  const branch = transaction ? (db.branches.find(b => b.id === transaction.sendingBranchId) || db.branches[0]) : db.branches[0];
+  const partner = transaction ? db.companies.find(c => c.id === transaction.partnerCompanyId) : undefined;
 
-  const branch = db.branches.find(b => b.id === transaction.sendingBranchId) || db.branches[0];
-  const partner = db.companies.find(c => c.id === transaction.partnerCompanyId);
+  // Pre-generate a standalone Blob URL for direct anchor navigation and download
+  const printableBlobUrl = React.useMemo(() => {
+    if (!transaction) return '';
+    const html = generateVoucherHtml({
+      transaction,
+      branch,
+      partner,
+      operatorProfile,
+      language,
+    });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    return URL.createObjectURL(blob);
+  }, [transaction, branch, partner, operatorProfile, language]);
+
+  React.useEffect(() => {
+    return () => {
+      if (printableBlobUrl) {
+        URL.revokeObjectURL(printableBlobUrl);
+      }
+    };
+  }, [printableBlobUrl]);
+
+  if (!isOpen || !transaction) return null;
 
   const copyMtcn = () => {
     navigator.clipboard.writeText(transaction.mtcn);
@@ -44,8 +77,50 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+
+    // 1. Try dedicated document printing (opens printable view that auto-triggers print dialog)
+    printVoucherDocument({
+      transaction,
+      branch,
+      partner,
+      operatorProfile,
+      language,
+    });
+
+    // 2. Also attempt direct window.print with try-catch
+    try {
+      if (window.self === window.top) {
+        window.print();
+      }
+    } catch (err) {
+      console.warn('Standard window.print call restricted by sandbox:', err);
+    }
+
+    setFeedbackMsg(
+      language === 'my' 
+        ? 'ပုံနှိပ်စာမျက်နှာ ဖွင့်လှစ်နေပါသည် (Opening Print Dialog)...' 
+        : 'Opening print dialog / new tab...'
+    );
+    setTimeout(() => setFeedbackMsg(null), 3500);
+  };
+
+  const handleDownload = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    downloadVoucherHtml({
+      transaction,
+      branch,
+      partner,
+      operatorProfile,
+      language,
+    });
+    setFeedbackMsg(
+      language === 'my' 
+        ? 'ပြေစာ HTML ဖိုင်ကို ဒေါင်းလုဒ်ရယူပြီးပါပြီ' 
+        : 'Voucher HTML downloaded successfully'
+    );
+    setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
   return (
@@ -80,14 +155,43 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1.5 sm:space-x-2">
+            {/* Primary Print Button */}
             <button
+              type="button"
               onClick={handlePrint}
-              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition-colors cursor-pointer"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow transition-colors cursor-pointer active:scale-95"
+              title={language === 'my' ? 'ပြေစာ ပုံနှိပ်မည် (Print)' : 'Print Voucher'}
             >
               <Printer className="w-4 h-4" />
-              <span>{language === 'my' ? 'ပြေစာ ပုံနှိပ်မည်' : 'Print Voucher'}</span>
+              <span className="hidden sm:inline">{language === 'my' ? 'ပြေစာ ပုံနှိပ်မည်' : 'Print Voucher'}</span>
+              <span className="sm:hidden">{language === 'my' ? 'ပုံနှိပ်' : 'Print'}</span>
             </button>
+
+            {/* Direct Open in New Tab Print Link */}
+            {printableBlobUrl && (
+              <a
+                href={printableBlobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden md:flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium border border-slate-700 transition-colors"
+                title={language === 'my' ? 'စာမျက်နှာသစ်ဖြင့် တိုက်ရိုက်ပုံနှိပ်ရန်' : 'Open in new tab to print'}
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-slate-300" />
+                <span>{language === 'my' ? 'စာမျက်နှာသစ်' : 'New Tab'}</span>
+              </a>
+            )}
+
+            {/* Download Voucher HTML/PDF */}
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              title={language === 'my' ? 'ပြေစာဖိုင် ဒေါင်းလုဒ်ရယူမည် (Download HTML/PDF)' : 'Download Voucher File'}
+            >
+              <Download className="w-4 h-4" />
+            </button>
+
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
@@ -98,42 +202,133 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
           </div>
         </div>
 
+        {/* Dynamic Toast / Feedback Notification */}
+        {feedbackMsg && (
+          <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-between no-print animate-in slide-in-from-top-2 duration-150">
+            <div className="flex items-center space-x-2">
+              <Check className="w-4 h-4" />
+              <span>{feedbackMsg}</span>
+            </div>
+            {printableBlobUrl && (
+              <a 
+                href={printableBlobUrl} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="underline hover:text-emerald-100 font-semibold ml-3"
+              >
+                {language === 'my' ? 'စာမျက်နှာသစ်သို့ နှိပ်၍ဖွင့်ရန် ↗' : 'Click to open tab ↗'}
+              </a>
+            )}
+          </div>
+        )}
+
         {/* Printable Voucher Paper - Scrollable body with smooth up/down scrolling */}
         <div 
           className="p-6 sm:p-8 space-y-6 print:p-4 overflow-y-auto flex-1 overscroll-contain" 
           id="printable-voucher"
         >
-          {/* Header & Logo */}
-          <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
+          {/* Voucher Title & Reference Header */}
+          <div className="border-b border-slate-200 pb-3 flex items-start justify-between">
             <div>
               <div className="flex items-center space-x-2">
                 <div className="w-8 h-8 rounded-lg bg-slate-900 text-emerald-400 flex items-center justify-center font-black text-sm">
                   RMS
                 </div>
                 <div>
-                  <h2 className="text-xl font-black tracking-tight text-slate-900 uppercase">
+                  <h2 className="text-base font-black tracking-tight text-slate-900 uppercase">
                     Remittance Management System
                   </h2>
-                  <p className="text-xs font-semibold text-slate-600">
-                    {language === 'my' ? 'ပြည်တွင်း ပြည်ပ ငွေလွှဲလုပ်ငန်း ဝန်ဆောင်မှု' : 'Domestic & International Money Transfer Services'}
+                  <p className="text-[11px] font-semibold text-slate-500">
+                    {language === 'my' ? 'ပြည်တွင်း ပြည်ပ ငွေလွှဲလုပ်ငန်း စနစ်' : 'Domestic & International Remittance System'}
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-slate-500 mt-2">
-                {language === 'my' ? `${branch.nameMm} (${branch.nameEn})` : branch.nameEn} • {branch.phone} • {branch.address}
-              </p>
             </div>
             <div className="text-right">
-              <div className="inline-block px-3 py-1 bg-slate-100 rounded-lg border border-slate-300 text-xs font-bold text-slate-800">
+              <div className="inline-block px-3 py-1 bg-slate-900 rounded-lg text-xs font-bold text-emerald-400 shadow-2xs">
                 {transaction.type === 'OUTWARD' 
                   ? (language === 'my' ? 'ငွေလွှဲပို့ ပြေစာ (OUTWARD)' : 'OUTWARD REMITTANCE SLIP') 
                   : (language === 'my' ? 'ငွေလွှဲထုတ် ပြေစာ (INWARD)' : 'INWARD PAYOUT VOUCHER')}
               </div>
-              <div className="text-xs text-slate-500 mt-1">
+              <div className="text-[11px] text-slate-500 mt-1">
                 {language === 'my' ? 'နေ့စွဲ' : 'Date'}: {new Date(transaction.createdDate).toLocaleString()}
               </div>
-              <div className="text-xs font-mono font-bold text-slate-700">
+              <div className="text-xs font-mono font-bold text-slate-800">
                 Ref: {transaction.transactionNo}
+              </div>
+            </div>
+          </div>
+
+          {/* Official Orange Rectangular Box: Operating Remittance Company (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) */}
+          <div className="border-2 border-orange-500 bg-orange-50/50 rounded-xl p-3.5 sm:p-4 text-slate-900 shadow-xs relative print:border-orange-600 print:bg-orange-50/30">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-orange-200/90 pb-2.5">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                  <Building2 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider bg-orange-600 text-white px-2 py-0.5 rounded">
+                      {language === 'my' ? 'ငွေလွှဲဝန်ဆောင်မှု လုပ်ငန်းလုပ်ကိုင်ခွင့်ရ ကုမ္ပဏီ' : 'LICENSED REMITTANCE OPERATOR'}
+                    </span>
+                    {operatorProfile.licenseNo && (
+                      <span className="text-[10px] font-mono font-bold text-orange-950 bg-orange-100 border border-orange-300 px-1.5 py-0.5 rounded">
+                        {operatorProfile.licenseNo}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-base sm:text-lg font-black text-orange-950 mt-0.5 tracking-tight leading-snug">
+                    {language === 'my' 
+                      ? `${operatorProfile.companyNameMm} (${operatorProfile.companyNameEn})`
+                      : operatorProfile.companyNameEn}
+                  </h2>
+                </div>
+              </div>
+
+              {/* Edit Company Profile button (hidden on print) */}
+              <button
+                type="button"
+                onClick={() => setShowCompanyEdit(true)}
+                className="no-print self-start sm:self-center flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-white hover:bg-orange-100 text-orange-700 border border-orange-300 font-bold text-xs transition-colors cursor-pointer shadow-2xs"
+                title={language === 'my' ? 'ကုမ္ပဏီ အချက်အလက် ပြင်ဆင်ရန်' : 'Edit Company Info'}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{language === 'my' ? 'ကုမ္ပဏီ အချက်အလက် ပြင်ဆင်ရန်' : 'Edit Info'}</span>
+              </button>
+            </div>
+
+            {/* Address & Phone details inside the Orange Rectangular Box */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2.5 text-xs text-slate-800">
+              <div className="flex items-start space-x-2">
+                <MapPin className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+                <div className="leading-snug">
+                  <span className="font-bold text-orange-950">{language === 'my' ? 'ရုံးချုပ် လိပ်စာ' : 'Head Office Address'}: </span>
+                  <span className="text-slate-700">
+                    {language === 'my' ? operatorProfile.addressMm : operatorProfile.addressEn}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-2">
+                <Phone className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+                <div className="leading-snug">
+                  <span className="font-bold text-orange-950">{language === 'my' ? 'ဆက်သွယ်ရန် ဖုန်းနံပါတ်' : 'Contact Phone / Hotline'}: </span>
+                  <strong className="font-mono text-slate-900">{operatorProfile.phone}</strong>
+                  {operatorProfile.hotline && (
+                    <span className="text-slate-600 ml-1">
+                      (Hotline: <strong className="font-mono text-orange-700">{operatorProfile.hotline}</strong>)
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Servicing Branch Info */}
+            <div className="mt-2 pt-2 border-t border-orange-200/70 flex flex-wrap items-center justify-between text-[11px] text-slate-600">
+              <div>
+                <span className="font-bold text-slate-800">{language === 'my' ? 'လုပ်ငန်းဆောင်ရွက်သည့် ဘဏ်ခွဲ' : 'Servicing Branch'}: </span>
+                <span className="font-semibold text-slate-900">{language === 'my' ? branch.nameMm : branch.nameEn}</span>
+                <span className="text-slate-500"> • {branch.phone} • {branch.address}</span>
               </div>
             </div>
           </div>
@@ -199,10 +394,34 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                   <span className="text-slate-500">{language === 'my' ? 'မှတ်ပုံတင်' : 'NRC / ID'}:</span>{' '}
                   <strong className="font-mono text-slate-800">{transaction.senderNrc || 'N/A'}</strong>
                 </div>
-                {transaction.senderPassbook && (
+                {(transaction.senderPassport || transaction.senderPassbook) && (
                   <div>
-                    <span className="text-slate-500">{language === 'my' ? 'ဘဏ်စာအုပ်/အကောင့်' : 'Passbook / A/C'}:</span>{' '}
-                    <strong className="font-mono text-slate-800">{transaction.senderPassbook}</strong>
+                    <span className="text-slate-500">{language === 'my' ? 'နိုင်ငံကူးလက်မှတ်' : 'Passport No'}:</span>{' '}
+                    <strong className="font-mono text-slate-800">{transaction.senderPassport || transaction.senderPassbook}</strong>
+                  </div>
+                )}
+                {(transaction.senderPassportAttachment || transaction.senderPassbookAttachment) && (
+                  <div className="pt-1.5 border-t border-slate-200 mt-1.5">
+                    <span className="text-slate-500 block text-[11px] mb-1">
+                      {language === 'my' ? 'ပူးတွဲနိုင်ငံကူးလက်မှတ် (Passport Attachment):' : 'Attached Passport Doc:'}
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className="inline-flex items-center space-x-1 text-[11px] font-semibold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+                        <Paperclip className="w-3 h-3 text-indigo-600" />
+                        <span className="truncate max-w-[130px]">
+                          {transaction.senderPassportAttachmentName || transaction.senderPassbookAttachmentName || 'Sender_Passport'}
+                        </span>
+                      </span>
+                      <a
+                        href={transaction.senderPassportAttachment || transaction.senderPassbookAttachment}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 underline no-print cursor-pointer flex items-center space-x-0.5"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>{language === 'my' ? 'ကြည့်ရှုမည်' : 'View'}</span>
+                      </a>
+                    </div>
                   </div>
                 )}
                 <div>
@@ -234,10 +453,10 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                   <span className="text-slate-500">{language === 'my' ? 'မှတ်ပုံတင်' : 'NRC / ID'}:</span>{' '}
                   <strong className="font-mono text-slate-800">{transaction.receiverNrc || 'N/A'}</strong>
                 </div>
-                {transaction.receiverPassbook && (
+                {(transaction.receiverPassport || transaction.receiverPassbook) && (
                   <div>
-                    <span className="text-slate-500">{language === 'my' ? 'ဘဏ်စာအုပ်/အကောင့်' : 'Passbook / A/C'}:</span>{' '}
-                    <strong className="font-mono text-slate-800">{transaction.receiverPassbook}</strong>
+                    <span className="text-slate-500">{language === 'my' ? 'နိုင်ငံကူးလက်မှတ်' : 'Passport No'}:</span>{' '}
+                    <strong className="font-mono text-slate-800">{transaction.receiverPassport || transaction.receiverPassbook}</strong>
                   </div>
                 )}
                 <div>
@@ -352,17 +571,38 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
         </div>
 
         {/* Bottom Actions Bar (no-print) */}
-        <div className="bg-slate-100 border-t border-slate-200 px-5 sm:px-6 py-3 flex items-center justify-between no-print flex-shrink-0">
+        <div className="bg-slate-100 border-t border-slate-200 px-5 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2 no-print flex-shrink-0">
           <div className="text-xs text-slate-500 font-medium">
             {language === 'my' 
               ? '↕ ပြေစာကို အပေါ်/အောက် scroll လုပ်၍ အပြည့်အစုံ ကြည့်ရှုနိုင်ပါသည်' 
               : '↕ Scroll up/down to review full voucher details'}
           </div>
           <div className="flex items-center space-x-2">
+            {printableBlobUrl && (
+              <a
+                href={printableBlobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center space-x-1.5 border border-slate-300 shadow-2xs transition-colors"
+                title={language === 'my' ? 'စာမျက်နှာသစ်ဖြင့် တိုက်ရိုက်ပုံနှိပ်ရန်' : 'Open in new tab'}
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                <span>{language === 'my' ? 'စာမျက်နှာသစ်' : 'New Tab'}</span>
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center space-x-1.5 border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+              title={language === 'my' ? 'ပြေစာဖိုင် ဒေါင်းလုဒ်ရယူမည်' : 'Download HTML/PDF'}
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500" />
+              <span>{language === 'my' ? 'ဒေါင်းလုဒ်' : 'Download'}</span>
+            </button>
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
+              className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer active:scale-95"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>{language === 'my' ? 'ပုံနှိပ်မည် (Print)' : 'Print Voucher'}</span>
@@ -377,6 +617,12 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
           </div>
         </div>
       </div>
+
+      {/* Edit Operating Company Profile Modal */}
+      <CompanyProfileModal 
+        isOpen={showCompanyEdit} 
+        onClose={() => setShowCompanyEdit(false)} 
+      />
     </div>
   );
 };

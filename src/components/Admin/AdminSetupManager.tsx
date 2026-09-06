@@ -25,10 +25,13 @@ import {
   Tag,
   AlertTriangle,
   Info,
-  History
+  History,
+  Edit3
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { SetupSubTab } from '../Sidebar';
+import { CompanyProfileModal } from '../CompanyProfileModal';
+import { CompanyProfileSettingForm } from './CompanyProfileSettingForm';
 import { 
   Branch, 
   User, 
@@ -61,7 +64,8 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
     saveBlacklist, deleteBlacklist,
     savePurpose, deletePurpose,
     saveCustomer, deleteCustomer,
-    currentUser
+    currentUser,
+    operatorProfile
   } = useRemittance();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,18 +73,20 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
   const [modalType, setModalType] = useState<SetupSubTab | null>(null);
   const [isNew, setIsNew] = useState(true);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [showCompanyProfileModal, setShowCompanyProfileModal] = useState(false);
 
   // Setup tabs list
   const navTabs: { id: SetupSubTab; labelEn: string; labelMm: string; icon: any; count: number }[] = [
-    { id: 'branch', labelEn: '1. Branches', labelMm: '၁။ ဘဏ်ခွဲများ', icon: Building2, count: db.branches.length },
-    { id: 'user', labelEn: '2. System Users', labelMm: '၂။ အသုံးပြုသူများ', icon: Users, count: db.users.length },
-    { id: 'company', labelEn: '3. Partner Companies', labelMm: '၃။ မိတ်ဖက်ကုမ္ပဏီများ', icon: Building, count: db.companies.length },
-    { id: 'currency', labelEn: '4. Currencies', labelMm: '၄။ ငွေကြေးအမျိုးအစား', icon: Coins, count: db.currencies.length },
-    { id: 'country', labelEn: '5. Countries', labelMm: '၅။ နိုင်ငံများ', icon: Globe2, count: db.countries.length },
-    { id: 'exchange_rate', labelEn: '6. Exchange Rates', labelMm: '၆။ ငွေလဲလှယ်နှုန်းများ', icon: TrendingUp, count: db.exchangeRates.length },
-    { id: 'blacklist', labelEn: '7. Blacklist (NRC & Passbook)', labelMm: '၇။ နာမည်ပျက်စာရင်း (NRC & Passbook)', icon: ShieldAlert, count: db.blacklist.length },
-    { id: 'purpose', labelEn: '8. Purpose of Remit', labelMm: '၈။ လွှဲပို့ရည်ရွယ်ချက်များ', icon: FileCheck2, count: db.purposes.length },
-    { id: 'customer', labelEn: '9. Customers Master', labelMm: '၉။ ဖောက်သည်များ', icon: UserCheck2, count: db.customers.length },
+    { id: 'operator_profile', labelEn: '1. Software Company (Orange Box)', labelMm: '၁။ ဆော့ဖ်ဝဲလ်ကုမ္ပဏီ (လိမ္မော်ရောင်အကွက်)', icon: Building2, count: 1 },
+    { id: 'branch', labelEn: '2. Branches', labelMm: '၂။ ဘဏ်ခွဲများ', icon: Building2, count: db.branches.length },
+    { id: 'user', labelEn: '3. System Users', labelMm: '၃။ အသုံးပြုသူများ', icon: Users, count: db.users.length },
+    { id: 'company', labelEn: '4. Partner Companies', labelMm: '၄။ မိတ်ဖက်ကုမ္ပဏီများ', icon: Building, count: db.companies.length },
+    { id: 'currency', labelEn: '5. Currencies', labelMm: '၅။ ငွေကြေးအမျိုးအစား', icon: Coins, count: db.currencies.length },
+    { id: 'country', labelEn: '6. Countries', labelMm: '၆။ နိုင်ငံများ', icon: Globe2, count: db.countries.length },
+    { id: 'exchange_rate', labelEn: '7. Exchange Rates', labelMm: '၇။ ငွေလဲလှယ်နှုန်းများ', icon: TrendingUp, count: db.exchangeRates.length },
+    { id: 'blacklist', labelEn: '8. Blacklist (NRC & Passport)', labelMm: '၈။ နာမည်ပျက်စာရင်း (NRC & Passport)', icon: ShieldAlert, count: db.blacklist.length },
+    { id: 'purpose', labelEn: '9. Purpose of Remit', labelMm: '၉။ လွှဲပို့ရည်ရွယ်ချက်များ', icon: FileCheck2, count: db.purposes.length },
+    { id: 'customer', labelEn: '10. Customers Master', labelMm: '၁၀။ ဖောက်သည်များ', icon: UserCheck2, count: db.customers.length },
   ];
 
   const handleOpenAdd = (type: SetupSubTab, presetData?: Partial<RemittancePurpose>) => {
@@ -287,7 +293,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
   );
 
   const filteredBlacklist = db.blacklist.filter(b => 
-    !q || b.fullNameEn.toLowerCase().includes(q) || b.fullNameMm.toLowerCase().includes(q) || b.nrcNumber.toLowerCase().includes(q) || b.passbookNumber.toLowerCase().includes(q) || (b.note && b.note.toLowerCase().includes(q))
+    !q || b.fullNameEn.toLowerCase().includes(q) || b.fullNameMm.toLowerCase().includes(q) || b.nrcNumber.toLowerCase().includes(q) || (b.passportNumber && b.passportNumber.toLowerCase().includes(q)) || (b.passbookNumber && b.passbookNumber.toLowerCase().includes(q)) || (b.note && b.note.toLowerCase().includes(q))
   );
 
   const filteredPurposes = db.purposes.filter(p => 
@@ -316,14 +322,87 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
           </p>
         </div>
 
-        <button
-          onClick={() => handleOpenAdd(currentSubTab)}
-          className="flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-all shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{t.addNew}</span>
-        </button>
+        <div className="flex items-center space-x-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => onSelectSubTab('operator_profile')}
+            className={`flex items-center justify-center space-x-1.5 px-3 py-2 rounded-lg border font-semibold text-xs transition-all cursor-pointer ${
+              currentSubTab === 'operator_profile'
+                ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                : 'bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-300 shadow-2xs'
+            }`}
+          >
+            <Building2 className="w-4 h-4 text-inherit" />
+            <span>{language === 'my' ? 'ကုမ္ပဏီ အချက်အလက်' : 'Company Info'}</span>
+          </button>
+          {currentSubTab !== 'operator_profile' && (
+            <button
+              onClick={() => handleOpenAdd(currentSubTab)}
+              className="flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t.addNew}</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Official Orange Rectangular Box: Operating Remittance Company (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) - shown when not in operator_profile */}
+      {currentSubTab !== 'operator_profile' && (
+        <div className="border-2 border-orange-500 bg-orange-50/60 rounded-xl p-4 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-orange-200/80 pb-2.5">
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 rounded-lg bg-orange-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-2xs">
+                <Building2 className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-orange-600 text-white px-2 py-0.5 rounded">
+                    {language === 'my' ? 'Remittance Software အသုံးပြုသည့် ကုမ္ပဏီ (Orange Box)' : 'Operating Remittance Company'}
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-orange-950 bg-orange-100 border border-orange-300 px-1.5 py-0.5 rounded">
+                    {operatorProfile.licenseNo}
+                  </span>
+                </div>
+                <h3 className="text-base font-black text-orange-950 mt-0.5">
+                  {language === 'my' ? `${operatorProfile.companyNameMm} (${operatorProfile.companyNameEn})` : operatorProfile.companyNameEn}
+                </h3>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onSelectSubTab('operator_profile')}
+              className="self-start sm:self-center flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-orange-100 text-orange-700 border border-orange-300 font-bold text-xs transition-colors cursor-pointer shadow-2xs active:scale-95"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-orange-600" />
+              <span>{language === 'my' ? 'ကုမ္ပဏီ အချက်အလက် ပြင်ဆင်ရန် (Form)' : 'Edit Company Info (Form)'}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2.5 text-xs text-slate-800">
+            <div className="flex items-start space-x-2">
+              <MapPin className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-orange-950">{language === 'my' ? 'ရုံးချုပ် လိပ်စာ' : 'Head Office Address'}: </strong>
+                <span className="text-slate-700">{language === 'my' ? operatorProfile.addressMm : operatorProfile.addressEn}</span>
+              </div>
+            </div>
+            <div className="flex items-start space-x-2">
+              <Phone className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-orange-950">{language === 'my' ? 'ဆက်သွယ်ရန် ဖုန်းနံပါတ်' : 'Contact Phone'}: </strong>
+                <span className="font-mono font-bold text-slate-900">{operatorProfile.phone}</span>
+                {operatorProfile.hotline && (
+                  <span className="text-slate-600 ml-1.5">
+                    (Hotline: <strong className="font-mono text-orange-700">{operatorProfile.hotline}</strong>)
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sub Tab Navigation Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
@@ -361,9 +440,12 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
         })}
       </div>
 
-      {/* Content Table Area for the active Sub-module */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-        {/* Search Bar & Title Header */}
+      {/* Content Area: Company Profile Setting Form OR Master Data Table */}
+      {currentSubTab === 'operator_profile' ? (
+        <CompanyProfileSettingForm />
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+          {/* Search Bar & Title Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center space-x-2">
             <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
@@ -839,7 +921,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                       <span className="text-[11px] text-slate-500">{b.fullNameMm}</span>
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-rose-600">{b.nrcNumber}</td>
-                    <td className="px-4 py-3 font-mono text-amber-600 font-semibold">{b.passbookNumber || '-'}</td>
+                    <td className="px-4 py-3 font-mono text-amber-600 font-semibold">{b.passportNumber || b.passbookNumber || '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         b.riskLevel === 'CRITICAL' ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-amber-100 text-amber-800'
@@ -883,7 +965,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                       <span className="text-[11px] text-slate-500">{c.fullNameMm}</span>
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-blue-600">{c.nrcNumber}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{c.passbookNumber || '-'}</td>
+                    <td className="px-4 py-3 font-mono text-slate-600">{c.passportNumber || c.passbookNumber || '-'}</td>
                     <td className="px-4 py-3 font-mono text-slate-600">{c.phone}</td>
                     <td className="px-4 py-3 text-slate-500 truncate max-w-xs">{c.address}</td>
                     <td className="px-4 py-3 text-right space-x-1.5">
@@ -897,6 +979,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
           </div>
         )}
       </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
@@ -1548,9 +1631,9 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                       <label className="block text-slate-700 font-semibold mb-1">{t.passbookNumber}</label>
                       <input
                         type="text"
-                        value={editingItem.passbookNumber || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, passbookNumber: e.target.value })}
-                        placeholder="091-102-4918239"
+                        value={editingItem.passportNumber || editingItem.passbookNumber || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, passportNumber: e.target.value, passbookNumber: e.target.value })}
+                        placeholder="MB-102948 or Passport No"
                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
                       />
                     </div>
@@ -1660,8 +1743,9 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                       <label className="block text-slate-700 font-semibold mb-1">{t.passbookNumber}</label>
                       <input
                         type="text"
-                        value={editingItem.passbookNumber || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, passbookNumber: e.target.value })}
+                        value={editingItem.passportNumber || editingItem.passbookNumber || ''}
+                        onChange={(e) => setEditingItem({ ...editingItem, passportNumber: e.target.value, passbookNumber: e.target.value })}
+                        placeholder="MB-102948 or Passport No"
                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
                       />
                     </div>
@@ -1713,6 +1797,12 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
           </div>
         </div>
       )}
+
+      {/* Edit Operating Company Profile Modal */}
+      <CompanyProfileModal
+        isOpen={showCompanyProfileModal}
+        onClose={() => setShowCompanyProfileModal(false)}
+      />
     </div>
   );
 };

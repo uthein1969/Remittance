@@ -7,12 +7,14 @@ import {
   DownloadCloud, 
   Coins, 
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Edit3
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
 import { RemittanceTransaction } from '../../types';
 import { VoucherModal } from '../VoucherModal';
+import { EditInwardModal } from './EditInwardModal';
 
 export const InwardApproveView: React.FC = () => {
   const { db, language, t, approveTransaction, payoutInwardTransaction, rejectTransaction } = useRemittance();
@@ -23,6 +25,13 @@ export const InwardApproveView: React.FC = () => {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [voucherTx, setVoucherTx] = useState<RemittanceTransaction | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingTx, setEditingTx] = useState<RemittanceTransaction | null>(null);
+
+  const handleOpenEdit = (tx: RemittanceTransaction) => {
+    setEditingTx(tx);
+    setShowEditModal(true);
+  };
 
   const inwardTxs = db.transactions.filter(t => t.type === 'INWARD');
 
@@ -180,8 +189,19 @@ export const InwardApproveView: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(tx)}
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-amber-500/30 font-semibold text-xs transition-all flex items-center space-x-1 hover:scale-[1.02]"
+                          title={language === 'my' ? 'အချက်အလက် ပြင်ဆင်ရန်' : 'Edit Inward Record'}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>{t.edit}</span>
+                        </button>
+
                         {tx.status === 'PENDING_APPROVAL' ? (
                           <button
+                            type="button"
                             onClick={() => handleAuthorizePayout(tx)}
                             className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow transition-all hover:scale-[1.02]"
                           >
@@ -189,6 +209,7 @@ export const InwardApproveView: React.FC = () => {
                           </button>
                         ) : (
                           <button
+                            type="button"
                             onClick={() => {
                               setVoucherTx(tx);
                               setShowVoucherModal(true);
@@ -208,6 +229,16 @@ export const InwardApproveView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Edit Inward Modal */}
+      <EditInwardModal
+        isOpen={showEditModal}
+        transaction={editingTx}
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingTx(null);
+        }}
+      />
 
       {/* Voucher Modal */}
       <VoucherModal

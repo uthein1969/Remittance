@@ -40,6 +40,7 @@ export type NavigationTab =
   | 'supabase_sync';
 
 export type SetupSubTab = 
+  | 'operator_profile'
   | 'branch'
   | 'user'
   | 'company'
@@ -93,15 +94,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const setupItems: { id: SetupSubTab; label: string; icon: React.ElementType; badge?: number }[] = [
-    { id: 'branch', label: t.setupBranch, icon: Building2 },
-    { id: 'user', label: t.setupUser, icon: Users },
-    { id: 'company', label: t.setupCompany, icon: Briefcase },
-    { id: 'currency', label: t.setupCurrency, icon: Coins },
-    { id: 'country', label: t.setupCountry, icon: Globe },
-    { id: 'exchange_rate', label: t.setupExchangeRate, icon: TrendingUp },
-    { id: 'blacklist', label: t.setupBlacklist, icon: ShieldAlert, badge: activeBlacklistCount },
-    { id: 'purpose', label: t.setupPurpose, icon: Target },
-    { id: 'customer', label: t.setupCustomer, icon: UserCheck2 },
+    { 
+      id: 'operator_profile', 
+      label: language === 'my' ? '၁။ ဆော့ဖ်ဝဲလ်ကုမ္ပဏီ (လိမ္မော်ရောင်အကွက်)' : '1. Company Profile (Orange Box)', 
+      icon: Building2 
+    },
+    { id: 'branch', label: language === 'my' ? '၂။ ဘဏ်ခွဲများ' : '2. Branches', icon: Building2 },
+    { id: 'user', label: language === 'my' ? '၃။ အသုံးပြုသူများ' : '3. Users', icon: Users },
+    { id: 'company', label: language === 'my' ? '၄။ မိတ်ဖက်ကုမ္ပဏီများ' : '4. Partner Companies', icon: Briefcase },
+    { id: 'currency', label: language === 'my' ? '၅။ ငွေကြေးအမျိုးအစား' : '5. Currencies', icon: Coins },
+    { id: 'country', label: language === 'my' ? '၆။ နိုင်ငံများ' : '6. Countries', icon: Globe },
+    { id: 'exchange_rate', label: language === 'my' ? '၇။ ငွေလဲနှုန်းများ' : '7. Exchange Rates', icon: TrendingUp },
+    { id: 'blacklist', label: language === 'my' ? '၈။ နာမည်ပျက်စာရင်း' : '8. Blacklist', icon: ShieldAlert, badge: activeBlacklistCount },
+    { id: 'purpose', label: language === 'my' ? '၉။ လွှဲပို့ရည်ရွယ်ချက်' : '9. Purposes', icon: Target },
+    { id: 'customer', label: language === 'my' ? '၁၀။ ဖောက်သည်များ' : '10. Customers', icon: UserCheck2 },
   ];
 
   return (

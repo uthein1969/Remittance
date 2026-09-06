@@ -7,18 +7,29 @@ import {
   ArrowLeftRight,
   Menu,
   ShieldCheck,
-  LogOut
+  LogOut,
+  MapPin,
+  Phone,
+  Edit3
 } from 'lucide-react';
 import { useRemittance } from '../lib/store';
+import { CompanyProfileModal } from './CompanyProfileModal';
 
 interface HeaderProps {
   onOpenBackup: () => void;
   onOpenSupabase: () => void;
   onToggleMobileMenu?: () => void;
+  onNavigateCompanySetting?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenBackup, onOpenSupabase, onToggleMobileMenu }) => {
-  const { db, language, setLanguage, currentUser, switchUser, logout, t } = useRemittance();
+export const Header: React.FC<HeaderProps> = ({ 
+  onOpenBackup, 
+  onOpenSupabase, 
+  onToggleMobileMenu,
+  onNavigateCompanySetting 
+}) => {
+  const { db, language, setLanguage, currentUser, switchUser, logout, t, operatorProfile } = useRemittance();
+  const [showCompanyModal, setShowCompanyModal] = React.useState(false);
 
   const pendingCount = db.transactions.filter(t => t.status === 'PENDING_APPROVAL').length;
   const currentBranch = db.branches.find(b => b.id === currentUser.branchId) || db.branches[0];
@@ -85,6 +96,43 @@ export const Header: React.FC<HeaderProps> = ({ onOpenBackup, onOpenSupabase, on
 
       {/* Right controls */}
       <div className="flex items-center space-x-2 sm:space-x-3">
+        {/* Official Operating Remittance Company Orange Box (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) */}
+        <button
+          type="button"
+          onClick={() => onNavigateCompanySetting ? onNavigateCompanySetting() : setShowCompanyModal(true)}
+          className="hidden xl:flex items-center space-x-2 px-2.5 py-1 rounded-lg border-2 border-orange-500 bg-orange-50 hover:bg-orange-100/90 text-orange-950 transition-colors cursor-pointer shadow-2xs text-left group shrink-0"
+          title={language === 'my' ? 'ဆော့ဖ်ဝဲလ် အသုံးပြုသည့် ကုမ္ပဏီ အချက်အလက် ပြင်ဆင်ရန် (Settings ထဲရှိ Form သို့ သွားမည်)' : 'Remittance Operating Company (Go to Settings Form)'}
+        >
+          <div className="w-6 h-6 rounded bg-orange-600 text-white flex items-center justify-center font-bold text-xs shrink-0 group-hover:scale-105 transition-transform">
+            <Building2 className="w-3.5 h-3.5 text-white" />
+          </div>
+          <div className="leading-tight">
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-[11px] text-orange-950 truncate max-w-[200px]">
+                {language === 'my' ? operatorProfile.companyNameMm : operatorProfile.companyNameEn}
+              </span>
+              <span className="text-[9px] font-bold text-orange-700 bg-orange-200/80 border border-orange-300 px-1 rounded shrink-0">
+                {language === 'my' ? 'လိမ္မော်ရောင်ကွက်' : 'Licensed'}
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-600 flex items-center gap-1.5 truncate max-w-[280px]">
+              <span className="truncate">📍 {language === 'my' ? operatorProfile.addressMm : operatorProfile.addressEn}</span>
+              <span className="shrink-0 font-mono font-bold text-orange-900">📞 {operatorProfile.phone}</span>
+            </div>
+          </div>
+        </button>
+
+        {/* Compact Company Profile Button for smaller screens */}
+        <button
+          type="button"
+          onClick={() => onNavigateCompanySetting ? onNavigateCompanySetting() : setShowCompanyModal(true)}
+          className="xl:hidden flex items-center space-x-1 px-2 py-1 rounded-md border-2 border-orange-500 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+          title={language === 'my' ? 'ကုမ္ပဏီ အချက်အလက် (Settings ထဲရှိ Form သို့ သွားမည်)' : 'Company Profile (Go to Settings Form)'}
+        >
+          <Building2 className="w-3.5 h-3.5 text-orange-600" />
+          <span className="text-[11px]">{language === 'my' ? 'ကုမ္ပဏီ' : 'Company'}</span>
+        </button>
+
         {/* Supabase Status Pill */}
         <button
           onClick={onOpenSupabase}
@@ -147,6 +195,12 @@ export const Header: React.FC<HeaderProps> = ({ onOpenBackup, onOpenSupabase, on
           <span className="hidden sm:inline">{language === 'my' ? 'ထွက်မည် (Logout)' : 'Logout'}</span>
         </button>
       </div>
+
+      {/* Edit Operating Company Profile Modal */}
+      <CompanyProfileModal
+        isOpen={showCompanyModal}
+        onClose={() => setShowCompanyModal(false)}
+      />
     </header>
   );
 };

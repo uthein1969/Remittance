@@ -103,8 +103,8 @@ export interface BlacklistEntry {
   fullNameEn: string;
   fullNameMm: string;
   nrcNumber: string; // Myanmar NRC e.g. 12/LKN(N)123456
-  passbookNumber: string; // Bank account or passbook
-  passportNumber?: string;
+  passportNumber?: string; // Passport No
+  passbookNumber?: string; // Legacy alias
   reason: string;
   note: string; // Detail note text box requested by user
   riskLevel: RiskLevel;
@@ -129,8 +129,8 @@ export interface Customer {
   fullNameEn: string;
   fullNameMm: string;
   nrcNumber: string;
-  passbookNumber: string;
-  passportNumber?: string;
+  passportNumber?: string; // Passport No
+  passbookNumber?: string; // Legacy alias
   phone: string;
   address: string;
   customerType: 'SENDER' | 'RECEIVER' | 'BOTH';
@@ -153,18 +153,26 @@ export interface RemittanceTransaction {
   senderName: string;
   senderNameMm?: string;
   senderNrc: string;
-  senderPassbook?: string;
   senderPassport?: string;
+  senderPassbook?: string; // Compatibility
   senderPhone: string;
   senderAddress: string;
   senderCountryCode: string;
+  senderPassportAttachment?: string; // Base64 data URL or Supabase storage public URL
+  senderPassportAttachmentName?: string;
+  senderPassportAttachmentType?: string;
+  senderPassportAttachmentSize?: string;
+  senderPassbookAttachment?: string; // Compatibility alias
+  senderPassbookAttachmentName?: string;
+  senderPassbookAttachmentType?: string;
+  senderPassbookAttachmentSize?: string;
   
   // Receiver
   receiverName: string;
   receiverNameMm?: string;
   receiverNrc: string;
-  receiverPassbook?: string;
   receiverPassport?: string;
+  receiverPassbook?: string; // Compatibility
   receiverPhone: string;
   receiverAddress: string;
   receiverCountryCode: string;
@@ -225,6 +233,19 @@ export interface AuditRecord {
   newValue?: string;
 }
 
+export interface OperatorProfile {
+  companyNameEn: string;
+  companyNameMm: string;
+  licenseNo: string;
+  phone: string;
+  hotline: string;
+  addressEn: string;
+  addressMm: string;
+  email: string;
+  website?: string;
+  taxId?: string;
+}
+
 export interface SupabaseConfig {
   url: string;
   anonKey: string;
@@ -236,6 +257,7 @@ export interface SupabaseConfig {
 }
 
 export interface AppDatabase {
+  operatorProfile?: OperatorProfile;
   branches: Branch[];
   users: User[];
   companies: Company[];

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   DownloadCloud, 
   Search, 
@@ -18,12 +18,18 @@ import {
   Trash2,
   X,
   Check,
-  Building
+  Building,
+  Paperclip,
+  UploadCloud,
+  Eye,
+  Loader2,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
 import { RemittanceTransaction, PayoutMethod, BlacklistEntry, Company } from '../../types';
 import { VoucherModal } from '../VoucherModal';
+import { uploadPassportToSupabase } from '../../lib/supabase';
 
 export const InwardEntryView: React.FC = () => {
   const { 
@@ -50,17 +56,117 @@ export const InwardEntryView: React.FC = () => {
   const [receiverName, setReceiverName] = useState('');
   const [receiverNameMm, setReceiverNameMm] = useState('');
   const [receiverNrc, setReceiverNrc] = useState('');
-  const [receiverPassbook, setReceiverPassbook] = useState('');
+  const [receiverPassport, setReceiverPassport] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
   const [receiverAddress, setReceiverAddress] = useState('');
   const [isManualNrc, setIsManualNrc] = useState(false);
-  const [isManualPassbook, setIsManualPassbook] = useState(false);
+  const [isManualPassport, setIsManualPassport] = useState(false);
   
   // Origin Sender
   const [senderName, setSenderName] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [senderAddress, setSenderAddress] = useState('');
   const [senderCountryCode, setSenderCountryCode] = useState('TH');
+  const [senderPassport, setSenderPassport] = useState('');
+  const [senderPassportAttachment, setSenderPassportAttachment] = useState<string>('');
+  const [senderPassportAttachmentName, setSenderPassportAttachmentName] = useState<string>('');
+  const [senderPassportAttachmentType, setSenderPassportAttachmentType] = useState<string>('');
+  const [senderPassportAttachmentSize, setSenderPassportAttachmentSize] = useState<string>('');
+  const [isUploadingPassport, setIsUploadingPassport] = useState(false);
+  const [passportUploadStatus, setPassportUploadStatus] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
+  const [isDraggingPassport, setIsDraggingPassport] = useState(false);
+  const [showPassportPreviewModal, setShowPassportPreviewModal] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handle Sender Passport File Attachment (Persist to Supabase Storage & Base64 Database)
+  const handlePassportFile = async (file: File) => {
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      setPassportUploadStatus({
+        type: 'error',
+        text: language === 'my' ? 'ဖိုင်အရွယ်အစား 15MB ထက် မကျော်ရပါ' : 'File size must be under 15MB'
+      });
+      return;
+    }
+
+    const fileSizeStr = file.size > 1024 * 1024 
+      ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` 
+      : `${(file.size / 1024).toFixed(1)} KB`;
+
+    setSenderPassportAttachmentName(file.name);
+    setSenderPassportAttachmentType(file.type);
+    setSenderPassportAttachmentSize(fileSizeStr);
+    setIsUploadingPassport(true);
+    setPassportUploadStatus({
+      type: 'info',
+      text: language === 'my' ? 'Supabase သို့ Passport ပူးတွဲစာရွက်စာတမ်း တင်ပို့နေပါသည်...' : 'Uploading passport to Supabase...'
+    });
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
+      setSenderPassportAttachment(dataUrl);
+
+      try {
+        const uploadRes = await uploadPassportToSupabase(db.supabaseConfig, file, 'inward_passports');
+        if (uploadRes.success && uploadRes.url) {
+          setSenderPassportAttachment(uploadRes.url);
+          setPassportUploadStatus({
+            type: 'success',
+            text: language === 'my' 
+              ? 'Supabase Storage သို့ Passport အောင်မြင်စွာ တင်ပို့သိမ်းဆည်းပြီးပါပြီ' 
+              : 'Uploaded passport to Supabase Storage successfully'
+          });
+        } else {
+          setPassportUploadStatus({
+            type: 'success',
+            text: language === 'my'
+              ? 'Supabase Database တွင် တိုက်ရိုက်သိမ်းဆည်းရန် အဆင်သင့်ဖြစ်ပါပြီ'
+              : 'Saved ready for Supabase Database sync'
+          });
+        }
+      } catch (err: any) {
+        setPassportUploadStatus({
+          type: 'info',
+          text: language === 'my'
+            ? 'Supabase Database တွင် တိုက်ရိုက်သိမ်းဆည်းမည်'
+            : 'Stored ready for Supabase sync'
+        });
+      } finally {
+        setIsUploadingPassport(false);
+      }
+    };
+    reader.onerror = () => {
+      setIsUploadingPassport(false);
+      setPassportUploadStatus({
+        type: 'error',
+        text: language === 'my' ? 'ဖိုင်ဖတ်ရှု၍ မရပါ' : 'Failed to read file'
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePassportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handlePassportFile(file);
+  };
+
+  const handlePassportDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingPassport(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handlePassportFile(file);
+  };
+
+  const handleRemovePassport = () => {
+    setSenderPassportAttachment('');
+    setSenderPassportAttachmentName('');
+    setSenderPassportAttachmentType('');
+    setSenderPassportAttachmentSize('');
+    setPassportUploadStatus(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
   
   // Financials
   const [sourceCurrency, setSourceCurrency] = useState('THB');
@@ -97,7 +203,7 @@ export const InwardEntryView: React.FC = () => {
     const map = new Map<string, {
       id: string;
       nrc: string;
-      passbook: string;
+      passport: string;
       nameEn: string;
       nameMm: string;
       phone: string;
@@ -110,7 +216,7 @@ export const InwardEntryView: React.FC = () => {
         map.set(c.nrcNumber, {
           id: c.id,
           nrc: c.nrcNumber,
-          passbook: c.passbookNumber || '',
+          passport: c.passportNumber || c.passbookNumber || '',
           nameEn: c.fullNameEn,
           nameMm: c.fullNameMm || '',
           phone: c.phone || '',
@@ -125,7 +231,7 @@ export const InwardEntryView: React.FC = () => {
         map.set(t.receiverNrc, {
           id: `BEN-${t.receiverNrc}`,
           nrc: t.receiverNrc,
-          passbook: t.receiverPassbook || '',
+          passport: t.receiverPassport || t.receiverPassbook || '',
           nameEn: t.receiverName,
           nameMm: t.receiverNameMm || '',
           phone: t.receiverPhone || '',
@@ -147,7 +253,7 @@ export const InwardEntryView: React.FC = () => {
     setReceiverNrc(nrcVal);
     const found = beneficiaryOptions.find(b => b.nrc === nrcVal);
     if (found) {
-      if (found.passbook) setReceiverPassbook(found.passbook);
+      if (found.passport) setReceiverPassport(found.passport);
       if (found.nameEn) setReceiverName(found.nameEn);
       if (found.nameMm) setReceiverNameMm(found.nameMm);
       if (found.phone) setReceiverPhone(found.phone);
@@ -155,14 +261,14 @@ export const InwardEntryView: React.FC = () => {
     }
   };
 
-  const handleSelectPassbook = (passVal: string) => {
-    if (passVal === '__NEW_PASSBOOK__') {
-      setIsManualPassbook(true);
-      setReceiverPassbook('');
+  const handleSelectPassport = (passVal: string) => {
+    if (passVal === '__NEW_PASSPORT__') {
+      setIsManualPassport(true);
+      setReceiverPassport('');
       return;
     }
-    setReceiverPassbook(passVal);
-    const found = beneficiaryOptions.find(b => b.passbook === passVal);
+    setReceiverPassport(passVal);
+    const found = beneficiaryOptions.find(b => b.passport === passVal);
     if (found) {
       if (found.nrc) setReceiverNrc(found.nrc);
       if (found.nameEn) setReceiverName(found.nameEn);
@@ -255,7 +361,7 @@ export const InwardEntryView: React.FC = () => {
       setReceiverName(found.receiverName);
       setReceiverNameMm(found.receiverNameMm || '');
       setReceiverNrc(found.receiverNrc);
-      setReceiverPassbook(found.receiverPassbook || '');
+      setReceiverPassport(found.receiverPassport || found.receiverPassbook || '');
       setReceiverPhone(found.receiverPhone);
       setReceiverAddress(found.receiverAddress);
       setSourceCurrency(found.sourceCurrency);
@@ -263,6 +369,15 @@ export const InwardEntryView: React.FC = () => {
       setExchangeRate(found.exchangeRate);
       setPayoutMethod(found.payoutMethod);
       if (found.partnerCompanyId) setPartnerCompanyId(found.partnerCompanyId);
+      const sPass = found.senderPassport || found.senderPassbook;
+      if (sPass) setSenderPassport(sPass);
+      const sAttach = found.senderPassportAttachment || found.senderPassbookAttachment;
+      if (sAttach) {
+        setSenderPassportAttachment(sAttach);
+        setSenderPassportAttachmentName(found.senderPassportAttachmentName || found.senderPassbookAttachmentName || 'Sender_Passport');
+        setSenderPassportAttachmentType(found.senderPassportAttachmentType || found.senderPassbookAttachmentType || '');
+        setSenderPassportAttachmentSize(found.senderPassportAttachmentSize || found.senderPassbookAttachmentSize || '');
+      }
     } else {
       setLookupMessage({
         type: 'error',
@@ -276,9 +391,9 @@ export const InwardEntryView: React.FC = () => {
 
   // Real-time screening
   React.useEffect(() => {
-    const match = checkBlacklist(receiverNrc, receiverPassbook, receiverName);
+    const match = checkBlacklist(receiverNrc, receiverPassport, receiverName);
     setReceiverMatch(match);
-  }, [receiverNrc, receiverPassbook, receiverName, checkBlacklist]);
+  }, [receiverNrc, receiverPassport, receiverName, checkBlacklist]);
 
   React.useEffect(() => {
     const match = checkBlacklist('', '', senderName);
@@ -324,10 +439,21 @@ export const InwardEntryView: React.FC = () => {
         senderPhone: senderPhone || '+66-00-000-000',
         senderAddress: senderAddress || 'Overseas',
         senderCountryCode,
+        senderPassport: senderPassport || undefined,
+        senderPassportAttachment: senderPassportAttachment || undefined,
+        senderPassportAttachmentName: senderPassportAttachmentName || undefined,
+        senderPassportAttachmentType: senderPassportAttachmentType || undefined,
+        senderPassportAttachmentSize: senderPassportAttachmentSize || undefined,
+        senderPassbook: senderPassport || undefined,
+        senderPassbookAttachment: senderPassportAttachment || undefined,
+        senderPassbookAttachmentName: senderPassportAttachmentName || undefined,
+        senderPassbookAttachmentType: senderPassportAttachmentType || undefined,
+        senderPassbookAttachmentSize: senderPassportAttachmentSize || undefined,
         receiverName,
         receiverNameMm,
         receiverNrc,
-        receiverPassbook,
+        receiverPassport: receiverPassport || undefined,
+        receiverPassbook: receiverPassport || undefined,
         receiverPhone,
         receiverAddress,
         receiverCountryCode: 'MM',
@@ -530,7 +656,7 @@ export const InwardEntryView: React.FC = () => {
                 )}
               </div>
 
-              {/* Passbook / Account No - Dropdown List with Manual Entry option */}
+              {/* Passport No - Dropdown List with Manual Entry option */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-slate-400 font-medium">
@@ -539,41 +665,41 @@ export const InwardEntryView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setIsManualPassbook(!isManualPassbook);
-                      if (!isManualPassbook) setReceiverPassbook('');
+                      setIsManualPassport(!isManualPassport);
+                      if (!isManualPassport) setReceiverPassport('');
                     }}
                     className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-normal transition-colors"
                   >
-                    {isManualPassbook 
+                    {isManualPassport 
                       ? (language === 'my' ? '← စာရင်းမှ ရွေးမည်' : '← Select from List') 
                       : (language === 'my' ? '+ အသစ်ရိုက်မည်' : '+ Enter Manual')}
                   </button>
                 </div>
 
-                {isManualPassbook ? (
+                {isManualPassport ? (
                   <input
                     type="text"
-                    value={receiverPassbook}
-                    onChange={(e) => setReceiverPassbook(e.target.value)}
-                    placeholder="109-291-8472910"
+                    value={receiverPassport}
+                    onChange={(e) => setReceiverPassport(e.target.value)}
+                    placeholder="MB-102948"
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
                   />
                 ) : (
                   <select
-                    value={receiverPassbook}
-                    onChange={(e) => handleSelectPassbook(e.target.value)}
+                    value={receiverPassport}
+                    onChange={(e) => handleSelectPassport(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none"
                   >
                     <option value="">
-                      -- {language === 'my' ? 'ဘဏ်စာအုပ်/အကောင့် ရွေးချယ်ပါ' : 'Select Passbook / Account'} --
+                      -- {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် ရွေးချယ်ပါ' : 'Select Passport No'} --
                     </option>
-                    {beneficiaryOptions.filter(b => b.passbook).map(b => (
-                      <option key={b.passbook} value={b.passbook}>
-                        {b.passbook} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
+                    {beneficiaryOptions.filter(b => b.passport).map(b => (
+                      <option key={b.passport} value={b.passport}>
+                        {b.passport} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
                       </option>
                     ))}
-                    <option value="__NEW_PASSBOOK__">
-                      + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom Account)...' : 'Enter Custom Account...'}
+                    <option value="__NEW_PASSPORT__">
+                      + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom Passport)...' : 'Enter Custom Passport...'}
                     </option>
                   </select>
                 )}
@@ -763,7 +889,7 @@ export const InwardEntryView: React.FC = () => {
                 </select>
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-slate-400 mb-1 font-medium">{t.senderPhone}</label>
                 <input
                   type="text"
@@ -772,6 +898,144 @@ export const InwardEntryView: React.FC = () => {
                   placeholder="+60-11-2948-1928"
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-medium">
+                  {language === 'my' ? 'ငွေလွှဲသူ နိုင်ငံကူးလက်မှတ် (Passport No)' : 'Sender Passport No'}
+                </label>
+                <input
+                  type="text"
+                  value={senderPassport}
+                  onChange={(e) => setSenderPassport(e.target.value)}
+                  placeholder="e.g. MB-102948 / P1234567"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none font-mono"
+                />
+              </div>
+
+              {/* Sender Passport Attachment (Supabase Storage / Database) */}
+              <div className="sm:col-span-2 pt-2 border-t border-slate-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                  <label className="flex items-center space-x-1.5 text-slate-200 font-semibold text-xs">
+                    <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>
+                      {language === 'my' 
+                        ? 'ငွေလွှဲသူ၏ နိုင်ငံကူးလက်မှတ် / Passport ပူးတွဲစာရွက်စာတမ်း (Supabase)' 
+                        : "Overseas Sender's Passport Attachment (Supabase)"}
+                    </span>
+                  </label>
+                  <span className="inline-flex items-center space-x-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="font-mono">☁️ Supabase Sync</span>
+                  </span>
+                </div>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handlePassportFileChange}
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  id="sender-passport-upload-input"
+                />
+
+                {!senderPassportAttachment ? (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsDraggingPassport(true); }}
+                    onDragLeave={() => setIsDraggingPassport(false)}
+                    onDrop={handlePassportDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center gap-3 ${
+                      isDraggingPassport 
+                        ? 'border-indigo-400 bg-indigo-500/10' 
+                        : 'border-slate-700 hover:border-indigo-500/60 bg-slate-800/40 hover:bg-slate-800/80'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
+                      {isUploadingPassport ? (
+                        <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                      ) : (
+                        <UploadCloud className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div className="text-center sm:text-left">
+                      <p className="text-xs font-semibold text-slate-200">
+                        {language === 'my' 
+                          ? 'ငွေလွှဲသူ၏ Passport ဓာတ်ပုံ သို့မဟုတ် PDF တွဲရန် နှိပ်ပါ (သို့မဟုတ် ဖိုင်ဆွဲထည့်ပါ)' 
+                          : "Click to upload or drag & drop Sender's Passport (Image / PDF)"}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {language === 'my' 
+                          ? 'JPG, PNG, PDF, WEBP (အများဆုံး 15MB) • Supabase Storage & Database တွင် အလိုအလျောက် သိမ်းဆည်းပါမည်' 
+                          : 'Supports JPG, PNG, PDF up to 15MB • Persisted to Supabase'}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* Attached Passport Preview Card */
+                  <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
+                    <div className="flex items-center space-x-3 overflow-hidden w-full sm:w-auto">
+                      {senderPassportAttachment.startsWith('data:image') || senderPassportAttachmentType?.startsWith('image/') || senderPassportAttachment.match(/\.(jpeg|jpg|png|webp)/i) ? (
+                        <div 
+                          onClick={() => setShowPassportPreviewModal(true)}
+                          className="w-14 h-14 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden cursor-pointer hover:opacity-85 transition-opacity flex-shrink-0 relative group"
+                          title={language === 'my' ? 'ပုံကြီးချဲ့ကြည့်ရှုရန် နှိပ်ပါ' : 'Click to preview'}
+                        >
+                          <img 
+                            src={senderPassportAttachment} 
+                            alt="Sender Passport Preview" 
+                            className="w-full h-full object-cover" 
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <Eye className="w-4 h-4 text-white" />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg bg-indigo-950/60 border border-indigo-800/60 flex items-center justify-center text-indigo-400 flex-shrink-0">
+                          <FileText className="w-7 h-7" />
+                        </div>
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-[280px]">
+                            {senderPassportAttachmentName || 'Sender_Passport'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            ({senderPassportAttachmentSize || 'Attached'})
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400 mt-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                          <span className="truncate">
+                            {passportUploadStatus?.text || (language === 'my' ? 'Supabase တွင် သိမ်းဆည်းရန် အသင့်ဖြစ်ပါပြီ' : 'Passport attached & ready to save in Supabase')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center space-x-2 self-end sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => setShowPassportPreviewModal(true)}
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors text-xs font-medium flex items-center space-x-1 cursor-pointer"
+                        title={language === 'my' ? 'ကြည့်ရှုမည်' : 'View Passport'}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{language === 'my' ? 'ကြည့်မည်' : 'Preview'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemovePassport}
+                        className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 transition-colors text-xs cursor-pointer"
+                        title={language === 'my' ? 'ဖယ်ရှားမည်' : 'Remove Attachment'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1016,6 +1280,104 @@ export const InwardEntryView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sender Passport Preview Modal */}
+      {showPassportPreviewModal && senderPassportAttachment && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+          onClick={() => setShowPassportPreviewModal(false)}
+        >
+          <div 
+            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in fade-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 flex-shrink-0">
+              <div className="flex items-center space-x-2">
+                <Paperclip className="w-4 h-4 text-indigo-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {language === 'my' ? 'ငွေလွှဲသူ၏ Passport ပူးတွဲစာရွက်စာတမ်း' : "Overseas Sender's Passport"}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">
+                    {senderPassportAttachmentName || 'Sender_Passport'} • {senderPassportAttachmentSize || ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={senderPassportAttachment}
+                  target="_blank"
+                  rel="noreferrer"
+                  download={senderPassportAttachmentName || 'passport'}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors text-xs flex items-center space-x-1"
+                  title="Open in new window / Download"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setShowPassportPreviewModal(false)}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-4 overflow-auto flex-1 flex items-center justify-center bg-slate-950/70">
+              {senderPassportAttachment.startsWith('data:image') || senderPassportAttachmentType?.startsWith('image/') || senderPassportAttachment.match(/\.(jpeg|jpg|png|webp)/i) ? (
+                <img 
+                  src={senderPassportAttachment} 
+                  alt="Sender Passport Preview" 
+                  className="max-h-[72vh] max-w-full rounded-lg object-contain shadow-md border border-slate-800" 
+                />
+              ) : (
+                <div className="text-center p-8 space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto">
+                    <FileText className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-bold text-white mb-1">
+                      {senderPassportAttachmentName || 'Passport Document'}
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {language === 'my' 
+                        ? 'ဤစာရွက်စာတမ်းကို ကြည့်ရှု/ဒေါင်းလုဒ်လုပ်ရန် အောက်ပါခလုတ်ကို နှိပ်ပါ' 
+                        : 'Click below to view or download this passport document'}
+                    </p>
+                  </div>
+                  <a
+                    href={senderPassportAttachment}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors shadow-lg"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>{language === 'my' ? 'ဖိုင်အပြည့်အစုံ ဖွင့်ကြည့်မည်' : 'Open Document in New Tab'}</span>
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between text-xs">
+              <span className="text-slate-400 flex items-center space-x-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>{language === 'my' ? 'Supabase Storage / Database တွင် သိမ်းဆည်းရန် အသင့်' : 'Ready for Supabase Storage & Database'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowPassportPreviewModal(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-semibold transition-colors"
+              >
+                {language === 'my' ? 'ပိတ်မည်' : 'Close'}
+              </button>
+            </div>
           </div>
         </div>
       )}
