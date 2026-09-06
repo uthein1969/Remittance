@@ -20,6 +20,7 @@ export const InwardReportView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCurrency, setSelectedCurrency] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [selectedBranch, setSelectedBranch] = useState('ALL');
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<RemittanceTransaction | null>(null);
 
   const inwardTxs = db.transactions.filter(t => t.type === 'INWARD');
@@ -27,6 +28,7 @@ export const InwardReportView: React.FC = () => {
   const filteredTxs = inwardTxs.filter(tx => {
     if (selectedCurrency !== 'ALL' && tx.sourceCurrency !== selectedCurrency) return false;
     if (selectedStatus !== 'ALL' && tx.status !== selectedStatus) return false;
+    if (selectedBranch !== 'ALL' && tx.payoutBranchId !== selectedBranch) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
@@ -43,24 +45,28 @@ export const InwardReportView: React.FC = () => {
   const totalPayoutMMK = filteredTxs.reduce((sum, tx) => sum + tx.receiveAmount, 0);
 
   const exportCsv = () => {
-    const headers = ['Transaction No', 'MTCN', 'Date', 'Beneficiary', 'NRC', 'Sender', 'Sender Passport', 'Passport Attached', 'Origin Country', 'Origin Amount', 'Origin Currency', 'Exchange Rate', 'Payout Amount (MMK)', 'Payout Method', 'Status'];
-    const rows = filteredTxs.map(tx => [
-      tx.transactionNo,
-      tx.mtcn,
-      new Date(tx.createdDate).toISOString().split('T')[0],
-      `"${tx.receiverName}"`,
-      `"${tx.receiverNrc}"`,
-      `"${tx.senderName}"`,
-      `"${tx.senderPassport || tx.senderPassbook || ''}"`,
-      (tx.senderPassportAttachment || tx.senderPassbookAttachment) ? 'YES' : 'NO',
-      tx.senderCountryCode,
-      tx.sendAmount,
-      tx.sourceCurrency,
-      tx.exchangeRate,
-      tx.receiveAmount,
-      tx.payoutMethod,
-      tx.status
-    ]);
+    const headers = ['Transaction No', 'MTCN', 'Date', 'Payout Branch', 'Beneficiary', 'NRC', 'Sender', 'Sender Passport', 'Passport Attached', 'Origin Country', 'Origin Amount', 'Origin Currency', 'Exchange Rate', 'Payout Amount (MMK)', 'Payout Method', 'Status'];
+    const rows = filteredTxs.map(tx => {
+      const branch = db.branches.find(b => b.id === tx.payoutBranchId);
+      return [
+        tx.transactionNo,
+        tx.mtcn,
+        new Date(tx.createdDate).toISOString().split('T')[0],
+        `"${branch ? `${branch.code} - ${branch.nameEn}` : (tx.payoutBranchId || 'BR-001')}"`,
+        `"${tx.receiverName}"`,
+        `"${tx.receiverNrc}"`,
+        `"${tx.senderName}"`,
+        `"${tx.senderPassport || tx.senderPassbook || ''}"`,
+        (tx.senderPassportAttachment || tx.senderPassbookAttachment) ? 'YES' : 'NO',
+        tx.senderCountryCode,
+        tx.sendAmount,
+        tx.sourceCurrency,
+        tx.exchangeRate,
+        tx.receiveAmount,
+        tx.payoutMethod,
+        tx.status
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -121,7 +127,7 @@ export const InwardReportView: React.FC = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
@@ -158,6 +164,19 @@ export const InwardReportView: React.FC = () => {
             <option value="APPROVED">APPROVED (ခွင့်ပြုပြီး)</option>
           </select>
         </div>
+
+        <div>
+          <select
+            value={selectedBranch}
+            onChange={(e) => setSelectedBranch(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
+          >
+            <option value="ALL">All Branches (ဘဏ်ခွဲ အားလုံး)</option>
+            {db.branches.map(b => (
+              <option key={b.id} value={b.id}>{b.code} - {b.nameEn}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Table */}
@@ -168,6 +187,7 @@ export const InwardReportView: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">MTCN / Tx No</th>
                 <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">{t.branch}</th>
                 <th className="px-4 py-3">Beneficiary (Myanmar)</th>
                 <th className="px-4 py-3">Origin Sender</th>
                 <th className="px-4 py-3">Payout Amount (MMK)</th>
@@ -179,7 +199,7 @@ export const InwardReportView: React.FC = () => {
             <tbody className="divide-y divide-slate-800">
               {filteredTxs.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-slate-500">
+                  <td colSpan={9} className="text-center py-10 text-slate-500">
                     {t.noData}
                   </td>
                 </tr>
@@ -192,6 +212,14 @@ export const InwardReportView: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-slate-400 font-mono">
                       {new Date(tx.createdDate).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-teal-400 font-semibold text-[11px] block">
+                        {db.branches.find(b => b.id === tx.payoutBranchId)?.code || tx.payoutBranchId || 'BR-001'}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {db.branches.find(b => b.id === tx.payoutBranchId)?.nameEn || 'Yangon HQ'}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-200">{tx.receiverName}</div>

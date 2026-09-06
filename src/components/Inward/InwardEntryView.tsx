@@ -23,7 +23,9 @@ import {
   UploadCloud,
   Eye,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  MapPin,
+  Phone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -856,24 +858,69 @@ export const InwardEntryView: React.FC = () => {
               )}
 
               {/* Branch Selection in Overseas Sender & Partner */}
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">
-                  {language === 'my' ? 'ဆောင်ရွက်မည့် ဘဏ်ခွဲ (Branch)' : 'Processing / Payout Branch'} *
-                </label>
-                <select
-                  value={payoutBranchId}
-                  onChange={(e) => setPayoutBranchId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none font-medium"
-                >
-                  {db.branches.map(b => {
-                    const country = db.countries.find(c => c.code === (b.countryCode || 'MM'));
-                    return (
-                      <option key={b.id} value={b.id}>
-                        {b.code} - {b.nameEn} ({country?.flagEmoji || '🇲🇲'} {b.city})
-                      </option>
-                    );
-                  })}
-                </select>
+              <div className="sm:col-span-2 space-y-2">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">
+                    {language === 'my' ? 'ဆောင်ရွက်မည့် ဘဏ်ခွဲ (Branch)' : 'Processing / Payout Branch'} *
+                  </label>
+                  <select
+                    value={payoutBranchId}
+                    onChange={(e) => setPayoutBranchId(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none font-medium"
+                  >
+                    {db.branches.map(b => {
+                      const country = db.countries.find(c => c.code === (b.countryCode || 'MM'));
+                      return (
+                        <option key={b.id} value={b.id}>
+                          {b.code} - {b.nameEn} ({country?.flagEmoji || '🇲🇲'} {b.city})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* Detailed Branch Information Banner */}
+                {(() => {
+                  const curBranch = db.branches.find(b => b.id === payoutBranchId) || db.branches[0];
+                  if (!curBranch) return null;
+                  return (
+                    <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-start space-x-3">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-bold text-white text-xs">
+                              {language === 'my' && curBranch.nameMm ? `${curBranch.nameMm} (${curBranch.nameEn})` : curBranch.nameEn}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-400 border border-indigo-800 font-mono text-[10px] font-bold">
+                              {curBranch.code}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
+                              {curBranch.status}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-400 text-[11px] mt-1">
+                            <span className="flex items-center space-x-1">
+                              <MapPin className="w-3 h-3 text-indigo-400" />
+                              <span>{curBranch.address}, {curBranch.city}</span>
+                            </span>
+                            <span className="flex items-center space-x-1">
+                              <Phone className="w-3 h-3 text-indigo-400" />
+                              <span className="font-mono text-slate-300">{curBranch.phone}</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right text-[11px] text-slate-400 shrink-0 border-t sm:border-t-0 pt-1.5 sm:pt-0 sm:border-l border-slate-800 sm:pl-3">
+                        <span className="text-slate-500 block">{language === 'my' ? 'ဘဏ်ခွဲ မန်နေဂျာ' : 'Branch Manager'}</span>
+                        <span className="font-bold text-slate-200">{curBranch.managerName}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div>

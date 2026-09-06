@@ -12,7 +12,9 @@ import {
   Globe,
   User,
   CreditCard,
-  Building2
+  Building2,
+  MapPin,
+  Phone
 } from 'lucide-react';
 import { RemittanceTransaction, PayoutMethod } from '../../types';
 import { useRemittance } from '../../lib/store';
@@ -641,6 +643,43 @@ export const EditInwardModal: React.FC<EditInwardModalProps> = ({
                 </select>
               </div>
             </div>
+
+            {/* Detailed Branch Information Banner */}
+            {(() => {
+              const b = db.branches.find(br => br.id === formData.payoutBranchId) || db.branches[0];
+              if (!b) return null;
+              return (
+                <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-start space-x-2.5">
+                    <Building2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-white">
+                          {language === 'my' && b.nameMm ? `${b.nameMm} (${b.nameEn})` : b.nameEn}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px] font-bold">
+                          {b.code}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-400 text-[11px] mt-1">
+                        <span className="flex items-center space-x-1">
+                          <MapPin className="w-3 h-3 text-emerald-400" />
+                          <span>{b.address}, {b.city}</span>
+                        </span>
+                        <span className="flex items-center space-x-1">
+                          <Phone className="w-3 h-3 text-emerald-400" />
+                          <span className="font-mono text-slate-300">{b.phone}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-400 shrink-0 border-t sm:border-t-0 pt-1 sm:pt-0 sm:border-l border-slate-800 sm:pl-3">
+                    <span className="text-slate-500 block">{language === 'my' ? 'မန်နေဂျာ' : 'Manager'}</span>
+                    <span className="font-bold text-slate-200">{b.managerName}</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Section 4: Correction Reason / Audit Note */}

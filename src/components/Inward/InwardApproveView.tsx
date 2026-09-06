@@ -8,7 +8,8 @@ import {
   Coins, 
   ShieldCheck,
   UserCheck,
-  Edit3
+  Edit3,
+  Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -172,9 +173,15 @@ export const InwardApproveView: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 text-[10px]">
-                        {tx.payoutMethod === 'CASH_PICKUP' ? 'Cash Pickup' : 'Bank Deposit'}
-                      </span>
+                      <div>
+                        <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 text-[10px]">
+                          {tx.payoutMethod === 'CASH_PICKUP' ? 'Cash Pickup' : 'Bank Deposit'}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-1 text-[10px] text-teal-400 font-mono mt-1">
+                        <Building2 className="w-3 h-3 text-teal-400 shrink-0" />
+                        <span>{db.branches.find(b => b.id === tx.payoutBranchId)?.code || tx.payoutBranchId || 'BR-001'}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${

@@ -27,6 +27,27 @@ export function generateVoucherHtml({
     ? (language === 'my' ? 'ငွေလွှဲပို့ ပြေစာ (OUTWARD REMITTANCE SLIP)' : 'OUTWARD REMITTANCE SLIP')
     : (language === 'my' ? 'ငွေလွှဲထုတ် ပြေစာ (INWARD PAYOUT VOUCHER)' : 'INWARD PAYOUT VOUCHER');
 
+  const statusDisplay = (() => {
+    switch (transaction.status) {
+      case 'PENDING_APPROVAL':
+        return language === 'my' ? 'အတည်ပြုရန် ဆိုင်းငံ့ (Pending)' : 'PENDING APPROVAL';
+      case 'APPROVED':
+        return language === 'my' ? 'ခွင့်ပြုပြီး (Approved)' : 'APPROVED';
+      case 'PAID_OUT':
+        return language === 'my' ? 'ငွေထုတ်ပေးပြီး (Paid Out)' : 'PAID OUT';
+      case 'ON_HOLD':
+        return language === 'my' ? 'ဆိုင်းငံ့ထားသည် (On Hold)' : 'ON HOLD';
+      case 'DRAFT':
+        return language === 'my' ? 'မူကြမ်း (Draft)' : 'DRAFT';
+      case 'REJECTED':
+        return language === 'my' ? 'ပယ်ဖျက်ပြီး (Rejected)' : 'REJECTED';
+      case 'CANCELLED':
+        return language === 'my' ? 'ဖျက်သိမ်းပြီး (Cancelled)' : 'CANCELLED';
+      default:
+        return String(transaction.status).replace(/_/g, ' ');
+    }
+  })();
+
   const payoutMethodText = (() => {
     switch (transaction.payoutMethod) {
       case 'CASH_PICKUP':
@@ -48,49 +69,65 @@ export function generateVoucherHtml({
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Voucher_${transaction.mtcn}_${transaction.transactionNo}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Myanmar:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
+    @page {
+      size: A4 portrait;
+      margin: 8mm 12mm 8mm 12mm;
+    }
+
     *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
+    
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pyidaungsu", "Myanmar3", "Noto Sans Myanmar", sans-serif;
+      font-family: 'Plus Jakarta Sans', 'Noto Sans Myanmar', 'Pyidaungsu', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       color: #0f172a;
-      background-color: #f8fafc;
-      line-height: 1.45;
-      font-size: 13px;
+      background-color: #f1f5f9;
+      line-height: 1.35;
+      font-size: 11.5px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+
     .page-container {
-      max-width: 800px;
-      margin: 20px auto;
+      max-width: 780px;
+      margin: 16px auto;
       background: #ffffff;
-      padding: 32px 36px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-      border-radius: 12px;
+      padding: 22px 26px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+      border-radius: 10px;
       border: 1px solid #e2e8f0;
+      page-break-inside: avoid;
+      page-break-after: avoid;
     }
+
     .no-print-bar {
       position: sticky;
       top: 0;
       z-index: 100;
       background: #0f172a;
       color: #ffffff;
-      padding: 12px 24px;
+      padding: 10px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     }
     .btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 8px 16px;
-      font-size: 12px;
-      font-weight: 700;
+      padding: 7px 14px;
+      font-size: 11.5px;
+      font-weight: 600;
       border-radius: 6px;
       border: none;
       cursor: pointer;
@@ -116,10 +153,10 @@ export function generateVoucherHtml({
     .voucher-header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
       border-bottom: 2px solid #e2e8f0;
-      padding-bottom: 14px;
-      margin-bottom: 16px;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
     }
     .sys-brand {
       display: flex;
@@ -127,78 +164,80 @@ export function generateVoucherHtml({
       gap: 10px;
     }
     .sys-logo {
-      width: 40px;
-      height: 40px;
+      width: 36px;
+      height: 36px;
       background: #0f172a;
-      color: #34d399;
+      color: #10b981;
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 900;
-      font-size: 15px;
+      font-weight: 800;
+      font-size: 14px;
+      letter-spacing: 0.5px;
     }
     .sys-title h1 {
-      font-size: 16px;
-      font-weight: 900;
+      font-size: 15px;
+      font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: -0.2px;
+      letter-spacing: 0.2px;
       color: #0f172a;
+      line-height: 1.2;
     }
     .sys-title p {
-      font-size: 11px;
+      font-size: 10.5px;
       color: #64748b;
-      font-weight: 600;
+      font-weight: 500;
     }
     .voucher-type-badge {
       display: inline-block;
-      padding: 5px 12px;
+      padding: 4px 10px;
       background: #0f172a;
       color: #34d399;
-      border-radius: 6px;
-      font-weight: 800;
-      font-size: 11px;
+      border-radius: 5px;
+      font-weight: 700;
+      font-size: 10px;
       text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
     .meta-line {
-      font-size: 11px;
+      font-size: 10.5px;
       color: #64748b;
-      margin-top: 4px;
+      margin-top: 2px;
     }
     .ref-code {
-      font-family: monospace;
+      font-family: 'JetBrains Mono', monospace;
       font-weight: 700;
       color: #0f172a;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     /* Official Orange Rectangular Box */
     .orange-box {
-      border: 2px solid #f97316;
-      background: #fff7ed;
-      border-radius: 10px;
-      padding: 14px 16px;
-      margin-bottom: 16px;
+      border: 1.5px solid #f97316;
+      background: #fffaf5;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 10px;
     }
     .orange-box-head {
       display: flex;
       align-items: center;
-      gap: 12px;
-      border-bottom: 1px solid #fed7aa;
-      padding-bottom: 10px;
-      margin-bottom: 10px;
+      gap: 10px;
+      border-bottom: 1px solid #ffedd5;
+      padding-bottom: 6px;
+      margin-bottom: 7px;
     }
     .orange-box-icon {
-      width: 38px;
-      height: 38px;
+      width: 32px;
+      height: 32px;
       background: #ea580c;
       color: #ffffff;
-      border-radius: 8px;
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 900;
-      font-size: 18px;
+      font-size: 16px;
       flex-shrink: 0;
     }
     .orange-box-badges {
@@ -211,118 +250,119 @@ export function generateVoucherHtml({
       background: #ea580c;
       color: #ffffff;
       font-size: 9px;
-      font-weight: 900;
+      font-weight: 700;
       text-transform: uppercase;
+      letter-spacing: 0.4px;
       padding: 2px 6px;
-      border-radius: 4px;
+      border-radius: 3px;
     }
     .badge-license {
       background: #ffedd5;
       color: #7c2d12;
       border: 1px solid #fdba74;
-      font-size: 10px;
-      font-family: monospace;
-      font-weight: 700;
+      font-size: 9.5px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
       padding: 1px 6px;
-      border-radius: 4px;
+      border-radius: 3px;
     }
     .company-name {
-      font-size: 15px;
-      font-weight: 900;
+      font-size: 14px;
+      font-weight: 800;
       color: #431407;
       line-height: 1.25;
     }
     .orange-box-grid {
       display: grid;
       grid-template-columns: 1.2fr 1fr;
-      gap: 10px;
-      font-size: 11.5px;
+      gap: 8px;
+      font-size: 11px;
       color: #334155;
     }
     .orange-box-grid strong {
-      color: #431407;
-    }
-    .branch-footer {
-      border-top: 1px solid #fed7aa;
-      margin-top: 10px;
-      padding-top: 8px;
-      font-size: 11px;
-      color: #475569;
+      color: #7c2d12;
+      font-weight: 700;
     }
 
     /* MTCN Golden Banner */
     .mtcn-box {
-      border: 2px solid #fcd34d;
-      background: #fffbeb;
-      border-radius: 10px;
-      padding: 12px 18px;
+      border: 1.5px solid #f59e0b;
+      background: #fffdf5;
+      border-radius: 8px;
+      padding: 8px 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 10px;
     }
     .mtcn-label {
-      font-size: 10px;
-      font-weight: 800;
+      font-size: 9.5px;
+      font-weight: 700;
       text-transform: uppercase;
       color: #78350f;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
     }
     .mtcn-number {
-      font-family: monospace;
-      font-size: 26px;
-      font-weight: 900;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 21px;
+      font-weight: 700;
       color: #451a03;
       letter-spacing: 2px;
       line-height: 1.1;
-      margin-top: 2px;
+      margin-top: 1px;
     }
     .status-badge {
       display: inline-block;
-      padding: 4px 12px;
+      padding: 4px 10px;
       border-radius: 999px;
-      font-size: 11px;
-      font-weight: 900;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
       text-transform: uppercase;
-      background: #d1fae5;
+      background: #ecfdf5;
       color: #065f46;
-      border: 1px solid #6ee7b7;
+      border: 1px solid #a7f3d0;
     }
 
     /* 2 Columns: Sender & Receiver */
     .party-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 16px;
+      gap: 10px;
+      margin-bottom: 10px;
     }
     .party-card {
       border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      padding: 12px 14px;
+      border-radius: 6px;
+      padding: 8px 12px;
       background: #f8fafc;
     }
     .party-card-title {
-      font-size: 10px;
-      font-weight: 800;
+      font-size: 9.5px;
+      font-weight: 700;
       text-transform: uppercase;
-      color: #64748b;
+      color: #475569;
       border-bottom: 1px solid #e2e8f0;
-      padding-bottom: 4px;
-      margin-bottom: 8px;
-      letter-spacing: 0.5px;
+      padding-bottom: 3px;
+      margin-bottom: 6px;
+      letter-spacing: 0.4px;
     }
     .party-row {
-      margin-bottom: 4px;
-      font-size: 12px;
+      margin-bottom: 3px;
+      font-size: 11px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
     }
     .party-row .label {
       color: #64748b;
-      font-size: 11px;
+      font-size: 10.5px;
+      font-weight: 500;
     }
     .party-row .value {
       color: #0f172a;
-      font-weight: 700;
+      font-weight: 600;
+      text-align: right;
     }
 
     /* Financial Table */
@@ -330,23 +370,24 @@ export function generateVoucherHtml({
       width: 100%;
       border-collapse: collapse;
       border: 1px solid #cbd5e1;
-      border-radius: 8px;
+      border-radius: 6px;
       overflow: hidden;
-      margin-bottom: 16px;
-      font-size: 12px;
+      margin-bottom: 10px;
+      font-size: 11px;
     }
     .fin-table th {
       background: #f1f5f9;
       text-align: left;
-      padding: 8px 12px;
-      font-size: 10.5px;
-      font-weight: 800;
+      padding: 5px 10px;
+      font-size: 9.5px;
+      font-weight: 700;
       text-transform: uppercase;
-      color: #475569;
+      color: #334155;
+      letter-spacing: 0.4px;
       border-bottom: 1px solid #cbd5e1;
     }
     .fin-table td {
-      padding: 7px 12px;
+      padding: 4.5px 10px;
       border-bottom: 1px solid #f1f5f9;
     }
     .fin-table .row-alt {
@@ -354,40 +395,42 @@ export function generateVoucherHtml({
     }
     .fin-table .val {
       text-align: right;
-      font-family: monospace;
-      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
       color: #0f172a;
     }
     .fin-table .total-row {
-      background: #ecfdf5;
-      font-weight: 800;
-      font-size: 13.5px;
+      background: #f0fdf4;
+      font-weight: 700;
+      font-size: 12px;
     }
     .fin-table .total-row td {
       color: #065f46;
-      border-top: 2px solid #a7f3d0;
-      padding: 10px 12px;
+      border-top: 1.5px solid #86efac;
+      padding: 6px 10px;
     }
     .fin-table .total-row .val {
       color: #047857;
-      font-size: 15px;
+      font-size: 13.5px;
+      font-weight: 700;
     }
 
     /* Details info */
     .details-box {
       border: 1px solid #e2e8f0;
       background: #ffffff;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 11.5px;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 10.5px;
       color: #475569;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 20px;
+      gap: 5px;
+      margin-bottom: 10px;
     }
     .details-box strong {
       color: #0f172a;
+      font-weight: 600;
     }
 
     /* Signatures */
@@ -395,32 +438,48 @@ export function generateVoucherHtml({
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       gap: 16px;
-      margin-top: 24px;
-      padding-top: 14px;
+      margin-top: 14px;
+      padding-top: 12px;
       border-top: 1px solid #cbd5e1;
       text-align: center;
     }
+    .sig-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
     .sig-line {
-      height: 48px;
-      border-bottom: 1px solid #94a3b8;
+      width: 100%;
+      height: 64px;
+      border-bottom: 1.5px solid #64748b;
       margin-bottom: 6px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 4px;
+    }
+    .stamp-box {
+      width: 100%;
+      max-width: 150px;
+      height: 54px;
+      border: 1.5px dashed #94a3b8;
+      color: #94a3b8;
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-    .stamp-box {
-      border: 1px dashed #94a3b8;
-      color: #94a3b8;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      padding: 3px 8px;
-      border-radius: 4px;
+      border-radius: 6px;
+      background: #fafbfc;
+      margin: 0 auto;
     }
     .sig-name {
-      font-size: 12px;
-      font-weight: 800;
+      font-size: 11.5px;
+      font-weight: 700;
       color: #0f172a;
+      margin-top: 2px;
     }
     .sig-title {
       font-size: 10px;
@@ -429,28 +488,37 @@ export function generateVoucherHtml({
 
     /* Legal statement */
     .legal-notice {
-      margin-top: 16px;
-      padding-top: 12px;
+      margin-top: 8px;
+      padding-top: 6px;
       border-top: 1px solid #f1f5f9;
       text-align: center;
-      font-size: 9.5px;
+      font-size: 8.5px;
       color: #64748b;
-      line-height: 1.5;
+      line-height: 1.35;
     }
 
     @media print {
-      body {
+      html, body {
+        height: 100% !important;
         background: #ffffff !important;
+        font-size: 11px !important;
+        line-height: 1.3 !important;
       }
       .no-print, .no-print-bar {
         display: none !important;
       }
       .page-container {
-        margin: 0;
-        padding: 0;
-        box-shadow: none;
-        border: none;
-        max-width: 100%;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        page-break-inside: avoid !important;
+        page-break-after: avoid !important;
+      }
+      .orange-box, .mtcn-box, .party-grid, .fin-table, .details-box, .sig-grid, .legal-notice {
+        page-break-inside: avoid !important;
       }
     }
   </style>
@@ -459,8 +527,8 @@ export function generateVoucherHtml({
   <!-- Print action toolbar for browsers opening in dedicated window/tab -->
   <div class="no-print-bar no-print">
     <div style="display:flex; align-items:center; gap: 10px;">
-      <span style="font-weight:800; font-size:14px; color:#34d399;">🖨️ ${language === 'my' ? 'ပြေစာ ပုံနှိပ်ခြင်း' : 'Remittance Print View'}</span>
-      <span style="font-size:11px; opacity: 0.8; font-family: monospace;">Ref: ${transaction.transactionNo} | MTCN: ${transaction.mtcn}</span>
+      <span style="font-weight:700; font-size:13px; color:#34d399;">🖨️ ${language === 'my' ? 'ပြေစာ ပုံနှိပ်ခြင်း' : 'Remittance Print View'}</span>
+      <span style="font-size:11px; opacity: 0.85; font-family: 'JetBrains Mono', monospace;">Ref: ${transaction.transactionNo} | MTCN: ${transaction.mtcn}</span>
     </div>
     <div style="display:flex; align-items:center; gap: 8px;">
       <button onclick="window.print()" class="btn btn-print">
@@ -510,14 +578,9 @@ export function generateVoucherHtml({
         </div>
         <div>
           <strong>${language === 'my' ? 'ဆက်သွယ်ရန် ဖုန်းနံပါတ်' : 'Contact Phone'}: </strong>
-          <span style="font-family: monospace; font-weight: 700;">${operatorProfile.phone}</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600;">${operatorProfile.phone}</span>
           ${operatorProfile.hotline ? `<span style="margin-left: 6px; color:#c2410c;">(Hotline: <b>${operatorProfile.hotline}</b>)</span>` : ''}
         </div>
-      </div>
-      <div class="branch-footer">
-        <strong>${language === 'my' ? 'လုပ်ငန်းဆောင်ရွက်သည့် ဘဏ်ခွဲ' : 'Servicing Branch'}: </strong>
-        <span>${language === 'my' ? branch.nameMm : branch.nameEn}</span>
-        <span style="opacity: 0.85;"> • ${branch.phone} • ${branch.address}</span>
       </div>
     </div>
 
@@ -528,7 +591,7 @@ export function generateVoucherHtml({
         <div class="mtcn-number">${transaction.mtcn}</div>
       </div>
       <div style="text-align: right;">
-        <span class="status-badge">${transaction.status}</span>
+        <span class="status-badge">${statusDisplay}</span>
       </div>
     </div>
 
@@ -542,16 +605,20 @@ export function generateVoucherHtml({
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'မှတ်ပုံတင်' : 'NRC / ID'}:</span>
-          <span class="value" style="font-family: monospace;"> ${transaction.senderNrc || 'N/A'}</span>
+          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.senderNrc || 'N/A'}</span>
         </div>
         ${transaction.senderPassport ? `
         <div class="party-row">
           <span class="label">${language === 'my' ? 'နိုင်ငံကူးလက်မှတ်' : 'Passport No'}:</span>
-          <span class="value" style="font-family: monospace;"> ${transaction.senderPassport}</span>
+          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.senderPassport}</span>
         </div>` : ''}
         <div class="party-row">
           <span class="label">${language === 'my' ? 'ဖုန်း' : 'Phone'}:</span>
-          <span class="value"> ${transaction.senderPhone}</span>
+          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.senderPhone}</span>
+        </div>
+        <div class="party-row">
+          <span class="label">${language === 'my' ? 'လိပ်စာ' : 'Address'}:</span>
+          <span class="value"> ${transaction.senderAddress || 'N/A'}</span>
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'နိုင်ငံ' : 'Country'}:</span>
@@ -567,16 +634,20 @@ export function generateVoucherHtml({
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'မှတ်ပုံတင်' : 'NRC / ID'}:</span>
-          <span class="value" style="font-family: monospace;"> ${transaction.receiverNrc || 'N/A'}</span>
+          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.receiverNrc || 'N/A'}</span>
         </div>
         ${transaction.receiverPassport ? `
         <div class="party-row">
           <span class="label">${language === 'my' ? 'နိုင်ငံကူးလက်မှတ်' : 'Passport No'}:</span>
-          <span class="value" style="font-family: monospace;"> ${transaction.receiverPassport}</span>
+          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.receiverPassport}</span>
         </div>` : ''}
         <div class="party-row">
           <span class="label">${language === 'my' ? 'ဖုန်း' : 'Phone'}:</span>
-          <span class="value"> ${transaction.receiverPhone}</span>
+          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.receiverPhone}</span>
+        </div>
+        <div class="party-row">
+          <span class="label">${language === 'my' ? 'လိပ်စာ' : 'Address'}:</span>
+          <span class="value"> ${transaction.receiverAddress || 'N/A'}</span>
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'ခရီးဆုံး နိုင်ငံ' : 'Destination'}:</span>
@@ -637,19 +708,21 @@ export function generateVoucherHtml({
 
     <!-- Signatures & Stamp -->
     <div class="sig-grid">
-      <div>
+      <div class="sig-col">
         <div class="sig-line"></div>
         <div class="sig-name">${transaction.creatorName || (language === 'my' ? 'စာရင်းသွင်းသူ' : 'Maker')}</div>
         <div class="sig-title">${language === 'my' ? 'စာရင်းသွင်းဝန်ထမ်း (Maker / Operator)' : 'Prepared / Operator'}</div>
       </div>
-      <div>
-        <div class="sig-line">
-          <span class="stamp-box">${language === 'my' ? 'ဘဏ်ခွဲ တံဆိပ်တုံး' : 'Branch Stamp'}</span>
+      <div class="sig-col">
+        <div class="sig-line" style="border-bottom: none; display: flex; align-items: center; justify-content: center;">
+          <div class="stamp-box">
+            <span>${language === 'my' ? 'ဘဏ်ခွဲ တံဆိပ်တုံး' : 'Branch Stamp'}</span>
+          </div>
         </div>
         <div class="sig-name">${language === 'my' ? 'ဘဏ်ခွဲ အတည်ပြုတံဆိပ်တုံး' : 'Branch Verification Stamp'}</div>
         <div class="sig-title">${language === 'my' ? 'ဗဟိုဘဏ် စည်းမျဉ်းကိုက်' : 'CBM Compliance'}</div>
       </div>
-      <div>
+      <div class="sig-col">
         <div class="sig-line"></div>
         <div class="sig-name">${transaction.approverName || (language === 'my' ? 'အတည်ပြုသူ မန်နေဂျာ' : 'Checker / Manager')}</div>
         <div class="sig-title">${language === 'my' ? 'ခွင့်ပြုအတည်ပြုသူ (Checker Approval)' : 'Authorized Checker Approval'}</div>

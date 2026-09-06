@@ -322,25 +322,16 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                 </div>
               </div>
             </div>
-
-            {/* Servicing Branch Info */}
-            <div className="mt-2 pt-2 border-t border-orange-200/70 flex flex-wrap items-center justify-between text-[11px] text-slate-600">
-              <div>
-                <span className="font-bold text-slate-800">{language === 'my' ? 'လုပ်ငန်းဆောင်ရွက်သည့် ဘဏ်ခွဲ' : 'Servicing Branch'}: </span>
-                <span className="font-semibold text-slate-900">{language === 'my' ? branch.nameMm : branch.nameEn}</span>
-                <span className="text-slate-500"> • {branch.phone} • {branch.address}</span>
-              </div>
-            </div>
           </div>
 
           {/* MTCN Golden Banner */}
-          <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="bg-amber-50/80 border-2 border-amber-300 rounded-xl p-3 sm:p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-900 block">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 block">
                 {language === 'my' ? 'ငွေလွှဲ လျှို့ဝှက်ကုဒ် / MTCN' : 'Money Transfer Control Number (MTCN)'}
               </span>
               <div className="flex items-center space-x-3 mt-0.5">
-                <span className="text-2xl sm:text-3xl font-mono font-black text-amber-950 tracking-widest">
+                <span className="text-2xl sm:text-3xl font-mono font-bold text-amber-950 tracking-widest">
                   {transaction.mtcn}
                 </span>
                 <button
@@ -358,17 +349,25 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                 <span className="text-xs font-medium text-slate-500 block">
                   {language === 'my' ? 'အခြေအနေ' : 'Status'}
                 </span>
-                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-black uppercase ${
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold tracking-wide uppercase ${
                   transaction.status === 'APPROVED' || transaction.status === 'PAID_OUT'
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                     : transaction.status === 'PENDING_APPROVAL'
                     ? 'bg-amber-100 text-amber-800 border border-amber-300'
                     : 'bg-rose-100 text-rose-800 border border-rose-300'
                 }`}>
-                  {transaction.status}
+                  {transaction.status === 'PENDING_APPROVAL'
+                    ? (language === 'my' ? 'အတည်ပြုရန် ဆိုင်းငံ့' : 'PENDING APPROVAL')
+                    : transaction.status === 'APPROVED'
+                    ? (language === 'my' ? 'ခွင့်ပြုပြီး' : 'APPROVED')
+                    : transaction.status === 'PAID_OUT'
+                    ? (language === 'my' ? 'ငွေထုတ်ပြီး' : 'PAID OUT')
+                    : transaction.status === 'COMPLETED'
+                    ? (language === 'my' ? 'အောင်မြင်ပြီး' : 'COMPLETED')
+                    : transaction.status.replace(/_/g, ' ')}
                 </span>
               </div>
-              <div className="w-12 h-12 bg-white border border-slate-300 rounded flex items-center justify-center p-1">
+              <div className="w-11 h-11 bg-white border border-slate-300 rounded flex items-center justify-center p-1">
                 <QrCode className="w-full h-full text-slate-800" />
               </div>
             </div>
@@ -429,6 +428,10 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                   <strong className="text-slate-800">{transaction.senderPhone}</strong>
                 </div>
                 <div>
+                  <span className="text-slate-500">{language === 'my' ? 'လိပ်စာ' : 'Address'}:</span>{' '}
+                  <strong className="text-slate-800">{transaction.senderAddress || 'N/A'}</strong>
+                </div>
+                <div>
                   <span className="text-slate-500">{language === 'my' ? 'နိုင်ငံ' : 'Country'}:</span>{' '}
                   <strong className="text-slate-800">{transaction.senderCountryCode}</strong>
                 </div>
@@ -462,6 +465,10 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                 <div>
                   <span className="text-slate-500">{language === 'my' ? 'ဖုန်း' : 'Phone'}:</span>{' '}
                   <strong className="text-slate-800">{transaction.receiverPhone}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500">{language === 'my' ? 'လိပ်စာ' : 'Address'}:</span>{' '}
+                  <strong className="text-slate-800">{transaction.receiverAddress || 'N/A'}</strong>
                 </div>
                 <div>
                   <span className="text-slate-500">{language === 'my' ? 'ခရီးဆုံး နိုင်ငံ' : 'Destination'}:</span>{' '}
@@ -539,26 +546,28 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
             )}
           </div>
 
-          {/* Signatures & Stamp area */}
-          <div className="pt-8 border-t border-slate-300 grid grid-cols-3 gap-6 text-center text-xs text-slate-600">
-            <div>
-              <div className="h-12 border-b border-slate-400 mb-1"></div>
-              <p className="font-bold text-slate-800">{transaction.creatorName || (language === 'my' ? 'စာရင်းသွင်းသူ' : 'Maker')}</p>
-              <p className="text-[10px] text-slate-500">{language === 'my' ? 'စာရင်းသွင်းဝန်ထမ်း (Maker / Operator)' : 'Prepared / Operator'}</p>
+          {/* Signatures & Stamp area - Adjusted to wide space */}
+          <div className="pt-6 sm:pt-7 border-t border-slate-300 grid grid-cols-3 gap-4 sm:gap-6 text-center text-xs text-slate-600">
+            <div className="flex flex-col items-center">
+              <div className="w-full h-16 sm:h-20 border-b-2 border-slate-400 mb-2"></div>
+              <p className="font-bold text-slate-900 text-xs sm:text-sm">{transaction.creatorName || (language === 'my' ? 'စာရင်းသွင်းသူ' : 'Maker')}</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-500">{language === 'my' ? 'စာရင်းသွင်းဝန်ထမ်း (Maker / Operator)' : 'Prepared / Operator'}</p>
             </div>
-            <div>
-              <div className="h-12 border-b border-slate-400 mb-1 flex items-center justify-center">
-                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest border border-dashed border-slate-300 px-3 py-1 rounded">
-                  {language === 'my' ? 'ဘဏ်ခွဲ တံဆိပ်တုံး' : 'Official Branch Stamp'}
-                </span>
+            <div className="flex flex-col items-center">
+              <div className="w-full h-16 sm:h-20 mb-2 flex items-center justify-center">
+                <div className="w-full max-w-[160px] h-13 sm:h-16 border-2 border-dashed border-slate-300 bg-slate-50/60 rounded-lg flex items-center justify-center p-2">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    {language === 'my' ? 'ဘဏ်ခွဲ တံဆိပ်တုံး' : 'Official Branch Stamp'}
+                  </span>
+                </div>
               </div>
-              <p className="font-bold text-slate-800">{language === 'my' ? 'ဘဏ်ခွဲ အတည်ပြုတံဆိပ်တုံး' : 'Branch Verification Stamp'}</p>
-              <p className="text-[10px] text-slate-500">{language === 'my' ? 'ဗဟိုဘဏ် စည်းမျဉ်းကိုက်' : 'Central Bank Compliance'}</p>
+              <p className="font-bold text-slate-900 text-xs sm:text-sm">{language === 'my' ? 'ဘဏ်ခွဲ အတည်ပြုတံဆိပ်တုံး' : 'Branch Verification Stamp'}</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-500">{language === 'my' ? 'ဗဟိုဘဏ် စည်းမျဉ်းကိုက်' : 'Central Bank Compliance'}</p>
             </div>
-            <div>
-              <div className="h-12 border-b border-slate-400 mb-1"></div>
-              <p className="font-bold text-slate-800">{transaction.approverName || (language === 'my' ? 'အတည်ပြုသူ မန်နေဂျာ' : 'Checker / Manager')}</p>
-              <p className="text-[10px] text-slate-500">{language === 'my' ? 'ခွင့်ပြုအတည်ပြုသူ (Checker Approval)' : 'Authorized Checker Approval'}</p>
+            <div className="flex flex-col items-center">
+              <div className="w-full h-16 sm:h-20 border-b-2 border-slate-400 mb-2"></div>
+              <p className="font-bold text-slate-900 text-xs sm:text-sm">{transaction.approverName || (language === 'my' ? 'အတည်ပြုသူ မန်နေဂျာ' : 'Checker / Manager')}</p>
+              <p className="text-[10px] sm:text-[11px] text-slate-500">{language === 'my' ? 'ခွင့်ပြုအတည်ပြုသူ (Checker Approval)' : 'Authorized Checker Approval'}</p>
             </div>
           </div>
 

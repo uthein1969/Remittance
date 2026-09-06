@@ -11,7 +11,8 @@ import {
   Search, 
   Filter, 
   ArrowRight,
-  Clock
+  Clock,
+  Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -195,7 +196,11 @@ export const OutwardApproveView: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="text-slate-300">{tx.creatorName}</div>
+                      <div className="text-slate-300 font-medium">{tx.creatorName}</div>
+                      <div className="flex items-center space-x-1 text-[10px] text-sky-400 font-mono mt-0.5">
+                        <Building2 className="w-3 h-3 text-sky-400 shrink-0" />
+                        <span>{db.branches.find(b => b.id === tx.sendingBranchId)?.nameEn || tx.sendingBranchId || 'Yangon HQ'}</span>
+                      </div>
                       <div className="text-[10px] text-slate-500">{tx.purposeName}</div>
                     </td>
                     <td className="px-4 py-3">
@@ -292,6 +297,36 @@ export const OutwardApproveView: React.FC = () => {
               <ShieldCheck className="w-5 h-5 text-emerald-400 flex-shrink-0" />
               <span>{t.cleanRecord}</span>
             </div>
+
+            {/* Branch Information */}
+            {(() => {
+              const b = db.branches.find(br => br.id === selectedTx.sendingBranchId) || db.branches[0];
+              if (!b) return null;
+              return (
+                <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center space-x-3">
+                    <Building2 className="w-5 h-5 text-sky-400 shrink-0" />
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-white">
+                          {language === 'my' && b.nameMm ? `${b.nameMm} (${b.nameEn})` : b.nameEn}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800 font-mono text-[10px] font-bold">
+                          {b.code}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {b.address}, {b.city} • Tel: <span className="font-mono text-slate-300">{b.phone}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right text-[11px] text-slate-400 shrink-0 border-t sm:border-t-0 pt-1 sm:pt-0 sm:border-l border-slate-800 sm:pl-3">
+                    <span className="text-slate-500 block">{language === 'my' ? 'ဘဏ်ခွဲ မန်နေဂျာ' : 'Branch Manager'}</span>
+                    <span className="font-bold text-slate-200">{b.managerName}</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Maker Note */}
             {selectedTx.senderNote && (

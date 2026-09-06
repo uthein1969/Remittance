@@ -12,7 +12,9 @@ import {
   Coins,
   Upload,
   User,
-  Paperclip
+  Paperclip,
+  MapPin,
+  Phone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -252,30 +254,40 @@ export const OutwardEntryView: React.FC = () => {
             </p>
           </div>
 
-          {/* Domestic vs International Scope Switch */}
-          <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
-            <button
-              type="button"
-              onClick={() => setScope('INTERNATIONAL')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                scope === 'INTERNATIONAL'
-                  ? 'bg-sky-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {t.international}
-            </button>
-            <button
-              type="button"
-              onClick={() => setScope('DOMESTIC')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                scope === 'DOMESTIC'
-                  ? 'bg-sky-600 text-white shadow'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {t.domestic}
-            </button>
+          {/* Scope Switch & Active Branch Badge */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+            <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+              <Building2 className="w-4 h-4 text-sky-400" />
+              <span>{language === 'my' ? 'ဆောင်ရွက်သည့် ဘဏ်ခွဲ' : 'Sending Branch'}: </span>
+              <strong className="text-white font-semibold">
+                {db.branches.find(b => b.id === sendingBranchId)?.nameEn || 'Yangon HQ'} ({db.branches.find(b => b.id === sendingBranchId)?.code || sendingBranchId})
+              </strong>
+            </div>
+
+            <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setScope('INTERNATIONAL')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  scope === 'INTERNATIONAL'
+                    ? 'bg-sky-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {t.international}
+              </button>
+              <button
+                type="button"
+                onClick={() => setScope('DOMESTIC')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  scope === 'DOMESTIC'
+                    ? 'bg-sky-600 text-white shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {t.domestic}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -678,6 +690,24 @@ export const OutwardEntryView: React.FC = () => {
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            {/* Sending Branch */}
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">
+                {language === 'my' ? 'ဆောင်ရွက်သည့် ဘဏ်ခွဲ (Sending Branch)' : 'Sending Branch'} *
+              </label>
+              <select
+                value={sendingBranchId}
+                onChange={(e) => setSendingBranchId(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white focus:border-sky-500 focus:outline-none font-medium"
+              >
+                {db.branches.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.code} - {b.nameEn} ({b.city})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Purpose */}
             <div>
               <label className="block text-slate-400 mb-1 font-medium">{t.purposeOfRemit} *</label>
@@ -737,7 +767,7 @@ export const OutwardEntryView: React.FC = () => {
             </div>
 
             {/* Proof Attachment */}
-            <div>
+            <div className="sm:col-span-3">
               <label className="block text-slate-400 mb-1 font-medium">{t.attachProof}</label>
               <div className="flex items-center space-x-2">
                 <input
@@ -758,6 +788,49 @@ export const OutwardEntryView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Detailed Branch Information Banner */}
+          {(() => {
+            const curBranch = db.branches.find(b => b.id === sendingBranchId) || db.branches[0];
+            if (!curBranch) return null;
+            return (
+              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-start space-x-3">
+                  <div className="w-9 h-9 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-bold text-white text-sm">
+                        {language === 'my' && curBranch.nameMm ? `${curBranch.nameMm} (${curBranch.nameEn})` : curBranch.nameEn}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800 font-mono text-[10px] font-bold">
+                        {curBranch.code}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
+                        {curBranch.status}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-400 text-xs mt-1.5">
+                      <span className="flex items-center space-x-1">
+                        <MapPin className="w-3.5 h-3.5 text-sky-500" />
+                        <span>{curBranch.address}, {curBranch.city}</span>
+                      </span>
+                      <span className="flex items-center space-x-1">
+                        <Phone className="w-3.5 h-3.5 text-sky-500" />
+                        <span className="font-mono text-slate-300 font-semibold">{curBranch.phone}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-right text-xs text-slate-400 shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 sm:border-l border-slate-800 sm:pl-4">
+                  <span className="text-slate-500 block text-[11px]">{language === 'my' ? 'ဘဏ်ခွဲ မန်နေဂျာ' : 'Branch Manager'}</span>
+                  <span className="font-bold text-slate-200">{curBranch.managerName}</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Submit & Action Buttons */}

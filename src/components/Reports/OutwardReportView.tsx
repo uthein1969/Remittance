@@ -49,23 +49,27 @@ export const OutwardReportView: React.FC = () => {
 
   // CSV Export
   const exportCsv = () => {
-    const headers = ['Transaction No', 'MTCN', 'Date', 'Sender Name', 'Sender NRC', 'Receiver Name', 'Destination', 'Send Amount', 'Currency', 'Exchange Rate', 'Receive Amount', 'Target Currency', 'Service Fee', 'Status'];
-    const rows = filteredTxs.map(tx => [
-      tx.transactionNo,
-      tx.mtcn,
-      new Date(tx.createdDate).toISOString().split('T')[0],
-      `"${tx.senderName}"`,
-      `"${tx.senderNrc}"`,
-      `"${tx.receiverName}"`,
-      tx.receiverCountryCode,
-      tx.sendAmount,
-      tx.sourceCurrency,
-      tx.exchangeRate,
-      tx.receiveAmount,
-      tx.targetCurrency,
-      tx.serviceFee,
-      tx.status
-    ]);
+    const headers = ['Transaction No', 'MTCN', 'Date', 'Branch', 'Sender Name', 'Sender NRC', 'Receiver Name', 'Destination', 'Send Amount', 'Currency', 'Exchange Rate', 'Receive Amount', 'Target Currency', 'Service Fee', 'Status'];
+    const rows = filteredTxs.map(tx => {
+      const branch = db.branches.find(b => b.id === tx.sendingBranchId);
+      return [
+        tx.transactionNo,
+        tx.mtcn,
+        new Date(tx.createdDate).toISOString().split('T')[0],
+        `"${branch ? `${branch.code} - ${branch.nameEn}` : (tx.sendingBranchId || 'BR-001')}"`,
+        `"${tx.senderName}"`,
+        `"${tx.senderNrc}"`,
+        `"${tx.receiverName}"`,
+        tx.receiverCountryCode,
+        tx.sendAmount,
+        tx.sourceCurrency,
+        tx.exchangeRate,
+        tx.receiveAmount,
+        tx.targetCurrency,
+        tx.serviceFee,
+        tx.status
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -196,6 +200,7 @@ export const OutwardReportView: React.FC = () => {
               <tr>
                 <th className="px-4 py-3">Tx No / MTCN</th>
                 <th className="px-4 py-3">{t.date}</th>
+                <th className="px-4 py-3">{t.branch}</th>
                 <th className="px-4 py-3">{t.senderName}</th>
                 <th className="px-4 py-3">{t.receiverName}</th>
                 <th className="px-4 py-3">{t.sendAmount}</th>
@@ -207,7 +212,7 @@ export const OutwardReportView: React.FC = () => {
             <tbody className="divide-y divide-slate-800">
               {filteredTxs.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-slate-500">
+                  <td colSpan={9} className="text-center py-10 text-slate-500">
                     {t.noData}
                   </td>
                 </tr>
@@ -220,6 +225,14 @@ export const OutwardReportView: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-slate-400 font-mono">
                       {new Date(tx.createdDate).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-mono text-sky-400 font-semibold text-[11px] block">
+                        {db.branches.find(b => b.id === tx.sendingBranchId)?.code || tx.sendingBranchId || 'BR-001'}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {db.branches.find(b => b.id === tx.sendingBranchId)?.nameEn || 'Yangon HQ'}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-200">{tx.senderName}</div>
