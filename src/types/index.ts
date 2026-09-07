@@ -152,12 +152,29 @@ export interface RemittanceTransaction {
   // Sender
   senderName: string;
   senderNameMm?: string;
+  senderIdType?: 'NRC' | 'PASSPORT';
   senderNrc: string;
   senderPassport?: string;
   senderPassbook?: string; // Compatibility
   senderPhone: string;
   senderAddress: string;
   senderCountryCode: string;
+  senderFatherName?: string;
+  senderOccupation?: string;
+  senderSourceOfFund?: string;
+  senderDateOfBirth?: string; // Stored as DD/MM/YYYY or YYYY-MM-DD
+  senderNrcAttachment?: string; // Base64 data URL or Supabase storage public URL (primary/front)
+  senderNrcAttachmentName?: string;
+  senderNrcAttachmentType?: string;
+  senderNrcAttachmentSize?: string;
+  senderNrcFrontAttachment?: string;
+  senderNrcFrontAttachmentName?: string;
+  senderNrcFrontAttachmentType?: string;
+  senderNrcFrontAttachmentSize?: string;
+  senderNrcBackAttachment?: string;
+  senderNrcBackAttachmentName?: string;
+  senderNrcBackAttachmentType?: string;
+  senderNrcBackAttachmentSize?: string;
   senderPassportAttachment?: string; // Base64 data URL or Supabase storage public URL
   senderPassportAttachmentName?: string;
   senderPassportAttachmentType?: string;

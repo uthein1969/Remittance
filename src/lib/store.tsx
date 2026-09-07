@@ -19,6 +19,7 @@ import {
   OperatorProfile
 } from '../types';
 import { initialDatabase, defaultOperatorProfile } from './mockData';
+import { sampleSenderNrcAttachment, sampleSenderPassportAttachment } from './sampleDocuments';
 import { translations } from '../i18n/translations';
 import { getSupabaseClient, resetSupabaseClient } from './supabase';
 
@@ -141,8 +142,33 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.branches && parsed.users && parsed.transactions) {
-          if (!parsed.operatorProfile) {
+          if (!parsed.operatorProfile || parsed.operatorProfile.companyNameEn?.includes('Kanbawza') || parsed.operatorProfile.addressEn?.includes('Merchant Road')) {
             parsed.operatorProfile = defaultOperatorProfile;
+          }
+          // Ensure Yangon Head Office branch reflects the requested default address
+          const ygnHq = parsed.branches?.find((b: any) => b.id === 'BR-001');
+          if (ygnHq && (ygnHq.address?.includes('Merchant Road') || ygnHq.city?.includes('Kyauktada'))) {
+            ygnHq.address = 'No. 210, Shwe Hintha Road, Hlaing Township, Yangon, Myanmar';
+            ygnHq.city = 'Yangon (Hlaing)';
+            ygnHq.phone = '01-512345';
+          }
+          // Ensure sample outward transaction TX-001 has senderDateOfBirth and attachments populated
+          const tx1 = parsed.transactions?.find((t: any) => t.id === 'TX-001');
+          if (tx1) {
+            if (!tx1.senderDateOfBirth) tx1.senderDateOfBirth = '14/07/1988';
+            if (!tx1.senderFatherName) tx1.senderFatherName = 'U Tin Aung';
+            if (!tx1.senderNrcAttachment) {
+              tx1.senderNrcAttachment = sampleSenderNrcAttachment;
+              tx1.senderNrcAttachmentName = 'NRC_U_Zaw_Win_Htet_12_BAHANA_184920.svg';
+              tx1.senderNrcAttachmentType = 'image/svg+xml';
+              tx1.senderNrcAttachmentSize = '18 KB';
+            }
+            if (!tx1.senderPassportAttachment) {
+              tx1.senderPassportAttachment = sampleSenderPassportAttachment;
+              tx1.senderPassportAttachmentName = 'Passport_U_Zaw_Win_Htet_MA918234.svg';
+              tx1.senderPassportAttachmentType = 'image/svg+xml';
+              tx1.senderPassportAttachmentSize = '24 KB';
+            }
           }
           // If env vars are provided and local config is empty, fill them in
           if (envUrl && !parsed.supabaseConfig?.url) {
@@ -387,6 +413,22 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       senderPhone: txData.senderPhone || '',
       senderAddress: txData.senderAddress || '',
       senderCountryCode: txData.senderCountryCode || 'MM',
+      senderFatherName: txData.senderFatherName,
+      senderOccupation: txData.senderOccupation,
+      senderSourceOfFund: txData.senderSourceOfFund,
+      senderDateOfBirth: txData.senderDateOfBirth,
+      senderNrcAttachment: txData.senderNrcAttachment,
+      senderNrcAttachmentName: txData.senderNrcAttachmentName,
+      senderNrcAttachmentType: txData.senderNrcAttachmentType,
+      senderNrcAttachmentSize: txData.senderNrcAttachmentSize,
+      senderPassportAttachment: txData.senderPassportAttachment || txData.senderPassbookAttachment,
+      senderPassportAttachmentName: txData.senderPassportAttachmentName || txData.senderPassbookAttachmentName,
+      senderPassportAttachmentType: txData.senderPassportAttachmentType || txData.senderPassbookAttachmentType,
+      senderPassportAttachmentSize: txData.senderPassportAttachmentSize || txData.senderPassbookAttachmentSize,
+      senderPassbookAttachment: txData.senderPassportAttachment || txData.senderPassbookAttachment,
+      senderPassbookAttachmentName: txData.senderPassportAttachmentName || txData.senderPassbookAttachmentName,
+      senderPassbookAttachmentType: txData.senderPassportAttachmentType || txData.senderPassbookAttachmentType,
+      senderPassbookAttachmentSize: txData.senderPassportAttachmentSize || txData.senderPassbookAttachmentSize,
       
       receiverName: txData.receiverName || '',
       receiverNameMm: txData.receiverNameMm || '',

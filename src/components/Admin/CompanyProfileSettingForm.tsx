@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { OperatorProfile } from '../../types';
+import { defaultOperatorProfile } from '../../lib/mockData';
 
 export const CompanyProfileSettingForm: React.FC = () => {
   const { operatorProfile, updateOperatorProfile, language } = useRemittance();
@@ -37,6 +38,12 @@ export const CompanyProfileSettingForm: React.FC = () => {
   const handleReset = () => {
     setFormData(operatorProfile);
     setIsDirty(false);
+    setSavedSuccess(false);
+  };
+
+  const handleRestoreSystemDefault = () => {
+    setFormData(defaultOperatorProfile);
+    setIsDirty(true);
     setSavedSuccess(false);
   };
 
@@ -211,7 +218,7 @@ export const CompanyProfileSettingForm: React.FC = () => {
                 required
                 value={formData.companyNameMm}
                 onChange={(e) => handleChange('companyNameMm', e.target.value)}
-                placeholder="ဥပမာ - ရွှေမြန်မာ ငွေလွှဲလုပ်ငန်းလီမိတက်"
+                placeholder="ဥပမာ - အမ်အမ် အင်ဗက်စ် ကုမ္ပဏီ လီမိတက်"
                 className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white transition-all font-medium"
               />
             </div>
@@ -225,7 +232,7 @@ export const CompanyProfileSettingForm: React.FC = () => {
                 required
                 value={formData.companyNameEn}
                 onChange={(e) => handleChange('companyNameEn', e.target.value)}
-                placeholder="e.g. Shwe Myanmar Money Services Co., Ltd."
+                placeholder="e.g. MM Invest Co., Ltd."
                 className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white transition-all font-medium"
               />
             </div>
@@ -248,7 +255,7 @@ export const CompanyProfileSettingForm: React.FC = () => {
                 required
                 value={formData.addressMm}
                 onChange={(e) => handleChange('addressMm', e.target.value)}
-                placeholder="ဥပမာ - အမှတ် (၁၂၃)၊ မဟာဗန္ဓုလလမ်း၊ ကျောက်တံတားမြို့နယ်၊ ရန်ကုန်မြို့။"
+                placeholder="ဥပမာ - အမှတ် (၂၁၀)၊ ရွှေဟင်္သာလမ်း၊ လှိုင်မြို့နယ်၊ ရန်ကုန်မြို့၊ မြန်မာနိုင်ငံ။"
                 className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white transition-all font-medium"
               />
             </div>
@@ -262,7 +269,7 @@ export const CompanyProfileSettingForm: React.FC = () => {
                 required
                 value={formData.addressEn}
                 onChange={(e) => handleChange('addressEn', e.target.value)}
-                placeholder="e.g. No. 123, Maha Bandula Road, Kyauktada Township, Yangon, Myanmar."
+                placeholder="e.g. No. 210, Shwe Hintha Road, Hlaing Township, Yangon, Myanmar"
                 className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white transition-all font-medium"
               />
             </div>
@@ -287,7 +294,7 @@ export const CompanyProfileSettingForm: React.FC = () => {
                   required
                   value={formData.phone}
                   onChange={(e) => handleChange('phone', e.target.value)}
-                  placeholder="01-382901, 01-382902"
+                  placeholder="01-512345, 01-512346"
                   className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white transition-all font-mono font-medium"
                 />
               </div>
@@ -303,7 +310,7 @@ export const CompanyProfileSettingForm: React.FC = () => {
                   type="text"
                   value={formData.hotline}
                   onChange={(e) => handleChange('hotline', e.target.value)}
-                  placeholder="09-777888999, 1822"
+                  placeholder="09-790123456, 09-977123456"
                   className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white transition-all font-mono font-medium"
                 />
               </div>
@@ -371,7 +378,7 @@ export const CompanyProfileSettingForm: React.FC = () => {
                   type="text"
                   value={formData.website || ''}
                   onChange={(e) => handleChange('website', e.target.value)}
-                  placeholder="https://www.shwemyanmarremit.com"
+                  placeholder="https://www.mminvest.com.mm"
                   className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 focus:bg-white transition-all font-mono"
                 />
               </div>
@@ -397,6 +404,16 @@ export const CompanyProfileSettingForm: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-3 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleRestoreSystemDefault}
+              className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-3.5 py-2.5 rounded-xl border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold transition-all cursor-pointer"
+              title={language === 'my' ? 'MM Invest Co., Ltd. မူလသတ်မှတ်ချက်အတိုင်း ပြန်ထားမည်' : 'Restore MM Invest Default Profile'}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>{language === 'my' ? 'Default မူရင်းထားရန်' : 'Restore Default'}</span>
+            </button>
+
             <button
               type="button"
               onClick={handleReset}

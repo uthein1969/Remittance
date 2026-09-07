@@ -10,10 +10,12 @@ import {
   Globe, 
   CheckCircle2,
   Sparkles,
-  FileText
+  FileText,
+  RotateCcw
 } from 'lucide-react';
 import { useRemittance } from '../lib/store';
 import { OperatorProfile } from '../types';
+import { defaultOperatorProfile } from '../lib/mockData';
 
 interface CompanyProfileModalProps {
   isOpen: boolean;
@@ -144,7 +146,7 @@ export const CompanyProfileModal: React.FC<CompanyProfileModalProps> = ({ isOpen
                   required
                   value={formData.companyNameMm}
                   onChange={(e) => setFormData({ ...formData, companyNameMm: e.target.value })}
-                  placeholder="ဥပမာ - ကမ္ဘောဇ ငွေလွှဲလုပ်ငန်း ဝန်ဆောင်မှု ကုမ္ပဏီ လီမိတက်"
+                  placeholder="ဥပမာ - အမ်အမ် အင်ဗက်စ် ကုမ္ပဏီ လီမိတက်"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
                 />
               </div>
@@ -157,7 +159,7 @@ export const CompanyProfileModal: React.FC<CompanyProfileModalProps> = ({ isOpen
                   required
                   value={formData.companyNameEn}
                   onChange={(e) => setFormData({ ...formData, companyNameEn: e.target.value })}
-                  placeholder="e.g. Kanbawza Remittance Services Co., Ltd."
+                  placeholder="e.g. MM Invest Co., Ltd."
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 focus:bg-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
                 />
               </div>
@@ -174,7 +176,7 @@ export const CompanyProfileModal: React.FC<CompanyProfileModalProps> = ({ isOpen
                   required
                   value={formData.addressMm}
                   onChange={(e) => setFormData({ ...formData, addressMm: e.target.value })}
-                  placeholder="ဥပမာ - အမှတ် (၁၂၄)၊ ကုန်သည်လမ်း၊ ကျောက်တံတားမြို့နယ်၊ ရန်ကုန်မြို့။"
+                  placeholder="ဥပမာ - အမှတ် (၂၁၀)၊ ရွှေဟင်္သာလမ်း၊ လှိုင်မြို့နယ်၊ ရန်ကုန်မြို့၊ မြန်မာနိုင်ငံ။"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none"
                 />
               </div>
@@ -187,7 +189,7 @@ export const CompanyProfileModal: React.FC<CompanyProfileModalProps> = ({ isOpen
                   required
                   value={formData.addressEn}
                   onChange={(e) => setFormData({ ...formData, addressEn: e.target.value })}
-                  placeholder="e.g. No. 124, Merchant Road, Kyauktada Township, Yangon, Myanmar"
+                  placeholder="e.g. No. 210, Shwe Hintha Road, Hlaing Township, Yangon, Myanmar"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:bg-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none"
                 />
               </div>
@@ -204,7 +206,7 @@ export const CompanyProfileModal: React.FC<CompanyProfileModalProps> = ({ isOpen
                   required
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="01-2307000, 01-379841"
+                  placeholder="01-512345, 01-512346"
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:bg-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
                 />
               </div>
@@ -277,6 +279,15 @@ export const CompanyProfileModal: React.FC<CompanyProfileModalProps> = ({ isOpen
             )}
 
             <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setFormData(defaultOperatorProfile)}
+                className="px-3 py-2 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1"
+                title={language === 'my' ? 'MM Invest Co., Ltd. မူလသတ်မှတ်ချက်အတိုင်း ပြန်ထားမည်' : 'Restore Default MM Invest Co., Ltd.'}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{language === 'my' ? 'မူလသတ်မှတ်ချက် (Default)' : 'Restore Default'}</span>
+              </button>
               <button
                 type="button"
                 onClick={onClose}

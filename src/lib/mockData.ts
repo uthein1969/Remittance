@@ -13,18 +13,19 @@ import {
   AuditRecord,
   OperatorProfile
 } from '../types';
+import { sampleSenderNrcAttachment, sampleSenderPassportAttachment } from './sampleDocuments';
 
 export const defaultOperatorProfile: OperatorProfile = {
-  companyNameEn: 'Kanbawza Remittance Services Co., Ltd. (KBZ Remittance)',
-  companyNameMm: 'ကမ္ဘောဇ ငွေလွှဲလုပ်ငန်း ဝန်ဆောင်မှု ကုမ္ပဏီ လီမိတက်',
-  licenseNo: 'CBM-NB-001/2021 (မြန်မာနိုင်ငံတော်ဗဟိုဘဏ် ငွေလွှဲလိုင်စင်)',
-  phone: '01-2307000, 01-379841',
+  companyNameEn: 'MM Invest Co., Ltd.',
+  companyNameMm: 'အမ်အမ် အင်ဗက်စ် ကုမ္ပဏီ လီမိတက် (MM Invest Co., Ltd.)',
+  licenseNo: 'CBM-NB-008/2022 (မြန်မာနိုင်ငံတော်ဗဟိုဘဏ် ငွေလွှဲလိုင်စင်)',
+  phone: '01-512345, 01-512346',
   hotline: '09-790123456, 09-977123456',
-  addressEn: 'No. 124, Merchant Road, Kyauktada Township, Yangon, Myanmar',
-  addressMm: 'အမှတ် (၁၂၄)၊ ကုန်သည်လမ်း၊ ကျောက်တံတားမြို့နယ်၊ ရန်ကုန်မြို့။',
-  email: 'remittance@kbzbank.com',
-  website: 'www.kbzbank.com',
-  taxId: 'TX-CBM-889021',
+  addressEn: 'No. 210, Shwe Hintha Road, Hlaing Township, Yangon, Myanmar',
+  addressMm: 'အမှတ် (၂၁၀)၊ ရွှေဟင်္သာလမ်း၊ လှိုင်မြို့နယ်၊ ရန်ကုန်မြို့၊ မြန်မာနိုင်ငံ။',
+  email: 'info@mminvest.com.mm',
+  website: 'www.mminvest.com.mm',
+  taxId: 'TX-MMINV-990124',
 };
 
 export const initialBranches: Branch[] = [
@@ -34,9 +35,9 @@ export const initialBranches: Branch[] = [
     nameEn: 'Yangon Head Office Branch',
     nameMm: 'ရန်ကုန် ပင်မရုံးချုပ် ဘဏ်ခွဲ',
     countryCode: 'MM',
-    city: 'Yangon (Kyauktada)',
-    phone: '01-379841',
-    address: 'No. 124, Merchant Road, Kyauktada Township, Yangon',
+    city: 'Yangon (Hlaing)',
+    phone: '01-512345',
+    address: 'No. 210, Shwe Hintha Road, Hlaing Township, Yangon, Myanmar',
     managerName: 'U Myo Min Tun',
     status: 'ACTIVE',
     createdAt: '2025-01-10T08:00:00.000Z',
@@ -805,6 +806,18 @@ export const initialTransactions: RemittanceTransaction[] = [
     senderPhone: '09-420019283',
     senderAddress: 'No. 45, Kabar Aye Pagoda Road, Bahan, Yangon',
     senderCountryCode: 'MM',
+    senderFatherName: 'U Tin Aung',
+    senderOccupation: 'Merchant / Company Director',
+    senderSourceOfFund: 'Trading Business Income',
+    senderDateOfBirth: '14/07/1988',
+    senderNrcAttachment: sampleSenderNrcAttachment,
+    senderNrcAttachmentName: 'NRC_U_Zaw_Win_Htet_12_BAHANA_184920.svg',
+    senderNrcAttachmentType: 'image/svg+xml',
+    senderNrcAttachmentSize: '18 KB',
+    senderPassportAttachment: sampleSenderPassportAttachment,
+    senderPassportAttachmentName: 'Passport_U_Zaw_Win_Htet_MA918234.svg',
+    senderPassportAttachmentType: 'image/svg+xml',
+    senderPassportAttachmentSize: '24 KB',
     
     receiverName: 'Ma Su Myat Htet',
     receiverNameMm: 'မဆုမြတ်ထက်',
@@ -859,6 +872,10 @@ export const initialTransactions: RemittanceTransaction[] = [
     senderPhone: '09-780918234',
     senderAddress: 'No. 88, 30th Street, Mandalay',
     senderCountryCode: 'MM',
+    senderFatherName: 'U Kyaw Swar',
+    senderOccupation: 'Textile Wholesaler',
+    senderSourceOfFund: 'Commerce Business Profits',
+    senderDateOfBirth: '23/11/1992',
     
     receiverName: 'Somchai Prasert',
     receiverPhone: '+66-89-123-9988',
