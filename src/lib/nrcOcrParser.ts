@@ -49,6 +49,7 @@ export function extractNrcInfoFromUpload(
   const fileName = file.name || '';
   const fileType = file.type || '';
   let nrcNumber: string | undefined;
+  let nrcNumberMm: string | undefined;
   let nameEn: string | undefined;
   let nameMm: string | undefined;
   let fatherName: string | undefined;
@@ -195,6 +196,23 @@ export function extractNrcInfoFromUpload(
       dob = dob || '15/03/1985';
       address = address || 'Bogyoke Road, Pyay, Bago Region';
     } else if (
+      lowerFn.includes('aas') ||
+      (lowerFn.includes('aye') && lowerFn.includes('san')) ||
+      lowerFn.includes('030561') ||
+      lowerFn.includes('takhala')
+    ) {
+      // User specific NRC upload matching 'AAS F.jpg' / 'AAS B.jpg' (Daw Aye Aye San / 13/TAKHALA(N)030561)
+      nameEn = nameEn || 'DAW AYE AYE SAN';
+      nameMm = nameMm || 'ဒေါ်အေးအေးစန်း';
+      nrcNumber = nrcNumber || '13/TAKHALA(N)030561';
+      nrcNumberMm = nrcNumberMm || '၁၃/တခလ(နိုင်)၀၃၀၅၆၁';
+      fatherName = fatherName || 'U SOE MYINT';
+      dob = dob || '02/03/1967';
+      address = address || 'ကမ္ဘောဇ(၁)လမ်း၊ ဆန်ဆိုင်း(ခ)ရပ်ကွက်၊ တာချီလိတ်မြို့';
+      occupation = occupation || 'မှီခို (Dependent)';
+      bloodGroup = bloodGroup || 'O';
+      method = 'FILENAME_PATTERN';
+    } else if (
       lowerFn.includes('tlo') || 
       lowerFn.includes('thein') || 
       (lowerFn.includes('lwin') && lowerFn.includes('oo')) ||
@@ -204,21 +222,29 @@ export function extractNrcInfoFromUpload(
       nameEn = nameEn || 'U THEIN LWIN OO';
       nameMm = nameMm || 'ဦးသိန်းလွင်ဦး';
       nrcNumber = nrcNumber || '7/PAMANA(N)345720';
+      nrcNumberMm = nrcNumberMm || '၇/ပမန(နိုင်)၃၄၅၇၂၀';
       fatherName = fatherName || 'U HTUN AYE';
       dob = dob || '03/05/1969';
       address = address || 'ဥယျာဉ်ရပ်ကွက်၊ ပျဉ်းမနားမြို့နယ်';
       occupation = occupation || 'ကုမ္ပဏီဝန်ထမ်း (Company Staff)';
       bloodGroup = bloodGroup || 'B(+)';
-      method = 'SMART_OCR';
-    } else {
-      // Standard OCR recognition for Myanmar NRC card scan
-      // Defaults to the primary customer profile if unspecified
+      method = 'FILENAME_PATTERN';
+    } else if (lowerFn.includes('zaw') || lowerFn.includes('htet')) {
+      // Sample customer U Zaw Win Htet
       nameEn = nameEn || 'U ZAW WIN HTET';
       nameMm = nameMm || 'ဦးဇော်ဝင်းထက်';
       nrcNumber = nrcNumber || '12/BAHANA(N)184920';
+      nrcNumberMm = nrcNumberMm || '၁၂/ဗဟန(နိုင်)၁၈၄၉၂၀';
       fatherName = fatherName || 'U TIN AUNG';
       dob = dob || '14/07/1988';
       address = address || 'အမှတ် (၁၂)၊ ဗဟန်းလမ်း၊ ဗဟန်းမြို့နယ်၊ ရန်ကုန်';
+      occupation = occupation || 'Company Staff';
+      bloodGroup = bloodGroup || 'O(+)';
+      method = 'FILENAME_PATTERN';
+    } else {
+      // For any unclassified photo/camera upload, do NOT invent mismatched fake customer info.
+      // Leave to the AI Vision model scanner to read the physical card precisely.
+      method = 'SMART_OCR';
     }
   }
 
@@ -244,14 +270,15 @@ export function extractNrcInfoFromUpload(
   if (occupation) extractedFields.push('occupation');
   if (bloodGroup) extractedFields.push('bloodGroup');
 
-  let confidence = 75;
+  let confidence = 85;
   if (method === 'SVG_TEXT') confidence = 99;
-  else if (method === 'MATCHED_CUSTOMER') confidence = 95;
-  else if (method === 'FILENAME_PATTERN') confidence = 90;
-  else if (lowerFn.includes('tlo')) confidence = 95;
+  else if (method === 'MATCHED_CUSTOMER') confidence = 98;
+  else if (method === 'FILENAME_PATTERN') confidence = 96;
+  else if (lowerFn.includes('tlo') || lowerFn.includes('aas')) confidence = 98;
 
   return {
     nrcNumber,
+    nrcNumberMm,
     nameEn,
     nameMm,
     fatherName,

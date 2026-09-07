@@ -767,14 +767,21 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-slate-400 font-semibold mb-1">
-                  {language === 'my' ? 'နေရပ်လိပ်စာ (Sender Address)' : 'Sender Address'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-semibold flex items-center gap-1.5">
+                    <span>{language === 'my' ? 'နေရပ်လိပ်စာ (Sender Address)' : 'Sender Address'}</span>
+                    {formData.senderNrcBackAttachment && (
+                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono font-normal">
+                        ✓ {language === 'my' ? 'NRC အနောက်ခြမ်းမှ' : 'From NRC Back'}
+                      </span>
+                    )}
+                  </label>
+                </div>
                 <input
                   type="text"
                   value={formData.senderAddress || ''}
                   onChange={(e) => setFormData({ ...formData, senderAddress: e.target.value })}
-                  placeholder="Address details..."
+                  placeholder="e.g. ကမ္ဘောဇ(၁)လမ်း၊ ဆန်ဆိုင်း(ခ)ရပ်ကွက်၊ တာချီလိတ်မြို့"
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-sky-500 focus:outline-none"
                 />
               </div>

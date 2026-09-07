@@ -381,13 +381,21 @@ export const OutwardEntryView: React.FC = () => {
           if (!proofDocumentName) setProofDocumentName(file.name);
         }
 
-        setUploadFeedback({
-          message: language === 'my'
-            ? `✨ မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${localExtracted.nameEn || localExtracted.nameMm || ''}) နှင့် မှတ်ပုံတင်နံပတ် (${localExtracted.nrcNumber || ''}) အား Auto တန်းပြီး ဖြည့်သွင်းဖော်ပြပေးလိုက်ပါပြီ (${size})`
-            : `✨ NRC Uploaded: Auto-populated Name (${localExtracted.nameEn || localExtracted.nameMm}) & NRC (${localExtracted.nrcNumber}) (${size})`
-        });
+        if (localExtracted.nameEn || localExtracted.nrcNumber) {
+          setUploadFeedback({
+            message: language === 'my'
+              ? `✨ မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${localExtracted.nameEn || localExtracted.nameMm || ''}) နှင့် မှတ်ပုံတင်နံပတ် (${localExtracted.nrcNumber || ''}) အား Auto တန်းပြီး ဖြည့်သွင်းဖော်ပြပေးလိုက်ပါပြီ (${size})`
+              : `✨ NRC Uploaded: Auto-populated Name (${localExtracted.nameEn || localExtracted.nameMm}) & NRC (${localExtracted.nrcNumber}) (${size})`
+          });
+        } else {
+          setUploadFeedback({
+            message: language === 'my'
+              ? `✨ NRC ဖိုင် (${file.name}) တင်သွင်းပြီးပါပြီ။ AI Vision OCR ဖြင့် အချက်အလက်များ ဖတ်ရှုနေပါသည်...`
+              : `✨ NRC file (${file.name}) uploaded. AI Vision OCR scanning card details...`
+          });
+        }
 
-        // Step 2: Asynchronous AI Vision OCR scanning via Gemini 3.8 Flash
+        // Step 2: Asynchronous AI Vision OCR scanning via Gemini
         setIsScanningNrc(true);
         scanNrcWithAi(file, url, db.customers).then((aiExtracted) => {
           setIsScanningNrc(false);
@@ -400,7 +408,15 @@ export const OutwardEntryView: React.FC = () => {
           if (aiExtracted.address) setSenderAddress(aiExtracted.address);
           if (aiExtracted.occupation) setSenderOccupation(aiExtracted.occupation);
 
-          if (aiExtracted.confidence >= 90) {
+          if (aiExtracted.nameEn || aiExtracted.nrcNumber) {
+            setUploadFeedback({
+              message: language === 'my'
+                ? `✨ AI Vision OCR မှတ်ပုံတင် ဖတ်ရှုပြီးစီးပါပြီ- ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
+                : `✨ AI OCR Complete: ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
+            });
+          }
+
+          if (aiExtracted.confidence >= 80) {
             try {
               confetti({ particleCount: 25, spread: 50, origin: { y: 0.3 } });
             } catch {}
@@ -1301,13 +1317,28 @@ export const OutwardEntryView: React.FC = () => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-slate-400 mb-1 font-medium">{t.senderAddress}</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-medium flex items-center gap-1.5">
+                    <span>{t.senderAddress}</span>
+                    {senderNrcBackDoc && (
+                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono font-normal">
+                        ✓ {language === 'my' ? 'NRC အနောက်ခြမ်းမှ Auto ဖတ်ယူပြီး' : 'Scanned from NRC Back'}
+                      </span>
+                    )}
+                  </label>
+                  {isScanningNrc && (
+                    <span className="text-[10px] text-sky-400 animate-pulse flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+                      <span>{language === 'my' ? 'လိပ်စာ ဖတ်ရှုနေပါသည်...' : 'Scanning address...'}</span>
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={senderAddress}
                   onChange={(e) => setSenderAddress(e.target.value)}
-                  placeholder="No. 45, Kabar Aye Pagoda Road, Bahan, Yangon"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+                  placeholder="e.g. ကမ္ဘောဇ(၁)လမ်း၊ ဆန်ဆိုင်း(ခ)ရပ်ကွက်၊ တာချီလိတ်မြို့"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none font-medium"
                 />
               </div>
 
