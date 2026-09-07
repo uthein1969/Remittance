@@ -218,6 +218,10 @@ export interface RemittanceTransaction {
   purposeName: string;
   senderNote?: string;
   proofDocumentName?: string;
+  proofDocumentUrl?: string;
+  proofDocumentType?: string;
+  proofDocumentSize?: string;
+  proofDocCategory?: 'NRC' | 'DEPOSIT_RECEIPT' | 'PASSPORT' | 'OTHER';
   
   // Security & Screening
   blacklistChecked: boolean;

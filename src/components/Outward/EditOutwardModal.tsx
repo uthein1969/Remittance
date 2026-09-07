@@ -20,7 +20,8 @@ import {
   Upload,
   Trash2,
   Maximize2,
-  Download
+  Download,
+  Sparkles
 } from 'lucide-react';
 import { RemittanceTransaction, PayoutMethod } from '../../types';
 import { useRemittance } from '../../lib/store';
@@ -31,6 +32,7 @@ import {
   createSampleMyanmarNrcBackSvg, 
   createSampleMyanmarPassportSvg 
 } from '../../lib/sampleDocuments';
+import { extractNrcInfoFromUpload, scanNrcWithAi, ExtractedNrcInfo } from '../../lib/nrcOcrParser';
 
 interface EditOutwardModalProps {
   isOpen: boolean;
@@ -54,6 +56,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [isScanningNrc, setIsScanningNrc] = useState(false);
   const [lightboxDoc, setLightboxDoc] = useState<{
     isOpen: boolean;
     title: string;
@@ -65,6 +68,50 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     sender?: string;
   } | null>(null);
   const [uploadFeedback, setUploadFeedback] = useState<{ message: string; type: 'nrc-front' | 'nrc-back' | 'passport' } | null>(null);
+  const [nrcOcrResult, setNrcOcrResult] = useState<ExtractedNrcInfo | null>(null);
+
+  const handleAttachBothNrc = () => {
+    if (!formData) return;
+    const nrcUrl = createSampleMyanmarNrcSvg(
+      formData.senderNrc || '12/BAHANA(N)184920',
+      formData.senderNameMm || formData.senderName,
+      formData.senderName,
+      formatToDDMMYYYY(formData.senderDateOfBirth) || '14/07/1988',
+      formData.senderFatherName || 'U Tin Aung'
+    );
+    const frontName = `NRC_Front_${formData.senderName.replace(/\s+/g, '_')}_${(formData.senderNrc || 'Card').replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
+    
+    const nrcBackUrl = createSampleMyanmarNrcBackSvg(
+      formData.senderOccupation || 'ကုမ္ပဏီဝန်ထမ်း (Company Staff)',
+      formData.senderAddress || 'အမှတ် (၁၂)၊ ဗဟန်းလမ်း၊ ရန်ကုန်'
+    );
+    const backName = `NRC_Back_${formData.senderName.replace(/\s+/g, '_')}_${(formData.senderNrc || 'Card').replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
+
+    setFormData(prev => prev ? {
+      ...prev,
+      senderIdType: 'NRC',
+      senderNrcAttachment: nrcUrl,
+      senderNrcAttachmentName: frontName,
+      senderNrcAttachmentType: 'image/svg+xml',
+      senderNrcAttachmentSize: '18.4 KB',
+      senderNrcFrontAttachment: nrcUrl,
+      senderNrcFrontAttachmentName: frontName,
+      senderNrcFrontAttachmentType: 'image/svg+xml',
+      senderNrcFrontAttachmentSize: '18.4 KB',
+      senderNrcBackAttachment: nrcBackUrl,
+      senderNrcBackAttachmentName: backName,
+      senderNrcBackAttachmentType: 'image/svg+xml',
+      senderNrcBackAttachmentSize: '16.2 KB'
+    } : null);
+
+    setUploadFeedback({
+      message: language === 'my'
+        ? 'မှတ်ပုံတင် (ရှေ့ခြမ်း နှင့် နောက်ခြမ်း) နှစ်ဖက်စလုံး အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ'
+        : 'Successfully attached both NRC Front & Back cards',
+      type: 'nrc-front'
+    });
+    setTimeout(() => setUploadFeedback(null), 5000);
+  };
 
   const handleAttachSample = (type: 'nrc-front' | 'nrc-back' | 'passport') => {
     if (!formData) return;
@@ -77,8 +124,9 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
         formData.senderFatherName || 'U Tin Aung'
       );
       const name = `NRC_Front_${formData.senderName.replace(/\s+/g, '_')}_${(formData.senderNrc || 'Card').replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
-      setFormData({
-        ...formData,
+      setFormData(prev => prev ? {
+        ...prev,
+        senderIdType: 'NRC',
         senderNrcAttachment: nrcUrl,
         senderNrcAttachmentName: name,
         senderNrcAttachmentType: 'image/svg+xml',
@@ -87,20 +135,35 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
         senderNrcFrontAttachmentName: name,
         senderNrcFrontAttachmentType: 'image/svg+xml',
         senderNrcFrontAttachmentSize: '18 KB'
+      } : null);
+      setUploadFeedback({
+        message: language === 'my'
+          ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (NRC Front) အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ'
+          : 'Successfully attached NRC Front card',
+        type: 'nrc-front'
       });
+      setTimeout(() => setUploadFeedback(null), 5000);
     } else if (type === 'nrc-back') {
       const nrcBackUrl = createSampleMyanmarNrcBackSvg(
         formData.senderOccupation || 'ကုမ္ပဏီဝန်ထမ်း (Company Staff)',
         formData.senderAddress || 'အမှတ် (၁၂)၊ ဗဟန်းလမ်း၊ ရန်ကုန်'
       );
       const name = `NRC_Back_${formData.senderName.replace(/\s+/g, '_')}_${(formData.senderNrc || 'Card').replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
-      setFormData({
-        ...formData,
+      setFormData(prev => prev ? {
+        ...prev,
+        senderIdType: 'NRC',
         senderNrcBackAttachment: nrcBackUrl,
         senderNrcBackAttachmentName: name,
         senderNrcBackAttachmentType: 'image/svg+xml',
         senderNrcBackAttachmentSize: '16 KB'
+      } : null);
+      setUploadFeedback({
+        message: language === 'my'
+          ? 'မှတ်ပုံတင် အနောက်ခြမ်း (NRC Back) အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ'
+          : 'Successfully attached NRC Back card',
+        type: 'nrc-back'
       });
+      setTimeout(() => setUploadFeedback(null), 5000);
     } else {
       const passportUrl = createSampleMyanmarPassportSvg(
         formData.senderPassport || formData.senderPassbook || 'MA-918234',
@@ -108,8 +171,9 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
         formatToDDMMYYYY(formData.senderDateOfBirth) || '14/07/1988'
       );
       const name = `Passport_${formData.senderName.replace(/\s+/g, '_')}_${formData.senderPassport || formData.senderPassbook || 'MA918234'}.svg`;
-      setFormData({
-        ...formData,
+      setFormData(prev => prev ? {
+        ...prev,
+        senderIdType: 'PASSPORT',
         senderPassportAttachment: passportUrl,
         senderPassportAttachmentName: name,
         senderPassportAttachmentType: 'image/svg+xml',
@@ -118,7 +182,14 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
         senderPassbookAttachmentName: name,
         senderPassbookAttachmentType: 'image/svg+xml',
         senderPassbookAttachmentSize: '24 KB'
+      } : null);
+      setUploadFeedback({
+        message: language === 'my'
+          ? 'နိုင်ငံကူးလက်မှတ် (Passport) အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ'
+          : 'Successfully attached Passport document',
+        type: 'passport'
       });
+      setTimeout(() => setUploadFeedback(null), 5000);
     }
   };
 
@@ -129,41 +200,67 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
       const sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
-      if (type === 'nrc-front') {
-        setFormData({
-          ...formData,
-          senderNrcAttachment: dataUrl,
-          senderNrcAttachmentName: file.name,
-          senderNrcAttachmentType: file.type || 'image/jpeg',
-          senderNrcAttachmentSize: sizeStr,
-          senderNrcFrontAttachment: dataUrl,
-          senderNrcFrontAttachmentName: file.name,
-          senderNrcFrontAttachmentType: file.type || 'image/jpeg',
-          senderNrcFrontAttachmentSize: sizeStr
-        });
+      if (type === 'nrc-front' || type === 'nrc-back') {
+        const extracted = extractNrcInfoFromUpload(file, dataUrl, db.customers);
+        setNrcOcrResult(extracted);
+        setFormData(prev => prev ? {
+          ...prev,
+          senderIdType: 'NRC',
+          senderName: extracted.nameEn || prev.senderName,
+          senderNameMm: extracted.nameMm || prev.senderNameMm,
+          senderNrc: extracted.nrcNumber || prev.senderNrc,
+          senderFatherName: extracted.fatherName || prev.senderFatherName,
+          senderDateOfBirth: extracted.dob || prev.senderDateOfBirth,
+          senderAddress: extracted.address || prev.senderAddress,
+          senderOccupation: extracted.occupation || prev.senderOccupation,
+          ...(type === 'nrc-front' ? {
+            senderNrcAttachment: dataUrl,
+            senderNrcAttachmentName: file.name,
+            senderNrcAttachmentType: file.type || 'image/jpeg',
+            senderNrcAttachmentSize: sizeStr,
+            senderNrcFrontAttachment: dataUrl,
+            senderNrcFrontAttachmentName: file.name,
+            senderNrcFrontAttachmentType: file.type || 'image/jpeg',
+            senderNrcFrontAttachmentSize: sizeStr,
+          } : {
+            senderNrcBackAttachment: dataUrl,
+            senderNrcBackAttachmentName: file.name,
+            senderNrcBackAttachmentType: file.type || 'image/jpeg',
+            senderNrcBackAttachmentSize: sizeStr,
+          })
+        } : null);
+
         setUploadFeedback({
           message: language === 'my'
-            ? `NRC အရှေ့ခြမ်း (Front) ဓာတ်ပုံအသစ် အောင်မြင်စွာ အစားထိုးထည့်သွင်းပြီးပါပြီ (${file.name})`
-            : `Successfully replaced NRC Front picture (${file.name})`,
+            ? `✨ မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${extracted.nameEn || extracted.nameMm}) နှင့် မှတ်ပုံတင်နံပတ် (${extracted.nrcNumber}) ကို Auto တန်းပြီး ဖြည့်သွင်းပေးလိုက်ပါပြီ (${file.name})`
+            : `✨ Auto-populated Name (${extracted.nameEn}) and NRC (${extracted.nrcNumber}) from uploaded NRC card!`,
           type
         });
-      } else if (type === 'nrc-back') {
-        setFormData({
-          ...formData,
-          senderNrcBackAttachment: dataUrl,
-          senderNrcBackAttachmentName: file.name,
-          senderNrcBackAttachmentType: file.type || 'image/jpeg',
-          senderNrcBackAttachmentSize: sizeStr
+
+        // Async AI Vision OCR
+        setIsScanningNrc(true);
+        scanNrcWithAi(file, dataUrl, db.customers).then((aiExtracted) => {
+          setIsScanningNrc(false);
+          setNrcOcrResult(aiExtracted);
+          setFormData(prev => prev ? {
+            ...prev,
+            senderName: aiExtracted.nameEn || prev.senderName,
+            senderNameMm: aiExtracted.nameMm || prev.senderNameMm,
+            senderNrc: aiExtracted.nrcNumber || prev.senderNrc,
+            senderFatherName: aiExtracted.fatherName || prev.senderFatherName,
+            senderDateOfBirth: aiExtracted.dob || prev.senderDateOfBirth,
+            senderAddress: aiExtracted.address || prev.senderAddress,
+            senderOccupation: aiExtracted.occupation || prev.senderOccupation,
+          } : null);
+        }).catch(() => {
+          setIsScanningNrc(false);
         });
-        setUploadFeedback({
-          message: language === 'my'
-            ? `NRC အနောက်ခြမ်း (Back) ဓာတ်ပုံအသစ် အောင်မြင်စွာ အစားထိုးထည့်သွင်းပြီးပါပြီ (${file.name})`
-            : `Successfully replaced NRC Back picture (${file.name})`,
-          type
-        });
+
+        setTimeout(() => setUploadFeedback(null), 7000);
       } else {
-        setFormData({
-          ...formData,
+        setFormData(prev => prev ? {
+          ...prev,
+          senderIdType: 'PASSPORT',
           senderPassportAttachment: dataUrl,
           senderPassportAttachmentName: file.name,
           senderPassportAttachmentType: file.type || 'image/jpeg',
@@ -172,7 +269,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
           senderPassbookAttachmentName: file.name,
           senderPassbookAttachmentType: file.type || 'image/jpeg',
           senderPassbookAttachmentSize: sizeStr
-        });
+        } : null);
         setUploadFeedback({
           message: language === 'my'
             ? `Passport ဓာတ်ပုံအသစ် အောင်မြင်စွာ အစားထိုးထည့်သွင်းပြီးပါပြီ (${file.name})`
@@ -183,6 +280,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
       setTimeout(() => setUploadFeedback(null), 5000);
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleRemoveDoc = (type: 'nrc-front' | 'nrc-back' | 'passport') => {
@@ -531,8 +629,8 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
               <div className="inline-flex bg-slate-900 p-0.5 rounded-lg border border-slate-700">
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, senderIdType: 'NRC' })}
-                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
+                  onClick={() => setFormData(prev => prev ? { ...prev, senderIdType: 'NRC' } : null)}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
                     (formData.senderIdType || 'NRC') === 'NRC'
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-white'
@@ -543,14 +641,60 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, senderIdType: 'PASSPORT' })}
-                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
+                  onClick={() => setFormData(prev => prev ? { ...prev, senderIdType: 'PASSPORT' } : null)}
+                  className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
                     formData.senderIdType === 'PASSPORT'
                       ? 'bg-sky-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   <FileCheck className="w-3.5 h-3.5 text-sky-300" />
+                  <span>{language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : 'Passport'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ID Document Switcher & Info Banner */}
+            <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div>
+                <span className="text-xs font-bold text-slate-200 flex items-center space-x-2">
+                  <FileCheck className="w-4 h-4 text-sky-400" />
+                  <span>
+                    {language === 'my'
+                      ? 'ငွေလွှဲပို့သူ သက်သေခံစာရွက်စာတမ်း အမျိုးအစား (Sender ID Type)'
+                      : 'Sender Identification Document Type'}
+                  </span>
+                </span>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {(formData.senderIdType || 'NRC') === 'NRC'
+                    ? (language === 'my' ? 'မှတ်ပုံတင် ရွေးချယ်ထားပါသည် - အောက်တွင် NRC အရှေ့ခြမ်းနှင့် အနောက်ခြမ်း ပူးတွဲကွက်များ ပေါ်လာပါမည်' : 'NRC selected - Front and Back NRC attachment boxes are displayed below')
+                    : (language === 'my' ? 'Passport ရွေးချယ်ထားပါသည် - အောက်တွင် Passport ပူးတွဲကွက် ပေါ်လာပါမည်' : 'Passport selected - Passport document attachment box is displayed below')
+                  }
+                </p>
+              </div>
+              <div className="inline-flex bg-slate-950 p-1 rounded-xl border border-slate-700 text-xs shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => prev ? { ...prev, senderIdType: 'NRC' } : null)}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    (formData.senderIdType || 'NRC') === 'NRC'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>{language === 'my' ? 'မှတ်ပုံတင် (NRC)' : 'NRC Card'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => prev ? { ...prev, senderIdType: 'PASSPORT' } : null)}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
+                    formData.senderIdType === 'PASSPORT'
+                      ? 'bg-sky-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <FileCheck className="w-3.5 h-3.5" />
                   <span>{language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : 'Passport'}</span>
                 </button>
               </div>
@@ -696,12 +840,22 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                   </span>
                 </div>
                 
-                {/* ID Type Switcher in Attachments Header */}
-                <div className="flex items-center space-x-2">
+                {/* ID Type Switcher & Action in Attachments Header */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {(formData.senderIdType || 'NRC') === 'NRC' && (
+                    <button
+                      type="button"
+                      onClick={handleAttachBothNrc}
+                      className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>{language === 'my' ? '⚡ ရှေ့/နောက် နှစ်ဖက်စလုံး အမြန်တွဲမည်' : '⚡ Attach Both Front & Back'}</span>
+                    </button>
+                  )}
                   <div className="inline-flex bg-slate-900 p-0.5 rounded-lg border border-slate-700">
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, senderIdType: 'NRC' })}
+                      onClick={() => setFormData(prev => prev ? { ...prev, senderIdType: 'NRC' } : null)}
                       className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center space-x-1 cursor-pointer ${
                         (formData.senderIdType || 'NRC') === 'NRC'
                           ? 'bg-emerald-600 text-white shadow-xs'
@@ -713,7 +867,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, senderIdType: 'PASSPORT' })}
+                      onClick={() => setFormData(prev => prev ? { ...prev, senderIdType: 'PASSPORT' } : null)}
                       className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center space-x-1 cursor-pointer ${
                         formData.senderIdType === 'PASSPORT'
                           ? 'bg-sky-600 text-white shadow-xs'

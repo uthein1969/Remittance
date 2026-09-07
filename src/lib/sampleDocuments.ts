@@ -299,3 +299,102 @@ export const createSampleMyanmarNrcBackSvg = (
 export const sampleSenderNrcAttachment = createSampleMyanmarNrcSvg();
 export const sampleSenderNrcBackAttachment = createSampleMyanmarNrcBackSvg();
 export const sampleSenderPassportAttachment = createSampleMyanmarPassportSvg();
+
+export const createSampleDepositReceiptSvg = (
+  senderName: string = 'U ZAW WIN HTET',
+  nrcNo: string = '12/BAHANA(N)184920',
+  amountFormatted: string = '5,000,000 MMK',
+  branchName: string = 'Yangon Main Branch (BR-001)',
+  dateStr: string = '07/09/2026'
+): string => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 460" width="700" height="460">
+  <defs>
+    <linearGradient id="slipBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <filter id="slipShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <!-- Slip Border & Background -->
+  <rect x="15" y="15" width="670" height="430" rx="14" fill="url(#slipBg)" stroke="#0284c7" stroke-width="2.5" filter="url(#slipShadow)"/>
+
+  <!-- Bank Top Header -->
+  <rect x="15" y="15" width="670" height="70" rx="14" fill="#0369a1"/>
+  <text x="350" y="44" fill="#f0f9ff" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" letter-spacing="1">
+    REMITTANCE CASH DEPOSIT VOUCHER
+  </text>
+  <text x="350" y="66" fill="#bae6fd" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="medium" text-anchor="middle">
+    ဘဏ်ငွေသွင်းပြေစာ (ငွေလွှဲပေးသွင်းမှု အထောက်အထားမူရင်း)
+  </text>
+
+  <!-- Slip Meta Bar -->
+  <g transform="translate(35, 100)" font-family="system-ui, -apple-system, sans-serif">
+    <text x="0" y="15" fill="#64748b" font-size="11" font-weight="semibold">SLIP NO :</text>
+    <text x="65" y="15" fill="#0f172a" font-family="monospace" font-size="12" font-weight="bold">DEP-${Date.now().toString().slice(-6)}</text>
+
+    <text x="260" y="15" fill="#64748b" font-size="11" font-weight="semibold">DATE :</text>
+    <text x="310" y="15" fill="#0f172a" font-family="monospace" font-size="12" font-weight="bold">${dateStr}</text>
+
+    <text x="440" y="15" fill="#64748b" font-size="11" font-weight="semibold">BRANCH :</text>
+    <text x="505" y="15" fill="#0284c7" font-size="11" font-weight="bold">${branchName.slice(0, 18)}</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="35" y1="130" x2="665" y2="130" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6,4"/>
+
+  <!-- Deposit Details Table -->
+  <g transform="translate(35, 150)" font-family="system-ui, -apple-system, sans-serif">
+    <!-- Row 1: Depositor Name -->
+    <rect x="0" y="0" width="630" height="34" fill="#e2e8f0" rx="6"/>
+    <text x="16" y="22" fill="#334155" font-size="11" font-weight="bold">ငွေသွင်းသူ အမည် (Depositor Name):</text>
+    <text x="240" y="22" fill="#0f172a" font-size="13" font-weight="900">${senderName}</text>
+
+    <!-- Row 2: NRC / ID -->
+    <rect x="0" y="42" width="630" height="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" rx="6"/>
+    <text x="16" y="64" fill="#334155" font-size="11" font-weight="bold">မှတ်ပုံတင်အမှတ် (NRC / ID No):</text>
+    <text x="240" y="64" fill="#0369a1" font-family="monospace" font-size="13" font-weight="bold">${nrcNo}</text>
+
+    <!-- Row 3: Remittance Purpose -->
+    <rect x="0" y="84" width="630" height="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" rx="6"/>
+    <text x="16" y="106" fill="#334155" font-size="11" font-weight="bold">ငွေသွင်းရည်ရွယ်ချက် (Purpose):</text>
+    <text x="240" y="106" fill="#0f172a" font-size="12">ပြည်တွင်း/ပြည်ပ ငွေလွှဲပေးပို့မှု (Outward Remittance)</text>
+
+    <!-- Row 4: Deposited Amount -->
+    <rect x="0" y="126" width="630" height="42" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5" rx="8"/>
+    <text x="16" y="152" fill="#0369a1" font-size="12" font-weight="900">ပေးသွင်းငွေပမာဏ (Total Paid):</text>
+    <text x="240" y="154" fill="#0369a1" font-family="monospace" font-size="17" font-weight="900">${amountFormatted}</text>
+  </g>
+
+  <!-- Signatures & Stamp -->
+  <g transform="translate(35, 335)" font-family="system-ui, -apple-system, sans-serif">
+    <!-- Customer Signature -->
+    <g transform="translate(40, 0)">
+      <line x1="0" y1="45" x2="160" y2="45" stroke="#94a3b8" stroke-width="1.5"/>
+      <path d="M20 40 C40 25, 70 42, 100 28 C120 18, 140 38, 155 30" fill="none" stroke="#0f172a" stroke-width="1.8"/>
+      <text x="80" y="65" fill="#64748b" font-size="10" font-weight="bold" text-anchor="middle">ငွေသွင်းသူ လက်မှတ်</text>
+      <text x="80" y="78" fill="#94a3b8" font-size="9" text-anchor="middle">(Depositor Signature)</text>
+    </g>
+
+    <!-- Official Stamp -->
+    <g transform="translate(280, 5)">
+      <circle cx="45" cy="35" r="38" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5,2"/>
+      <circle cx="45" cy="35" r="33" fill="none" stroke="#dc2626" stroke-width="1"/>
+      <text x="45" y="27" fill="#dc2626" font-size="8" font-weight="900" text-anchor="middle">REMITTANCE DEPT</text>
+      <text x="45" y="38" fill="#dc2626" font-size="9" font-weight="900" text-anchor="middle">RECEIVED</text>
+      <text x="45" y="49" fill="#dc2626" font-size="8" font-weight="bold" text-anchor="middle">CASH PAID</text>
+    </g>
+
+    <!-- Cashier / Teller Signature -->
+    <g transform="translate(430, 0)">
+      <line x1="0" y1="45" x2="160" y2="45" stroke="#94a3b8" stroke-width="1.5"/>
+      <path d="M15 35 C45 20, 80 44, 110 25 C130 15, 145 35, 158 22" fill="none" stroke="#0369a1" stroke-width="2"/>
+      <text x="80" y="65" fill="#64748b" font-size="10" font-weight="bold" text-anchor="middle">တာဝန်ခံ ငွေကိုင်လက်မှတ်</text>
+      <text x="80" y="78" fill="#94a3b8" font-size="9" text-anchor="middle">(Authorized Teller / Cashier)</text>
+    </g>
+  </g>
+</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
