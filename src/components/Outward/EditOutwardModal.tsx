@@ -781,7 +781,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                   type="text"
                   value={formData.senderAddress || ''}
                   onChange={(e) => setFormData({ ...formData, senderAddress: e.target.value })}
-                  placeholder="e.g. ကမ္ဘောဇ(၁)လမ်း၊ ဆန်ဆိုင်း(ခ)ရပ်ကွက်၊ တာချီလိတ်မြို့"
+                  placeholder="e.g. အလွမ်းဆွတ်ကျေးရွာ၊ သန်လျင်မြို့"
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-sky-500 focus:outline-none"
                 />
               </div>

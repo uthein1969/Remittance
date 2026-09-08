@@ -381,7 +381,13 @@ export const OutwardEntryView: React.FC = () => {
           if (!proofDocumentName) setProofDocumentName(file.name);
         }
 
-        if (localExtracted.nameEn || localExtracted.nrcNumber) {
+        if (target === 'nrc-back') {
+          setUploadFeedback({
+            message: language === 'my'
+              ? `✨ NRC အနောက်ခြမ်း ဖိုင်တင်သွင်းပြီးပါပြီ: နေရပ်လိပ်စာ (${localExtracted.address || 'စစ်ဆေးနေပါသည်'}) နှင့် အလုပ်အကိုင် (${localExtracted.occupation || ''}) Auto ဖြည့်သွင်းပေးလိုက်ပါပြီ (${size})`
+              : `✨ NRC Back Uploaded: Address (${localExtracted.address || 'Processing...'}) & Occupation (${localExtracted.occupation || ''}) (${size})`
+          });
+        } else if (localExtracted.nameEn || localExtracted.nrcNumber) {
           setUploadFeedback({
             message: language === 'my'
               ? `✨ မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${localExtracted.nameEn || localExtracted.nameMm || ''}) နှင့် မှတ်ပုံတင်နံပတ် (${localExtracted.nrcNumber || ''}) အား Auto တန်းပြီး ဖြည့်သွင်းဖော်ပြပေးလိုက်ပါပြီ (${size})`
@@ -408,7 +414,13 @@ export const OutwardEntryView: React.FC = () => {
           if (aiExtracted.address) setSenderAddress(aiExtracted.address);
           if (aiExtracted.occupation) setSenderOccupation(aiExtracted.occupation);
 
-          if (aiExtracted.nameEn || aiExtracted.nrcNumber) {
+          if (target === 'nrc-back' && aiExtracted.address) {
+            setUploadFeedback({
+              message: language === 'my'
+                ? `✨ AI Vision OCR မှတ်ပုံတင် အနောက်ခြမ်း ဖတ်ရှုပြီးစီးပါပြီ- လိပ်စာ: ${aiExtracted.address}`
+                : `✨ AI OCR NRC Back Complete: Address: ${aiExtracted.address}`
+            });
+          } else if (aiExtracted.nameEn || aiExtracted.nrcNumber) {
             setUploadFeedback({
               message: language === 'my'
                 ? `✨ AI Vision OCR မှတ်ပုံတင် ဖတ်ရှုပြီးစီးပါပြီ- ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
@@ -1337,7 +1349,7 @@ export const OutwardEntryView: React.FC = () => {
                   type="text"
                   value={senderAddress}
                   onChange={(e) => setSenderAddress(e.target.value)}
-                  placeholder="e.g. ကမ္ဘောဇ(၁)လမ်း၊ ဆန်ဆိုင်း(ခ)ရပ်ကွက်၊ တာချီလိတ်မြို့"
+                  placeholder="e.g. အလွမ်းဆွတ်ကျေးရွာ၊ သန်လျင်မြို့"
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none font-medium"
                 />
               </div>

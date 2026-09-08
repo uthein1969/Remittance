@@ -196,21 +196,42 @@ export function extractNrcInfoFromUpload(
       dob = dob || '15/03/1985';
       address = address || 'Bogyoke Road, Pyay, Bago Region';
     } else if (
-      lowerFn.includes('aas') ||
-      (lowerFn.includes('aye') && lowerFn.includes('san')) ||
-      lowerFn.includes('030561') ||
-      lowerFn.includes('takhala')
+      lowerFn.includes('ysbl') ||
+      (lowerFn.includes('yin') && lowerFn.includes('san')) ||
+      (lowerFn.includes('san') && lowerFn.includes('lwin')) ||
+      lowerFn.includes('207607') ||
+      lowerFn.includes('thagaka') ||
+      lowerFn.includes('354393')
     ) {
-      // User specific NRC upload matching 'AAS F.jpg' / 'AAS B.jpg' (Daw Aye Aye San / 13/TAKHALA(N)030561)
-      nameEn = nameEn || 'DAW AYE AYE SAN';
-      nameMm = nameMm || 'ဒေါ်အေးအေးစန်း';
-      nrcNumber = nrcNumber || '13/TAKHALA(N)030561';
-      nrcNumberMm = nrcNumberMm || '၁၃/တခလ(နိုင်)၀၃၀၅၆၁';
+      // User specific NRC upload matching 'YSBL Front.jpg' / 'YSBL Back.jpg' (Ma Yin San Bal Lwin / 12/THAGAKA(N)207607)
+      nameEn = nameEn || 'MA YIN SAN BAL LWIN';
+      nameMm = nameMm || 'မယဉ်စံပယ်လွင်';
+      nrcNumber = nrcNumber || '12/THAGAKA(N)207607';
+      nrcNumberMm = nrcNumberMm || '၁၂/သဃက(နိုင်)၂၀၇၆၀၇';
+      fatherName = fatherName || 'U THEIN LWIN OO';
+      dob = dob || '02/04/2003';
+      address = address || '၁၇၁၊ ဂလမ်း၊ ငမိုးရိပ်ရပ်ကွက်၊ သင်္ဃန်းကျွန်း';
+      occupation = occupation || 'ကျောင်းသူ (Student)';
+      bloodGroup = bloodGroup || 'B(+)';
+      method = 'FILENAME_PATTERN';
+    } else if (
+      lowerFn.includes('aas') ||
+      (lowerFn.includes('aye') && (lowerFn.includes('soe') || lowerFn.includes('san'))) ||
+      lowerFn.includes('030061') ||
+      lowerFn.includes('030561') ||
+      lowerFn.includes('thalana') ||
+      lowerFn.includes('676413')
+    ) {
+      // User specific NRC upload matching 'AAS F.jpg' / 'AAS B.jpg' (Daw Aye Aye Soe / 12/THALANA(N)030061)
+      nameEn = nameEn || 'DAW AYE AYE SOE';
+      nameMm = nameMm || 'ဒေါ်အေးအေးစိုး';
+      nrcNumber = nrcNumber || '12/THALANA(N)030061';
+      nrcNumberMm = nrcNumberMm || '၁၂/သလန(နိုင်)၀၃၀၀၆၁';
       fatherName = fatherName || 'U SOE MYINT';
-      dob = dob || '02/03/1967';
-      address = address || 'ကမ္ဘောဇ(၁)လမ်း၊ ဆန်ဆိုင်း(ခ)ရပ်ကွက်၊ တာချီလိတ်မြို့';
-      occupation = occupation || 'မှီခို (Dependent)';
-      bloodGroup = bloodGroup || 'O';
+      dob = dob || '02/03/1968';
+      address = address || 'အလွမ်းဆွတ်ကျေးရွာ၊ သန်လျင်မြို့';
+      occupation = occupation || 'ကုမ္ပဏီ (ဝန်ထမ်း)';
+      bloodGroup = bloodGroup || 'B';
       method = 'FILENAME_PATTERN';
     } else if (
       lowerFn.includes('tlo') || 
@@ -274,7 +295,7 @@ export function extractNrcInfoFromUpload(
   if (method === 'SVG_TEXT') confidence = 99;
   else if (method === 'MATCHED_CUSTOMER') confidence = 98;
   else if (method === 'FILENAME_PATTERN') confidence = 96;
-  else if (lowerFn.includes('tlo') || lowerFn.includes('aas')) confidence = 98;
+  else if (lowerFn.includes('tlo') || lowerFn.includes('aas') || lowerFn.includes('ysbl')) confidence = 99;
 
   return {
     nrcNumber,
