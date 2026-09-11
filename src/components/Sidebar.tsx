@@ -37,7 +37,7 @@ export type NavigationTab =
   | 'admin_setup'
   | 'audit_log'
   | 'backup_restore'
-  | 'supabase_sync';
+  | 'turso_sync';
 
 export type SetupSubTab = 
   | 'operator_profile'
@@ -329,20 +329,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <button
-            onClick={() => handleNavClick('supabase_sync')}
+            onClick={() => handleNavClick('turso_sync')}
             className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-[13px] font-medium transition-colors border-l-[3px] ${
-              activeTab === 'supabase_sync'
-                ? 'bg-white/5 text-white border-blue-500 font-semibold'
+              activeTab === 'turso_sync'
+                ? 'bg-white/5 text-white border-emerald-500 font-semibold'
                 : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-800/40'
             }`}
           >
             <div className="flex items-center space-x-2.5 truncate">
-              <Database className="w-4 h-4 text-teal-400 shrink-0" />
-              <span className="truncate">{t.navSupabase}</span>
+              <Database className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="truncate">{t.navTurso || 'Turso Cloud DB'}</span>
             </div>
-            {db.supabaseConfig.isConnected && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            )}
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              LibSQL
+            </span>
           </button>
         </nav>
 

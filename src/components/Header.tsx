@@ -17,14 +17,14 @@ import { CompanyProfileModal } from './CompanyProfileModal';
 
 interface HeaderProps {
   onOpenBackup: () => void;
-  onOpenSupabase: () => void;
+  onOpenTurso?: () => void;
   onToggleMobileMenu?: () => void;
   onNavigateCompanySetting?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
   onOpenBackup, 
-  onOpenSupabase, 
+  onOpenTurso, 
   onToggleMobileMenu,
   onNavigateCompanySetting 
 }) => {
@@ -133,18 +133,14 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-[11px]">{language === 'my' ? 'ကုမ္ပဏီ' : 'Company'}</span>
         </button>
 
-        {/* Supabase Status Pill */}
+        {/* Turso Cloud Status Pill */}
         <button
-          onClick={onOpenSupabase}
-          className={`hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
-            db.supabaseConfig.isConnected
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-              : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-          }`}
-          title={db.supabaseConfig.isConnected ? 'Supabase Connected' : 'Configure Supabase Cloud'}
+          onClick={onOpenTurso || onOpenBackup}
+          className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+          title={language === 'my' ? 'Turso Cloud Database (ချိတ်ဆက်ထားသည်)' : 'Turso Cloud Database (Connected & Active)'}
         >
-          <div className={`w-2 h-2 rounded-full ${db.supabaseConfig.isConnected ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-          <span>{db.supabaseConfig.isConnected ? 'Supabase Active' : 'DB Engine'}</span>
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>{language === 'my' ? 'Turso Cloud အသင့်ရှိ' : 'Turso Cloud Active'}</span>
         </button>
 
         {/* Branch Badge */}

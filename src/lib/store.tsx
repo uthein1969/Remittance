@@ -379,6 +379,146 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return `${prefix}-${dateStr}-${rand}`;
   };
 
+  // Real-time Cloud Auto-Sync for Live Data (Supabase & Turso)
+  const syncLiveTransactionToCloud = (tx: RemittanceTransaction) => {
+    // 1. Supabase live upsert
+    try {
+      const client = getSupabaseClient(db.supabaseConfig);
+      if (client) {
+        client.from('transactions').upsert([{
+          id: tx.id,
+          transaction_no: tx.transactionNo,
+          mtcn: tx.mtcn,
+          type: tx.type,
+          scope: tx.scope,
+          status: tx.status,
+          sender_name: tx.senderName,
+          sender_name_mm: tx.senderNameMm,
+          sender_nrc: tx.senderNrc,
+          sender_nrc_attachment: tx.senderNrcAttachment || tx.senderNrcFrontAttachment,
+          sender_nrc_front_attachment: tx.senderNrcFrontAttachment || tx.senderNrcAttachment,
+          sender_nrc_back_attachment: tx.senderNrcBackAttachment,
+          sender_father_name: tx.senderFatherName,
+          sender_occupation: tx.senderOccupation,
+          sender_date_of_birth: tx.senderDateOfBirth,
+          sender_passport: tx.senderPassport || tx.senderPassbook,
+          sender_passport_attachment: tx.senderPassportAttachment || tx.senderPassbookAttachment,
+          sender_passport_attachment_name: tx.senderPassportAttachmentName || tx.senderPassbookAttachmentName,
+          sender_passport_attachment_type: tx.senderPassportAttachmentType || tx.senderPassbookAttachmentType,
+          sender_passport_attachment_size: tx.senderPassportAttachmentSize || tx.senderPassbookAttachmentSize,
+          sender_passbook: tx.senderPassport || tx.senderPassbook,
+          sender_passbook_attachment: tx.senderPassportAttachment || tx.senderPassbookAttachment,
+          sender_passbook_attachment_name: tx.senderPassportAttachmentName || tx.senderPassbookAttachmentName,
+          sender_passbook_attachment_type: tx.senderPassportAttachmentType || tx.senderPassbookAttachmentType,
+          sender_passbook_attachment_size: tx.senderPassportAttachmentSize || tx.senderPassbookAttachmentSize,
+          sender_phone: tx.senderPhone,
+          sender_address: tx.senderAddress,
+          sender_country_code: tx.senderCountryCode,
+          receiver_name: tx.receiverName,
+          receiver_name_mm: tx.receiverNameMm,
+          receiver_nrc: tx.receiverNrc,
+          receiver_passport: tx.receiverPassport || tx.receiverPassbook,
+          receiver_passbook: tx.receiverPassport || tx.receiverPassbook,
+          receiver_phone: tx.receiverPhone,
+          receiver_address: tx.receiverAddress,
+          receiver_country_code: tx.receiverCountryCode,
+          source_currency: tx.sourceCurrency,
+          target_currency: tx.targetCurrency,
+          send_amount: tx.sendAmount,
+          exchange_rate: tx.exchangeRate,
+          receive_amount: tx.receiveAmount,
+          service_fee: tx.serviceFee,
+          commission_fee: tx.commissionFee,
+          tax_amount: tx.taxAmount,
+          total_payable_amount: tx.totalPayableAmount,
+          payout_method: tx.payoutMethod,
+          payout_bank_name: tx.payoutBankName,
+          payout_account_number: tx.payoutAccountNumber,
+          sending_branch_id: tx.sendingBranchId,
+          payout_branch_id: tx.payoutBranchId,
+          partner_company_id: tx.partnerCompanyId,
+          purpose_id: tx.purposeId,
+          purpose_name: tx.purposeName,
+          sender_note: tx.senderNote,
+          proof_document_name: tx.proofDocumentName,
+          proof_document_url: tx.proofDocumentUrl,
+          proof_doc_category: tx.proofDocCategory,
+          blacklist_checked: tx.blacklistChecked,
+          blacklist_alert: tx.blacklistAlert,
+          creator_user_id: tx.creatorUserId,
+          creator_name: tx.creatorName,
+          created_date: tx.createdDate
+        }], { onConflict: 'id' }).then(({ error }: any) => {
+          if (error) console.warn('Supabase live sync warning:', error.message);
+        }, () => {});
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Turso live push
+    try {
+      fetch('/api/turso/sync-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactions: [{
+            id: tx.id,
+            transactionNo: tx.transactionNo,
+            mtcn: tx.mtcn,
+            type: tx.type,
+            status: tx.status,
+            senderName: tx.senderName,
+            senderNameMm: tx.senderNameMm,
+            senderNrc: tx.senderNrc,
+            senderPhone: tx.senderPhone,
+            senderAddress: tx.senderAddress,
+            senderPassport: tx.senderPassport || tx.senderPassbook,
+            receiverName: tx.receiverName,
+            receiverNameMm: tx.receiverNameMm,
+            receiverNrc: tx.receiverNrc,
+            receiverPhone: tx.receiverPhone,
+            receiverAddress: tx.receiverAddress,
+            receiverPassport: tx.receiverPassport || tx.receiverPassbook,
+            fromCountry: tx.senderCountryCode,
+            toCountry: tx.receiverCountryCode,
+            sourceCurrency: tx.sourceCurrency,
+            targetCurrency: tx.targetCurrency,
+            sendAmount: tx.sendAmount,
+            exchangeRate: tx.exchangeRate,
+            payoutAmount: tx.receiveAmount,
+            transferFee: tx.serviceFee,
+            totalCollected: tx.totalPayableAmount,
+            purpose: tx.purposeName || tx.purposeId,
+            payoutMethod: tx.payoutMethod,
+            bankName: tx.payoutBankName,
+            bankAccountNo: tx.payoutAccountNumber,
+            createdBy: tx.creatorName,
+            createdAt: tx.createdDate,
+            approvedBy: tx.approverName,
+            approvedAt: tx.approvedDate,
+            rejectedReason: tx.rejectionReason,
+            sourceOfFunds: tx.senderNote,
+            remittanceType: tx.scope,
+            createdDate: tx.createdDate,
+            senderNrcAttachment: tx.senderNrcAttachment || tx.senderNrcFrontAttachment,
+            senderNrcFrontAttachment: tx.senderNrcFrontAttachment || tx.senderNrcAttachment,
+            senderNrcBackAttachment: tx.senderNrcBackAttachment,
+            senderPassportAttachment: tx.senderPassportAttachment || tx.senderPassbookAttachment,
+            proofDocumentUrl: tx.proofDocumentUrl,
+            proofDocumentName: tx.proofDocumentName,
+            proofDocCategory: tx.proofDocCategory,
+            senderFatherName: tx.senderFatherName,
+            senderOccupation: tx.senderOccupation,
+            senderDateOfBirth: tx.senderDateOfBirth,
+          }]
+        })
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  };
+
   // 1. Create Outward Remittance
   const createOutwardRemittance = async (txData: Partial<RemittanceTransaction>): Promise<RemittanceTransaction> => {
     const txNo = generateTxNo('OUTWARD');
@@ -496,6 +636,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       `Created Outward Remittance ${newTx.transactionNo} (MTCN: ${newTx.mtcn}) for ${newTx.senderName} -> ${newTx.receiverName} (${newTx.sendAmount} ${newTx.sourceCurrency})`
     );
 
+    syncLiveTransactionToCloud(newTx);
+
     return newTx;
   };
 
@@ -599,72 +741,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       `Created Inward Remittance Claim ${newTx.transactionNo} (MTCN: ${newTx.mtcn}) for ${newTx.receiverName} (${newTx.receiveAmount} MMK payout)`
     );
 
-    // If Supabase client is connected, sync this inward transaction to Supabase table
-    try {
-      const client = getSupabaseClient(db.supabaseConfig);
-      if (client) {
-        client.from('transactions').upsert([{
-          id: newTx.id,
-          transaction_no: newTx.transactionNo,
-          mtcn: newTx.mtcn,
-          type: newTx.type,
-          scope: newTx.scope,
-          status: newTx.status,
-          sender_name: newTx.senderName,
-          sender_name_mm: newTx.senderNameMm,
-          sender_nrc: newTx.senderNrc,
-          sender_passport: newTx.senderPassport || newTx.senderPassbook,
-          sender_passport_attachment: newTx.senderPassportAttachment || newTx.senderPassbookAttachment,
-          sender_passport_attachment_name: newTx.senderPassportAttachmentName || newTx.senderPassbookAttachmentName,
-          sender_passport_attachment_type: newTx.senderPassportAttachmentType || newTx.senderPassbookAttachmentType,
-          sender_passport_attachment_size: newTx.senderPassportAttachmentSize || newTx.senderPassbookAttachmentSize,
-          sender_passbook: newTx.senderPassport || newTx.senderPassbook,
-          sender_passbook_attachment: newTx.senderPassportAttachment || newTx.senderPassbookAttachment,
-          sender_passbook_attachment_name: newTx.senderPassportAttachmentName || newTx.senderPassbookAttachmentName,
-          sender_passbook_attachment_type: newTx.senderPassportAttachmentType || newTx.senderPassbookAttachmentType,
-          sender_passbook_attachment_size: newTx.senderPassportAttachmentSize || newTx.senderPassbookAttachmentSize,
-          sender_phone: newTx.senderPhone,
-          sender_address: newTx.senderAddress,
-          sender_country_code: newTx.senderCountryCode,
-          receiver_name: newTx.receiverName,
-          receiver_name_mm: newTx.receiverNameMm,
-          receiver_nrc: newTx.receiverNrc,
-          receiver_passport: newTx.receiverPassport || newTx.receiverPassbook,
-          receiver_passbook: newTx.receiverPassport || newTx.receiverPassbook,
-          receiver_phone: newTx.receiverPhone,
-          receiver_address: newTx.receiverAddress,
-          receiver_country_code: newTx.receiverCountryCode,
-          source_currency: newTx.sourceCurrency,
-          target_currency: newTx.targetCurrency,
-          send_amount: newTx.sendAmount,
-          exchange_rate: newTx.exchangeRate,
-          receive_amount: newTx.receiveAmount,
-          service_fee: newTx.serviceFee,
-          commission_fee: newTx.commissionFee,
-          tax_amount: newTx.taxAmount,
-          total_payable_amount: newTx.totalPayableAmount,
-          payout_method: newTx.payoutMethod,
-          payout_bank_name: newTx.payoutBankName,
-          payout_account_number: newTx.payoutAccountNumber,
-          sending_branch_id: newTx.sendingBranchId,
-          payout_branch_id: newTx.payoutBranchId,
-          partner_company_id: newTx.partnerCompanyId,
-          purpose_id: newTx.purposeId,
-          purpose_name: newTx.purposeName,
-          sender_note: newTx.senderNote,
-          proof_document_name: newTx.proofDocumentName,
-          blacklist_checked: newTx.blacklistChecked,
-          blacklist_alert: newTx.blacklistAlert,
-          creator_user_id: newTx.creatorUserId,
-          creator_name: newTx.creatorName,
-          created_date: newTx.createdDate
-        }], { onConflict: 'id' }).then(({ error }) => {
-          if (error) console.warn('Supabase auto-sync inward transaction error:', error.message);
-        });
-      }
-    } catch (e) {
-      // ignore
-    }
+    syncLiveTransactionToCloud(newTx);
 
     return newTx;
   };
@@ -695,6 +772,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       `Checker ${currentUser.fullName} approved transaction ${tx.transactionNo} (MTCN: ${tx.mtcn}). Note: ${note || 'None'}`
     );
 
+    syncLiveTransactionToCloud(updatedTx);
+
     return true;
   };
 
@@ -724,6 +803,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       `Checker ${currentUser.fullName} rejected transaction ${tx.transactionNo}. Reason: ${reason}`
     );
 
+    syncLiveTransactionToCloud(updatedTx);
+
     return true;
   };
 
@@ -751,6 +832,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       tx.transactionNo,
       `Transaction ${tx.transactionNo} placed ON HOLD by ${currentUser.fullName}. Note: ${note}`
     );
+
+    syncLiveTransactionToCloud(updatedTx);
 
     return true;
   };
@@ -781,6 +864,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       `Payout disbursed for MTCN ${tx.mtcn} to beneficiary ${tx.receiverName} (${tx.receiveAmount} MMK) by ${currentUser.fullName}`
     );
 
+    syncLiveTransactionToCloud(updatedTx);
+
     return true;
   };
 
@@ -798,69 +883,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       `Transaction ${updatedTx.transactionNo} (MTCN: ${updatedTx.mtcn}) edited by ${currentUser.fullName}${editReason ? `. Reason: ${editReason}` : ''}`
     );
 
-    if (db.supabaseConfig.connected && db.supabaseConfig.autoSync) {
-      const client = getSupabaseClient(db.supabaseConfig);
-      if (client) {
-        client.from('transactions').upsert([{
-          id: updatedTx.id,
-          transaction_no: updatedTx.transactionNo,
-          mtcn: updatedTx.mtcn,
-          type: updatedTx.type,
-          scope: updatedTx.scope,
-          status: updatedTx.status,
-          sender_name: updatedTx.senderName,
-          sender_name_mm: updatedTx.senderNameMm,
-          sender_nrc: updatedTx.senderNrc,
-          sender_passport: updatedTx.senderPassport || updatedTx.senderPassbook,
-          sender_passport_attachment: updatedTx.senderPassportAttachment || updatedTx.senderPassbookAttachment,
-          sender_passport_attachment_name: updatedTx.senderPassportAttachmentName || updatedTx.senderPassbookAttachmentName,
-          sender_passport_attachment_type: updatedTx.senderPassportAttachmentType || updatedTx.senderPassbookAttachmentType,
-          sender_passport_attachment_size: updatedTx.senderPassportAttachmentSize || updatedTx.senderPassbookAttachmentSize,
-          sender_passbook: updatedTx.senderPassport || updatedTx.senderPassbook,
-          sender_passbook_attachment: updatedTx.senderPassportAttachment || updatedTx.senderPassbookAttachment,
-          sender_passbook_attachment_name: updatedTx.senderPassportAttachmentName || updatedTx.senderPassbookAttachmentName,
-          sender_passbook_attachment_type: updatedTx.senderPassportAttachmentType || updatedTx.senderPassbookAttachmentType,
-          sender_passbook_attachment_size: updatedTx.senderPassportAttachmentSize || updatedTx.senderPassbookAttachmentSize,
-          sender_phone: updatedTx.senderPhone,
-          sender_address: updatedTx.senderAddress,
-          sender_country_code: updatedTx.senderCountryCode,
-          receiver_name: updatedTx.receiverName,
-          receiver_name_mm: updatedTx.receiverNameMm,
-          receiver_nrc: updatedTx.receiverNrc,
-          receiver_passport: updatedTx.receiverPassport || updatedTx.receiverPassbook,
-          receiver_passbook: updatedTx.receiverPassport || updatedTx.receiverPassbook,
-          receiver_phone: updatedTx.receiverPhone,
-          receiver_address: updatedTx.receiverAddress,
-          receiver_country_code: updatedTx.receiverCountryCode,
-          source_currency: updatedTx.sourceCurrency,
-          target_currency: updatedTx.targetCurrency,
-          send_amount: updatedTx.sendAmount,
-          exchange_rate: updatedTx.exchangeRate,
-          receive_amount: updatedTx.receiveAmount,
-          service_fee: updatedTx.serviceFee,
-          commission_fee: updatedTx.commissionFee,
-          tax_amount: updatedTx.taxAmount,
-          total_payable_amount: updatedTx.totalPayableAmount,
-          payout_method: updatedTx.payoutMethod,
-          payout_bank_name: updatedTx.payoutBankName,
-          payout_account_number: updatedTx.payoutAccountNumber,
-          sending_branch_id: updatedTx.sendingBranchId,
-          payout_branch_id: updatedTx.payoutBranchId,
-          partner_company_id: updatedTx.partnerCompanyId,
-          purpose_id: updatedTx.purposeId,
-          purpose_name: updatedTx.purposeName,
-          sender_note: updatedTx.senderNote,
-          proof_document_name: updatedTx.proofDocumentName,
-          blacklist_checked: updatedTx.blacklistChecked,
-          blacklist_alert: updatedTx.blacklistAlert,
-          creator_user_id: updatedTx.creatorUserId,
-          creator_name: updatedTx.creatorName,
-          created_date: updatedTx.createdDate
-        }], { onConflict: 'id' }).then(({ error }) => {
-          if (error) console.warn('Supabase auto-sync update transaction error:', error.message);
-        });
-      }
-    }
+    syncLiveTransactionToCloud(updatedTx);
 
     return true;
   };
@@ -1397,6 +1420,12 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           sender_name: t.senderName,
           sender_name_mm: t.senderNameMm,
           sender_nrc: t.senderNrc,
+          sender_nrc_attachment: t.senderNrcAttachment || t.senderNrcFrontAttachment,
+          sender_nrc_front_attachment: t.senderNrcFrontAttachment || t.senderNrcAttachment,
+          sender_nrc_back_attachment: t.senderNrcBackAttachment,
+          sender_father_name: t.senderFatherName,
+          sender_occupation: t.senderOccupation,
+          sender_date_of_birth: t.senderDateOfBirth,
           sender_passport: t.senderPassport || t.senderPassbook,
           sender_passport_attachment: t.senderPassportAttachment || t.senderPassbookAttachment,
           sender_passport_attachment_name: t.senderPassportAttachmentName || t.senderPassbookAttachmentName,
@@ -1437,6 +1466,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           purpose_name: t.purposeName,
           sender_note: t.senderNote,
           proof_document_name: t.proofDocumentName,
+          proof_document_url: t.proofDocumentUrl,
+          proof_doc_category: t.proofDocCategory,
           blacklist_checked: t.blacklistChecked,
           blacklist_alert: t.blacklistAlert,
           creator_user_id: t.creatorUserId,
@@ -1577,6 +1608,12 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             senderName: t.sender_name,
             senderNameMm: t.sender_name_mm,
             senderNrc: t.sender_nrc,
+            senderNrcAttachment: t.sender_nrc_attachment || t.sender_nrc_front_attachment,
+            senderNrcFrontAttachment: t.sender_nrc_front_attachment || t.sender_nrc_attachment,
+            senderNrcBackAttachment: t.sender_nrc_back_attachment,
+            senderFatherName: t.sender_father_name,
+            senderOccupation: t.sender_occupation,
+            senderDateOfBirth: t.sender_date_of_birth,
             senderPassport: t.sender_passport || t.sender_passbook,
             senderPassportAttachment: t.sender_passport_attachment || t.sender_passbook_attachment,
             senderPassportAttachmentName: t.sender_passport_attachment_name || t.sender_passbook_attachment_name,
@@ -1617,6 +1654,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             purposeName: t.purpose_name,
             senderNote: t.sender_note,
             proofDocumentName: t.proof_document_name,
+            proofDocumentUrl: t.proof_document_url,
+            proofDocCategory: t.proof_doc_category,
             blacklistChecked: Boolean(t.blacklist_checked),
             blacklistAlert: t.blacklist_alert,
             creatorUserId: t.creator_user_id,

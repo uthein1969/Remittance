@@ -1,0 +1,599 @@
+import { createClient, Client } from '@libsql/client';
+
+const CONFIGURED_TURSO_URL = 'libsql://remittance-db-uthein.turso.io';
+const CONFIGURED_TURSO_TOKEN = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODkxMTczMTQsImlkIjoiMDFhMDhmYTYtZTYwMS03MzQ2LTk5YTYtYjAxNGNiZDU5YTI4Iiwia2lkIjoidU1rSk9uS0Rqcl9wRkNWOEtEQ3dDUFFtM2FacHlBTjNOVmZkaE9UeFV1OCIsInJpZCI6IjE3OTZkMDNiLTA4OGItNGZhMC04Yjk0LTAwZjliYWI1YjI3ZSJ9.1cgPOor1F3S55DoxEQ9IzWxvmxkxcy8Bq2EvMjmz6j5SzONju6fFIGKImCSB6vQjdnJbSTNQpYO8JzwHWUV6Cg';
+
+function resolveTursoToken(token?: string): string {
+  if (!token) return CONFIGURED_TURSO_TOKEN;
+  try {
+    const parts = token.split('.');
+    if (parts.length >= 2) {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      // If token is an Org management token, use the database token
+      if (payload.org_id && !payload.id) {
+        return CONFIGURED_TURSO_TOKEN;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return token;
+}
+
+let tursoClient: Client | null = null;
+let currentUrl: string = '';
+let currentToken: string = '';
+
+export function getTursoConfig() {
+  const envUrl = process.env.TURSO_DATABASE_URL?.trim() || CONFIGURED_TURSO_URL;
+  const rawToken = process.env.TURSO_AUTH_TOKEN?.trim() || CONFIGURED_TURSO_TOKEN;
+  const envToken = resolveTursoToken(rawToken);
+  return {
+    url: currentUrl || envUrl,
+    token: currentToken || envToken,
+    isRemote: Boolean((currentUrl || envUrl).startsWith('libsql://') || (currentUrl || envUrl).startsWith('https://')),
+    isConfigured: Boolean(currentUrl || envUrl),
+  };
+}
+
+export function initTursoClient(customUrl?: string, customToken?: string): Client {
+  const envUrl = process.env.TURSO_DATABASE_URL?.trim() || CONFIGURED_TURSO_URL;
+  const rawToken = process.env.TURSO_AUTH_TOKEN?.trim() || CONFIGURED_TURSO_TOKEN;
+  const envToken = resolveTursoToken(rawToken);
+  
+  const targetUrl = customUrl?.trim() || envUrl;
+  const targetToken = resolveTursoToken(customToken?.trim()) || envToken;
+
+  if (tursoClient && currentUrl === targetUrl && currentToken === targetToken) {
+    return tursoClient;
+  }
+
+  currentUrl = targetUrl;
+  currentToken = targetToken;
+
+  tursoClient = createClient({
+    url: targetUrl,
+    authToken: targetToken || undefined,
+  });
+
+  return tursoClient;
+}
+
+export async function testTursoConnection(url?: string, token?: string) {
+  try {
+    const client = initTursoClient(url, token);
+    const result = await client.execute('SELECT 1 as connected;');
+    const isOk = result.rows.length > 0;
+    const config = getTursoConfig();
+    return {
+      success: isOk,
+      message: isOk ? 'Turso connection successful!' : 'Failed to query Turso.',
+      isRemote: config.isRemote,
+      url: config.url.startsWith('libsql://') 
+        ? config.url.replace(/(libsql:\/\/[^.]+).*/, '$1.turso.io') 
+        : config.url,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || 'Failed to connect to Turso LibSQL database',
+    };
+  }
+}
+
+export const TURSO_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS remittance_transactions (
+  id TEXT PRIMARY KEY,
+  transaction_no TEXT UNIQUE NOT NULL,
+  mtcn TEXT NOT NULL,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  sender_name TEXT,
+  sender_name_mm TEXT,
+  sender_nrc TEXT,
+  sender_phone TEXT,
+  sender_address TEXT,
+  sender_passport TEXT,
+  receiver_name TEXT,
+  receiver_name_mm TEXT,
+  receiver_nrc TEXT,
+  receiver_phone TEXT,
+  receiver_address TEXT,
+  receiver_passport TEXT,
+  from_country TEXT,
+  to_country TEXT,
+  source_currency TEXT,
+  target_currency TEXT,
+  send_amount REAL,
+  exchange_rate REAL,
+  payout_amount REAL,
+  transfer_fee REAL,
+  total_collected REAL,
+  purpose TEXT,
+  payout_method TEXT,
+  bank_name TEXT,
+  bank_account_no TEXT,
+  created_by TEXT,
+  created_at TEXT,
+  approved_by TEXT,
+  approved_at TEXT,
+  rejected_reason TEXT,
+  source_of_funds TEXT,
+  remittance_type TEXT,
+  created_date TEXT,
+  sender_nrc_attachment TEXT,
+  sender_nrc_front_attachment TEXT,
+  sender_nrc_back_attachment TEXT,
+  sender_passport_attachment TEXT,
+  proof_document_url TEXT,
+  proof_document_name TEXT,
+  proof_doc_category TEXT,
+  sender_father_name TEXT,
+  sender_occupation TEXT,
+  sender_date_of_birth TEXT
+);
+
+CREATE TABLE IF NOT EXISTS exchange_rates (
+  id TEXT PRIMARY KEY,
+  from_currency TEXT,
+  to_currency TEXT,
+  buy_rate REAL,
+  sell_rate REAL,
+  central_bank_rate REAL,
+  effective_date TEXT,
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS customer_profiles (
+  id TEXT PRIMARY KEY,
+  customer_code TEXT UNIQUE,
+  full_name_en TEXT,
+  full_name_mm TEXT,
+  nrc_number TEXT,
+  phone TEXT,
+  address TEXT,
+  customer_type TEXT,
+  risk_rating TEXT,
+  total_transactions INTEGER,
+  total_volume_mmk REAL,
+  created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS system_users (
+  id TEXT PRIMARY KEY,
+  username TEXT UNIQUE,
+  full_name TEXT,
+  role TEXT,
+  branch_id TEXT,
+  is_active INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  timestamp TEXT,
+  user_id TEXT,
+  user_name TEXT,
+  action TEXT,
+  entity_type TEXT,
+  entity_id TEXT,
+  details TEXT
+);
+
+CREATE TABLE IF NOT EXISTS branches (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  name_en TEXT NOT NULL,
+  name_mm TEXT NOT NULL,
+  city TEXT NOT NULL,
+  phone TEXT,
+  address TEXT,
+  manager_name TEXT,
+  status TEXT DEFAULT 'ACTIVE',
+  created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS companies (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  name_en TEXT NOT NULL,
+  name_mm TEXT NOT NULL,
+  country_code TEXT NOT NULL,
+  type TEXT NOT NULL,
+  swift_code TEXT,
+  license_no TEXT,
+  phone TEXT,
+  email TEXT,
+  status TEXT DEFAULT 'ACTIVE',
+  created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS currencies (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  name_en TEXT NOT NULL,
+  name_mm TEXT NOT NULL,
+  symbol TEXT NOT NULL,
+  is_base_currency INTEGER DEFAULT 0,
+  decimals INTEGER DEFAULT 2,
+  status TEXT DEFAULT 'ACTIVE'
+);
+
+CREATE TABLE IF NOT EXISTS countries (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  name_en TEXT NOT NULL,
+  name_mm TEXT NOT NULL,
+  dial_code TEXT,
+  flag_emoji TEXT,
+  currency_code TEXT,
+  is_domestic INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'ACTIVE'
+);
+
+CREATE TABLE IF NOT EXISTS blacklist (
+  id TEXT PRIMARY KEY,
+  full_name_en TEXT NOT NULL,
+  full_name_mm TEXT NOT NULL,
+  nrc_number TEXT NOT NULL,
+  passport_number TEXT NOT NULL,
+  passbook_number TEXT,
+  reason TEXT NOT NULL,
+  note TEXT NOT NULL,
+  risk_level TEXT NOT NULL,
+  added_by TEXT NOT NULL,
+  active INTEGER DEFAULT 1,
+  created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS purposes (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  name_en TEXT NOT NULL,
+  name_mm TEXT NOT NULL,
+  category TEXT NOT NULL,
+  requires_doc_proof INTEGER DEFAULT 0,
+  max_daily_limit_mmk REAL
+);
+`;
+
+export async function initTursoSchema(client?: Client) {
+  const cli = client || initTursoClient();
+  const statements = TURSO_SCHEMA_SQL
+    .split(';')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  for (const stmt of statements) {
+    await cli.execute(stmt);
+  }
+
+  // Auto-migrate additional columns if table was created previously without them
+  const extraColumns = [
+    'sender_nrc_attachment TEXT',
+    'sender_nrc_front_attachment TEXT',
+    'sender_nrc_back_attachment TEXT',
+    'sender_passport_attachment TEXT',
+    'proof_document_url TEXT',
+    'proof_document_name TEXT',
+    'proof_doc_category TEXT',
+    'sender_father_name TEXT',
+    'sender_occupation TEXT',
+    'sender_date_of_birth TEXT',
+  ];
+  for (const col of extraColumns) {
+    try {
+      await cli.execute(`ALTER TABLE remittance_transactions ADD COLUMN ${col};`);
+    } catch {
+      // Column already exists or already up-to-date
+    }
+  }
+
+  return { success: true, count: statements.length };
+}
+
+export async function getTursoStats() {
+  const client = initTursoClient();
+  const config = getTursoConfig();
+
+  try {
+    // Ensure tables exist
+    await initTursoSchema(client);
+
+    const [txCount, custCount, rateCount, logCount] = await Promise.all([
+      client.execute('SELECT COUNT(*) as cnt FROM remittance_transactions;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM customer_profiles;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM exchange_rates;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM audit_logs;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+    ]);
+
+    return {
+      connected: true,
+      isRemote: config.isRemote,
+      url: config.url.startsWith('libsql://') 
+        ? config.url.replace(/(libsql:\/\/[^.]+).*/, '$1.turso.io') 
+        : config.url,
+      counts: {
+        transactions: txCount,
+        customers: custCount,
+        exchangeRates: rateCount,
+        auditLogs: logCount,
+      }
+    };
+  } catch (err: any) {
+    return {
+      connected: false,
+      isRemote: config.isRemote,
+      error: err?.message || 'Unable to fetch Turso stats',
+      counts: { transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0 }
+    };
+  }
+}
+
+export async function syncPushToTurso(data: {
+  transactions?: any[];
+  exchangeRates?: any[];
+  customers?: any[];
+  auditLogs?: any[];
+}) {
+  const client = initTursoClient();
+  await initTursoSchema(client);
+
+  let txSaved = 0;
+  let ratesSaved = 0;
+  let custSaved = 0;
+  let logsSaved = 0;
+
+  // 1. Transactions
+  if (data.transactions && Array.isArray(data.transactions)) {
+    for (const tx of data.transactions) {
+      if (!tx.id || !tx.transactionNo) continue;
+      await client.execute({
+        sql: `INSERT INTO remittance_transactions (
+          id, transaction_no, mtcn, type, status,
+          sender_name, sender_name_mm, sender_nrc, sender_phone, sender_address, sender_passport,
+          receiver_name, receiver_name_mm, receiver_nrc, receiver_phone, receiver_address, receiver_passport,
+          from_country, to_country, source_currency, target_currency,
+          send_amount, exchange_rate, payout_amount, transfer_fee, total_collected,
+          purpose, payout_method, bank_name, bank_account_no,
+          created_by, created_at, approved_by, approved_at, rejected_reason,
+          source_of_funds, remittance_type, created_date,
+          sender_nrc_attachment, sender_nrc_front_attachment, sender_nrc_back_attachment,
+          sender_passport_attachment, proof_document_url, proof_document_name,
+          proof_doc_category, sender_father_name, sender_occupation, sender_date_of_birth
+        ) VALUES (
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          status=excluded.status,
+          approved_by=excluded.approved_by,
+          approved_at=excluded.approved_at,
+          rejected_reason=excluded.rejected_reason,
+          sender_nrc_attachment=excluded.sender_nrc_attachment,
+          sender_nrc_front_attachment=excluded.sender_nrc_front_attachment,
+          sender_nrc_back_attachment=excluded.sender_nrc_back_attachment,
+          sender_passport_attachment=excluded.sender_passport_attachment,
+          proof_document_url=excluded.proof_document_url,
+          proof_document_name=excluded.proof_document_name;`,
+        args: [
+          tx.id, tx.transactionNo, tx.mtcn || '', tx.type || 'OUTWARD', tx.status || 'PENDING_APPROVAL',
+          tx.senderName || '', tx.senderNameMm || '', tx.senderNrc || '', tx.senderPhone || '', tx.senderAddress || '', tx.senderPassport || '',
+          tx.receiverName || '', tx.receiverNameMm || '', tx.receiverNrc || '', tx.receiverPhone || '', tx.receiverAddress || '', tx.receiverPassport || '',
+          tx.fromCountry || 'MM', tx.toCountry || 'MM', tx.sourceCurrency || 'MMK', tx.targetCurrency || 'MMK',
+          Number(tx.sendAmount) || 0, Number(tx.exchangeRate) || 1, Number(tx.payoutAmount) || 0, Number(tx.transferFee) || 0, Number(tx.totalCollected) || 0,
+          tx.purpose || '', tx.payoutMethod || '', tx.bankName || '', tx.bankAccountNo || '',
+          tx.createdBy || '', tx.createdAt || new Date().toISOString(), tx.approvedBy || '', tx.approvedAt || '', tx.rejectedReason || '',
+          tx.sourceOfFunds || '', tx.remittanceType || '', tx.createdDate || '',
+          tx.senderNrcAttachment || tx.senderNrcFrontAttachment || '',
+          tx.senderNrcFrontAttachment || tx.senderNrcAttachment || '',
+          tx.senderNrcBackAttachment || '',
+          tx.senderPassportAttachment || tx.senderPassbookAttachment || '',
+          tx.proofDocumentUrl || '',
+          tx.proofDocumentName || '',
+          tx.proofDocCategory || '',
+          tx.senderFatherName || '',
+          tx.senderOccupation || '',
+          tx.senderDateOfBirth || ''
+        ]
+      });
+      txSaved++;
+    }
+  }
+
+  // 2. Exchange Rates
+  if (data.exchangeRates && Array.isArray(data.exchangeRates)) {
+    for (const rate of data.exchangeRates) {
+      if (!rate.id) continue;
+      await client.execute({
+        sql: `INSERT INTO exchange_rates (
+          id, from_currency, to_currency, buy_rate, sell_rate, central_bank_rate, effective_date, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          buy_rate=excluded.buy_rate,
+          sell_rate=excluded.sell_rate,
+          central_bank_rate=excluded.central_bank_rate,
+          updated_at=excluded.updated_at;`,
+        args: [
+          rate.id, rate.fromCurrency || '', rate.toCurrency || '',
+          Number(rate.buyRate) || 0, Number(rate.sellRate) || 0, Number(rate.centralBankRate) || 0,
+          rate.effectiveDate || '', rate.updatedAt || new Date().toISOString()
+        ]
+      });
+      ratesSaved++;
+    }
+  }
+
+  // 3. Customers
+  if (data.customers && Array.isArray(data.customers)) {
+    for (const c of data.customers) {
+      if (!c.id) continue;
+      await client.execute({
+        sql: `INSERT INTO customer_profiles (
+          id, customer_code, full_name_en, full_name_mm, nrc_number, phone, address,
+          customer_type, risk_rating, total_transactions, total_volume_mmk, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          phone=excluded.phone,
+          address=excluded.address,
+          risk_rating=excluded.risk_rating,
+          total_transactions=excluded.total_transactions,
+          total_volume_mmk=excluded.total_volume_mmk;`,
+        args: [
+          c.id, c.customerCode || '', c.fullNameEn || '', c.fullNameMm || '', c.nrcNumber || '',
+          c.phone || '', c.address || '', c.customerType || 'SENDER', c.riskRating || 'LOW',
+          Number(c.totalTransactions) || 0, Number(c.totalVolumeMMK) || 0, c.createdAt || new Date().toISOString()
+        ]
+      });
+      custSaved++;
+    }
+  }
+
+  // 4. Audit Logs
+  if (data.auditLogs && Array.isArray(data.auditLogs)) {
+    for (const log of data.auditLogs) {
+      if (!log.id) continue;
+      await client.execute({
+        sql: `INSERT OR IGNORE INTO audit_logs (
+          id, timestamp, user_id, user_name, action, entity_type, entity_id, details
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        args: [
+          log.id, log.timestamp || new Date().toISOString(), log.userId || '', log.userName || '',
+          log.action || '', log.entityType || '', log.entityId || '',
+          typeof log.details === 'object' ? JSON.stringify(log.details) : (log.details || '')
+        ]
+      });
+      logsSaved++;
+    }
+  }
+
+  return {
+    success: true,
+    saved: {
+      transactions: txSaved,
+      exchangeRates: ratesSaved,
+      customers: custSaved,
+      auditLogs: logsSaved,
+    },
+    syncedAt: new Date().toISOString()
+  };
+}
+
+export async function syncPullFromTurso() {
+  const client = initTursoClient();
+  await initTursoSchema(client);
+
+  const [txRes, rateRes, custRes, logRes] = await Promise.all([
+    client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC;'),
+    client.execute('SELECT * FROM exchange_rates ORDER BY updated_at DESC;'),
+    client.execute('SELECT * FROM customer_profiles ORDER BY full_name_en ASC;'),
+    client.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200;'),
+  ]);
+
+  const transactions = txRes.rows.map((row: any) => ({
+    id: String(row.id),
+    transactionNo: String(row.transaction_no),
+    mtcn: String(row.mtcn),
+    type: String(row.type),
+    status: String(row.status),
+    senderName: String(row.sender_name || ''),
+    senderNameMm: String(row.sender_name_mm || ''),
+    senderNrc: String(row.sender_nrc || ''),
+    senderPhone: String(row.sender_phone || ''),
+    senderAddress: String(row.sender_address || ''),
+    senderPassport: String(row.sender_passport || ''),
+    receiverName: String(row.receiver_name || ''),
+    receiverNameMm: String(row.receiver_name_mm || ''),
+    receiverNrc: String(row.receiver_nrc || ''),
+    receiverPhone: String(row.receiver_phone || ''),
+    receiverAddress: String(row.receiver_address || ''),
+    receiverPassport: String(row.receiver_passport || ''),
+    fromCountry: String(row.from_country || 'MM'),
+    toCountry: String(row.to_country || 'MM'),
+    sourceCurrency: String(row.source_currency || 'MMK'),
+    targetCurrency: String(row.target_currency || 'MMK'),
+    sendAmount: Number(row.send_amount) || 0,
+    exchangeRate: Number(row.exchange_rate) || 1,
+    payoutAmount: Number(row.payout_amount) || 0,
+    transferFee: Number(row.transfer_fee) || 0,
+    totalCollected: Number(row.total_collected) || 0,
+    purpose: String(row.purpose || ''),
+    payoutMethod: String(row.payout_method || ''),
+    bankName: String(row.bank_name || ''),
+    bankAccountNo: String(row.bank_account_no || ''),
+    createdBy: String(row.created_by || ''),
+    createdAt: String(row.created_at || ''),
+    approvedBy: String(row.approved_by || ''),
+    approvedAt: String(row.approved_at || ''),
+    rejectedReason: String(row.rejected_reason || ''),
+    sourceOfFunds: String(row.source_of_funds || ''),
+    remittanceType: String(row.remittance_type || ''),
+    createdDate: String(row.created_date || ''),
+    senderNrcAttachment: String(row.sender_nrc_attachment || ''),
+    senderNrcFrontAttachment: String(row.sender_nrc_front_attachment || row.sender_nrc_attachment || ''),
+    senderNrcBackAttachment: String(row.sender_nrc_back_attachment || ''),
+    senderPassportAttachment: String(row.sender_passport_attachment || ''),
+    proofDocumentUrl: String(row.proof_document_url || ''),
+    proofDocumentName: String(row.proof_document_name || ''),
+    proofDocCategory: row.proof_doc_category || undefined,
+    senderFatherName: String(row.sender_father_name || ''),
+    senderOccupation: String(row.sender_occupation || ''),
+    senderDateOfBirth: String(row.sender_date_of_birth || ''),
+  }));
+
+  const exchangeRates = rateRes.rows.map((row: any) => ({
+    id: String(row.id),
+    fromCurrency: String(row.from_currency),
+    toCurrency: String(row.to_currency),
+    buyRate: Number(row.buy_rate),
+    sellRate: Number(row.sell_rate),
+    centralBankRate: Number(row.central_bank_rate),
+    effectiveDate: String(row.effective_date),
+    updatedAt: String(row.updated_at),
+  }));
+
+  const customers = custRes.rows.map((row: any) => ({
+    id: String(row.id),
+    customerCode: String(row.customer_code),
+    fullNameEn: String(row.full_name_en),
+    fullNameMm: String(row.full_name_mm || ''),
+    nrcNumber: String(row.nrc_number || ''),
+    phone: String(row.phone || ''),
+    address: String(row.address || ''),
+    customerType: String(row.customer_type || 'SENDER'),
+    riskRating: String(row.risk_rating || 'LOW'),
+    totalTransactions: Number(row.total_transactions) || 0,
+    totalVolumeMMK: Number(row.total_volume_mmk) || 0,
+    createdAt: String(row.created_at || ''),
+  }));
+
+  const auditLogs = logRes.rows.map((row: any) => ({
+    id: String(row.id),
+    timestamp: String(row.timestamp),
+    userId: String(row.user_id),
+    userName: String(row.user_name),
+    action: String(row.action),
+    entityType: String(row.entity_type),
+    entityId: String(row.entity_id),
+    details: row.details,
+  }));
+
+  return {
+    success: true,
+    data: {
+      transactions,
+      exchangeRates,
+      customers,
+      auditLogs,
+    }
+  };
+}
+

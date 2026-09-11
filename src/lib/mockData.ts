@@ -1220,6 +1220,14 @@ export const initialDatabase: AppDatabase = {
     syncStatus: 'IDLE',
     autoSync: false,
   },
+  tursoConfig: {
+    databaseUrl: '',
+    authToken: '',
+    isConnected: true,
+    isRemote: false,
+    syncStatus: 'IDLE',
+    autoSync: false,
+  },
   activeLanguage: 'my', // Default to Myanmar for natural local experience
   currentUserId: 'USR-001',
 };

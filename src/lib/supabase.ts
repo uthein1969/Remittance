@@ -231,6 +231,12 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     sender_name TEXT NOT NULL,
     sender_name_mm TEXT,
     sender_nrc TEXT NOT NULL,
+    sender_nrc_attachment TEXT,
+    sender_nrc_front_attachment TEXT,
+    sender_nrc_back_attachment TEXT,
+    sender_father_name TEXT,
+    sender_occupation TEXT,
+    sender_date_of_birth TEXT,
     sender_passport TEXT,
     sender_passport_attachment TEXT,
     sender_passport_attachment_name TEXT,
@@ -276,6 +282,8 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     purpose_name TEXT,
     sender_note TEXT,
     proof_document_name TEXT,
+    proof_document_url TEXT,
+    proof_doc_category TEXT,
     
     blacklist_checked BOOLEAN DEFAULT FALSE,
     blacklist_alert TEXT,
@@ -338,9 +346,17 @@ ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachm
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_name TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_type TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_size TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_nrc_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_nrc_front_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_nrc_back_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS proof_document_url TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS proof_doc_category TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_father_name TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_occupation TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_date_of_birth TEXT;
 `;
 
-export const SUPABASE_DISABLE_RLS_SQL = `-- Run this in Supabase SQL Editor if you encounter "permission denied" or RLS errors:
+export const SUPABASE_DISABLE_RLS_SQL = `-- Run this in Supabase SQL Editor if you encounter "permission denied" or RLS errors, or to add attachment columns:
 ALTER TABLE public.branches DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.companies DISABLE ROW LEVEL SECURITY;
@@ -353,7 +369,7 @@ ALTER TABLE public.customers DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
 
--- Ensure sender passport attachment columns exist
+-- Ensure sender NRC, passport & proof document columns exist in transactions table
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachment_name TEXT;
@@ -362,7 +378,15 @@ ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passport_attachm
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_name TEXT;
 ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_type TEXT;
-ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_size TEXT;`;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_passbook_attachment_size TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_nrc_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_nrc_front_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_nrc_back_attachment TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS proof_document_url TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS proof_doc_category TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_father_name TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_occupation TEXT;
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_date_of_birth TEXT;`;
 
 export const SUPABASE_SCHEMA_SQL = SUPABASE_SQL_DDL;
 

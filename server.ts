@@ -1,8 +1,19 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { 
+  getTursoConfig, 
+  initTursoClient, 
+  testTursoConnection, 
+  initTursoSchema, 
+  getTursoStats, 
+  syncPushToTurso, 
+  syncPullFromTurso, 
+  TURSO_SCHEMA_SQL 
+} from './server/turso.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +48,57 @@ function getAiClient(): GoogleGenAI {
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Turso Database endpoints
+app.get('/api/turso/status', async (req, res) => {
+  try {
+    const stats = await getTursoStats();
+    res.json({ success: true, ...stats });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to get Turso status' });
+  }
+});
+
+app.post('/api/turso/test', async (req, res) => {
+  try {
+    const { url, token } = req.body || {};
+    const result = await testTursoConnection(url, token);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Turso test failed' });
+  }
+});
+
+app.post('/api/turso/init', async (req, res) => {
+  try {
+    const result = await initTursoSchema();
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to initialize schema' });
+  }
+});
+
+app.post('/api/turso/sync-push', async (req, res) => {
+  try {
+    const result = await syncPushToTurso(req.body || {});
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Turso sync push failed' });
+  }
+});
+
+app.post('/api/turso/sync-pull', async (req, res) => {
+  try {
+    const result = await syncPullFromTurso();
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Turso sync pull failed' });
+  }
+});
+
+app.get('/api/turso/schema', (req, res) => {
+  res.json({ success: true, schemaSql: TURSO_SCHEMA_SQL });
 });
 
 // NRC AI OCR Extraction endpoint

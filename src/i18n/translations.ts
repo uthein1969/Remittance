@@ -27,6 +27,7 @@ export const translations = {
     navAdminSetup: 'Admin Setup',
     navAuditLog: 'Audit Trail / Logs',
     navBackupRestore: 'Backup & Restore',
+    navTurso: 'Turso Cloud DB',
     navSupabase: 'Supabase Database',
 
     // Setup Submenus
@@ -344,6 +345,7 @@ export const translations = {
     navAdminSetup: 'အုပ်ချုပ်သူ ပြင်ဆင်မှုများ (Admin Setup)',
     navAuditLog: 'လုပ်ဆောင်ချက် မှတ်တမ်းအားလုံး (Audit Log)',
     navBackupRestore: 'အရန်သိမ်း/ပြန်လည်ရယူခြင်း (Backup & Restore)',
+    navTurso: 'Turso Cloud စနစ် (Turso DB)',
     navSupabase: 'Supabase ချိတ်ဆက်မှု (Supabase DB)',
 
     // Setup Submenus

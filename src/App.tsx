@@ -41,7 +41,7 @@ const MainLayout: React.FC = () => {
       {/* Header */}
       <Header 
         onOpenBackup={() => handleNavigate('backup_restore')}
-        onOpenSupabase={() => handleNavigate('backup_restore')}
+        onOpenTurso={() => handleNavigate('turso_sync')}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         onNavigateCompanySetting={() => handleNavigate('admin_setup', 'operator_profile')}
       />
@@ -98,8 +98,8 @@ const MainLayout: React.FC = () => {
             {activeTab === 'backup_restore' && (
               <BackupRestoreView initialTab="backup" />
             )}
-            {activeTab === 'supabase_sync' && (
-              <BackupRestoreView initialTab="supabase" />
+            {activeTab === 'turso_sync' && (
+              <BackupRestoreView initialTab="turso" />
             )}
           </div>
         </main>

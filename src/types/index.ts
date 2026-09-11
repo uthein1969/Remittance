@@ -277,6 +277,23 @@ export interface SupabaseConfig {
   autoSync: boolean;
 }
 
+export interface TursoConfig {
+  databaseUrl: string;
+  authToken: string;
+  isConnected: boolean;
+  isRemote: boolean;
+  lastSyncTime?: string;
+  syncStatus: 'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR';
+  errorMessage?: string;
+  autoSync: boolean;
+  tableCounts?: {
+    transactions: number;
+    customers: number;
+    exchangeRates: number;
+    auditLogs: number;
+  };
+}
+
 export interface AppDatabase {
   operatorProfile?: OperatorProfile;
   branches: Branch[];
@@ -291,6 +308,7 @@ export interface AppDatabase {
   transactions: RemittanceTransaction[];
   auditLogs: AuditRecord[];
   supabaseConfig: SupabaseConfig;
+  tursoConfig?: TursoConfig;
   activeLanguage: Language;
   currentUserId: string;
 }
