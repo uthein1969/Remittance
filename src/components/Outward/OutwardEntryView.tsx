@@ -426,6 +426,12 @@ export const OutwardEntryView: React.FC = () => {
                 ? `✨ AI Vision OCR မှတ်ပုံတင် ဖတ်ရှုပြီးစီးပါပြီ- ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
                 : `✨ AI OCR Complete: ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
             });
+          } else if (aiExtracted.isAiSuccess === false && aiExtracted.error) {
+            setUploadFeedback({
+              message: language === 'my'
+                ? `⚠️ AI OCR အသိပေးချက်: ${aiExtracted.errorMessageMm || aiExtracted.error}`
+                : `⚠️ AI OCR Notice: ${aiExtracted.error}`
+            });
           }
 
           if (aiExtracted.confidence >= 80) {

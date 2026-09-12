@@ -13,6 +13,9 @@ export interface ExtractedNrcInfo {
   confidence: number; // 0 - 100
   method: 'AI_GEMINI_VISION' | 'SVG_TEXT' | 'FILENAME_PATTERN' | 'MATCHED_CUSTOMER' | 'SMART_OCR';
   extractedFields: string[];
+  error?: string;
+  errorMessageMm?: string;
+  isAiSuccess?: boolean;
 }
 
 /**
@@ -314,6 +317,65 @@ export function extractNrcInfoFromUpload(
 }
 
 /**
+ * Compresses and resizes high-resolution NRC images in browser canvas before uploading.
+ * Ensures the payload never exceeds Vercel Serverless Function 4.5MB limit,
+ * while preserving high visual fidelity for OCR handwriting/print recognition.
+ */
+export async function optimizeImageForOcr(dataUrl: string, maxDim = 1800, quality = 0.85): Promise<string> {
+  // If not an image data url, or already small (< 700KB), return as is
+  if (!dataUrl.startsWith('data:image/') || dataUrl.length < 800000) {
+    return dataUrl;
+  }
+
+  // SVG images don't need raster compression
+  if (dataUrl.startsWith('data:image/svg')) {
+    return dataUrl;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            return resolve(dataUrl);
+          }
+
+          // Fill white background in case of transparent PNG
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressed);
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
+}
+
+/**
  * Async AI OCR Scanner using Server-Side Gemini 3.8 Flash Vision Model.
  * Sends the image to /api/ocr-nrc and extracts Myanmar handwritten/printed NRC fields.
  * Gracefully falls back to local smart heuristics if server is unreachable.
@@ -327,29 +389,49 @@ export async function scanNrcWithAi(
 
   // If already high confidence SVG, return immediately
   if (localFallback.method === 'SVG_TEXT') {
-    return localFallback;
+    return { ...localFallback, isAiSuccess: true };
   }
 
   try {
+    // 1. Optimize image to guarantee payload is safely below Vercel's 4.5MB Serverless limit
+    const optimizedBase64 = await optimizeImageForOcr(dataUrl);
+
+    // 2. Send to /api/ocr-nrc
     const response = await fetch('/api/ocr-nrc', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        imageBase64: dataUrl,
-        mimeType: file.type || 'image/jpeg',
+        imageBase64: optimizedBase64,
+        mimeType: 'image/jpeg',
         fileName: file.name,
       }),
     });
 
-    if (!response.ok) {
-      return localFallback;
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await response.text().catch(() => '');
+      console.warn('[AI OCR] Non-JSON response received from /api/ocr-nrc:', text.slice(0, 160));
+      return {
+        ...localFallback,
+        isAiSuccess: false,
+        error: `Server returned non-JSON response (${response.status})`,
+        errorMessageMm: 'Vercel Serverless Function သို့ ချိတ်ဆက်၍ မရသေးပါ (HTML Response ပြန်လာပါသည်)။',
+      };
     }
 
     const resJson = await response.json();
-    if (!resJson.success || !resJson.data) {
-      return localFallback;
+    if (!response.ok || !resJson.success || !resJson.data) {
+      console.warn('[AI OCR] Endpoint returned unsuccessful status:', resJson);
+      return {
+        ...localFallback,
+        isAiSuccess: false,
+        error: resJson.error || 'Failed to scan NRC',
+        errorMessageMm: resJson.errorMessageMm || (resJson.error?.includes('GEMINI_API_KEY')
+          ? 'Vercel Environment Variables တွင် GEMINI_API_KEY မထည့်သွင်းရသေးပါ။'
+          : 'မှတ်ပုံတင် OCR ဖတ်ရှုခြင်း မအောင်မြင်ပါ။'),
+      };
     }
 
     const aiData = resJson.data;
@@ -386,9 +468,15 @@ export async function scanNrcWithAi(
       confidence: resJson.confidence || 98,
       method: 'AI_GEMINI_VISION',
       extractedFields,
+      isAiSuccess: true,
     };
-  } catch (err) {
+  } catch (err: any) {
     console.warn('AI OCR endpoint call error, using local fallback:', err);
-    return localFallback;
+    return {
+      ...localFallback,
+      isAiSuccess: false,
+      error: err?.message || 'Connection error with OCR endpoint',
+      errorMessageMm: 'ကွန်ရက် သို့မဟုတ် ဆာဗာ ချိတ်ဆက်မှု အခက်အခဲကြောင့် AI OCR မဖတ်ရှုနိုင်ပါ။',
+    };
   }
 }

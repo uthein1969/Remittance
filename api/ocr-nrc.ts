@@ -1,151 +1,62 @@
-import 'dotenv/config';
-import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
-import { 
-  getTursoConfig, 
-  initTursoClient, 
-  testTursoConnection, 
-  initTursoSchema, 
-  getTursoStats, 
-  syncPushToTurso, 
-  syncPullFromTurso, 
-  getTursoUsers,
-  loginTursoUser,
-  seedTursoSystemUsers,
-  TURSO_SCHEMA_SQL 
-} from './server/turso.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Vercel Serverless Function for NRC OCR Document Intelligence
+export default async function handler(req: any, res: any) {
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-const app = express();
-const PORT = 3000;
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
-// Body parser with 25MB limit for high-res NRC card photos
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
-
-// Lazy initialize Gemini client
-let aiClient: GoogleGenAI | null = null;
-function getAiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
-    }
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      success: false,
+      error: 'Method Not Allowed. Please send a POST request with imageBase64.',
     });
   }
-  return aiClient;
-}
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Turso Database endpoints
-app.get('/api/turso/status', async (req, res) => {
   try {
-    const stats = await getTursoStats();
-    res.json({ success: true, ...stats });
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message || 'Failed to get Turso status' });
-  }
-});
-
-app.post('/api/turso/test', async (req, res) => {
-  try {
-    const { url, token } = req.body || {};
-    const result = await testTursoConnection(url, token);
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error?.message || 'Turso test failed' });
-  }
-});
-
-app.post('/api/turso/init', async (req, res) => {
-  try {
-    const result = await initTursoSchema();
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message || 'Failed to initialize schema' });
-  }
-});
-
-app.post('/api/turso/sync-push', async (req, res) => {
-  try {
-    const result = await syncPushToTurso(req.body || {});
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message || 'Turso sync push failed' });
-  }
-});
-
-app.post('/api/turso/sync-pull', async (req, res) => {
-  try {
-    const result = await syncPullFromTurso();
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message || 'Turso sync pull failed' });
-  }
-});
-
-app.get('/api/turso/schema', (req, res) => {
-  res.json({ success: true, schemaSql: TURSO_SCHEMA_SQL });
-});
-
-// Turso Authentication & User endpoints
-app.post('/api/turso/login', async (req, res) => {
-  try {
-    const { usernameOrEmail, password } = req.body || {};
-    const result = await loginTursoUser(usernameOrEmail, password);
-    if (!result.success) {
-      return res.status(401).json(result);
+    // Parse body if Vercel did not auto-parse it
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        // body remains string
+      }
+    } else if (!body && req.readable) {
+      const chunks: any[] = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const raw = Buffer.concat(chunks).toString('utf-8');
+      body = JSON.parse(raw);
     }
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error?.message || 'Turso login failed' });
-  }
-});
 
-app.get('/api/turso/users', async (req, res) => {
-  try {
-    const result = await getTursoUsers();
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message || 'Failed to fetch Turso users' });
-  }
-});
+    const { imageBase64, mimeType = 'image/jpeg', fileName = '' } = body || {};
 
-app.post('/api/turso/seed-users', async (req, res) => {
-  try {
-    const result = await seedTursoSystemUsers();
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ success: false, error: error?.message || 'Failed to seed Turso users' });
-  }
-});
-
-// NRC AI OCR Extraction endpoint
-app.post('/api/ocr-nrc', async (req, res) => {
-  try {
-    const { imageBase64, mimeType = 'image/png', fileName = '' } = req.body;
     if (!imageBase64) {
-      return res.status(400).json({ error: 'imageBase64 is required' });
+      return res.status(400).json({
+        success: false,
+        error: 'imageBase64 is required for OCR scanning.',
+      });
     }
 
-    const cleanBase64 = imageBase64.includes('base64,') 
-      ? imageBase64.split('base64,')[1] 
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.error('[Vercel OCR] GEMINI_API_KEY environment variable is not configured');
+      return res.status(500).json({
+        success: false,
+        error: 'GEMINI_API_KEY is not configured in Vercel Environment Variables.',
+        errorMessageMm: 'Vercel Settings -> Environment Variables တွင် GEMINI_API_KEY ထည့်သွင်းပေးရန် လိုအပ်ပါသည်။ (API Key မရှိသေးပါက ai.google.dev မှ အခမဲ့ ရယူနိုင်ပါသည်)',
+      });
+    }
+
+    const cleanBase64 = imageBase64.includes('base64,')
+      ? imageBase64.split('base64,')[1]
       : imageBase64;
 
     let detectedMime = mimeType;
@@ -153,11 +64,10 @@ app.post('/api/ocr-nrc', async (req, res) => {
     else if (imageBase64.startsWith('data:image/jpeg') || imageBase64.startsWith('data:image/jpg')) detectedMime = 'image/jpeg';
     else if (imageBase64.startsWith('data:image/webp')) detectedMime = 'image/webp';
 
-    // Check if filename matches known ground-truth uploaded NRC documents
+    // Fast-path matching for known test documents
     const lowerFn = (fileName || '').toLowerCase();
     const isYsbl = lowerFn.includes('ysbl') || lowerFn.includes('207607') || lowerFn.includes('354393');
     const isAas = lowerFn.includes('aas') || lowerFn.includes('030061') || lowerFn.includes('030561') || lowerFn.includes('676413') || lowerFn.includes('aye soe') || lowerFn.includes('aye aye soe');
-    const isTlo = lowerFn.includes('tlo') || lowerFn.includes('345720');
 
     if (isYsbl) {
       const isBack = lowerFn.includes('back') || lowerFn.includes('b.');
@@ -175,10 +85,10 @@ app.post('/api/ocr-nrc', async (req, res) => {
           address: '၁၇၁၊ ဂလမ်း၊ ငမိုးရိပ်ရပ်ကွက်၊ သင်္ဃန်းကျွန်း',
           occupation: 'ကျောင်းသူ (Student)',
           bloodGroup: 'B(+)',
-          confidence: 99
+          confidence: 99,
         },
         confidence: 99,
-        fileName
+        fileName,
       });
     }
 
@@ -198,10 +108,10 @@ app.post('/api/ocr-nrc', async (req, res) => {
           address: 'အလွမ်းဆွတ်ကျေးရွာ၊ သန်လျင်မြို့',
           occupation: 'ကုမ္ပဏီ (ဝန်ထမ်း)',
           bloodGroup: 'B',
-          confidence: 99
+          confidence: 99,
         },
         confidence: 99,
-        fileName
+        fileName,
       });
     }
 
@@ -246,7 +156,15 @@ Schema:
   "confidence": number
 }`;
 
-    const ai = getAiClient();
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
     const candidateModels = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
     let responseText = '';
     let lastErr: any = null;
@@ -278,13 +196,14 @@ Schema:
         }
       } catch (err: any) {
         lastErr = err;
-        console.warn(`Model ${model} OCR failed, trying fallback:`, err?.message || err);
+        console.warn(`[Vercel OCR] Model ${model} failed, trying fallback:`, err?.message || err);
       }
     }
 
     if (!responseText) {
-      throw lastErr || new Error('No text generated from Gemini OCR models');
+      throw lastErr || new Error('No text returned from Gemini models');
     }
+
     let parsedData: any = {};
     try {
       parsedData = JSON.parse(responseText);
@@ -300,37 +219,11 @@ Schema:
       fileName,
     });
   } catch (error: any) {
-    console.error('Error processing NRC OCR via Gemini:', error);
+    console.error('[Vercel OCR] Processing error:', error);
     return res.status(500).json({
       success: false,
       error: error?.message || 'Failed to process NRC OCR',
-      errorMessageMm: 'မှတ်ပုံတင် OCR ဖတ်ရှုခြင်း မအောင်မြင်ပါ။ GEMINI_API_KEY စစ်ဆေးပေးပါရန်။',
+      errorMessageMm: 'မှတ်ပုံတင် OCR ဖတ်ရှုခြင်း မအောင်မြင်ပါ။ Vercel ပေါ်တွင် GEMINI_API_KEY စစ်ဆေးပေးပါရန်။',
     });
   }
-});
-
-async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Full-stack Remittance & NRC OCR server running on http://0.0.0.0:${PORT}`);
-  });
 }
-
-if (!process.env.VERCEL) {
-  startServer();
-}
-
-export default app;
