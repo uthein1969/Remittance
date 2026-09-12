@@ -163,9 +163,15 @@ CREATE TABLE IF NOT EXISTS system_users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE,
   full_name TEXT,
+  email TEXT,
   role TEXT,
   branch_id TEXT,
-  is_active INTEGER
+  is_active INTEGER DEFAULT 1,
+  phone TEXT,
+  status TEXT DEFAULT 'ACTIVE',
+  password_hash TEXT DEFAULT 'password123',
+  created_at TEXT,
+  last_login TEXT
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -288,6 +294,34 @@ export async function initTursoSchema(client?: Client) {
     }
   }
 
+  // Auto-migrate system_users columns if needed
+  const userColumns = [
+    'email TEXT',
+    'password_hash TEXT DEFAULT "password123"',
+    'phone TEXT',
+    'status TEXT DEFAULT "ACTIVE"',
+    'created_at TEXT',
+    'last_login TEXT'
+  ];
+  for (const col of userColumns) {
+    try {
+      await cli.execute(`ALTER TABLE system_users ADD COLUMN ${col};`);
+    } catch {
+      // Column already exists
+    }
+  }
+
+  // Ensure default system users are seeded if empty
+  try {
+    const userCountRes = await cli.execute('SELECT COUNT(*) as cnt FROM system_users;');
+    const userCount = Number(userCountRes.rows[0]?.cnt || 0);
+    if (userCount === 0) {
+      await seedTursoSystemUsers(cli);
+    }
+  } catch (e) {
+    console.warn('Turso auto-seed users check error:', e);
+  }
+
   return { success: true, count: statements.length };
 }
 
@@ -347,65 +381,107 @@ export async function syncPushToTurso(data: {
   if (data.transactions && Array.isArray(data.transactions)) {
     for (const tx of data.transactions) {
       if (!tx.id || !tx.transactionNo) continue;
-      await client.execute({
-        sql: `INSERT INTO remittance_transactions (
-          id, transaction_no, mtcn, type, status,
-          sender_name, sender_name_mm, sender_nrc, sender_phone, sender_address, sender_passport,
-          receiver_name, receiver_name_mm, receiver_nrc, receiver_phone, receiver_address, receiver_passport,
-          from_country, to_country, source_currency, target_currency,
-          send_amount, exchange_rate, payout_amount, transfer_fee, total_collected,
-          purpose, payout_method, bank_name, bank_account_no,
-          created_by, created_at, approved_by, approved_at, rejected_reason,
-          source_of_funds, remittance_type, created_date,
-          sender_nrc_attachment, sender_nrc_front_attachment, sender_nrc_back_attachment,
-          sender_passport_attachment, proof_document_url, proof_document_name,
-          proof_doc_category, sender_father_name, sender_occupation, sender_date_of_birth
-        ) VALUES (
-          ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?, ?
-        )
-        ON CONFLICT(id) DO UPDATE SET
-          status=excluded.status,
-          approved_by=excluded.approved_by,
-          approved_at=excluded.approved_at,
-          rejected_reason=excluded.rejected_reason,
-          sender_nrc_attachment=excluded.sender_nrc_attachment,
-          sender_nrc_front_attachment=excluded.sender_nrc_front_attachment,
-          sender_nrc_back_attachment=excluded.sender_nrc_back_attachment,
-          sender_passport_attachment=excluded.sender_passport_attachment,
-          proof_document_url=excluded.proof_document_url,
-          proof_document_name=excluded.proof_document_name;`,
-        args: [
-          tx.id, tx.transactionNo, tx.mtcn || '', tx.type || 'OUTWARD', tx.status || 'PENDING_APPROVAL',
-          tx.senderName || '', tx.senderNameMm || '', tx.senderNrc || '', tx.senderPhone || '', tx.senderAddress || '', tx.senderPassport || '',
-          tx.receiverName || '', tx.receiverNameMm || '', tx.receiverNrc || '', tx.receiverPhone || '', tx.receiverAddress || '', tx.receiverPassport || '',
-          tx.fromCountry || 'MM', tx.toCountry || 'MM', tx.sourceCurrency || 'MMK', tx.targetCurrency || 'MMK',
-          Number(tx.sendAmount) || 0, Number(tx.exchangeRate) || 1, Number(tx.payoutAmount) || 0, Number(tx.transferFee) || 0, Number(tx.totalCollected) || 0,
-          tx.purpose || '', tx.payoutMethod || '', tx.bankName || '', tx.bankAccountNo || '',
-          tx.createdBy || '', tx.createdAt || new Date().toISOString(), tx.approvedBy || '', tx.approvedAt || '', tx.rejectedReason || '',
-          tx.sourceOfFunds || '', tx.remittanceType || '', tx.createdDate || '',
-          tx.senderNrcAttachment || tx.senderNrcFrontAttachment || '',
-          tx.senderNrcFrontAttachment || tx.senderNrcAttachment || '',
-          tx.senderNrcBackAttachment || '',
-          tx.senderPassportAttachment || tx.senderPassbookAttachment || '',
-          tx.proofDocumentUrl || '',
-          tx.proofDocumentName || '',
-          tx.proofDocCategory || '',
-          tx.senderFatherName || '',
-          tx.senderOccupation || '',
-          tx.senderDateOfBirth || ''
-        ]
-      });
-      txSaved++;
+      try {
+        await client.execute({
+          sql: `INSERT INTO remittance_transactions (
+            id, transaction_no, mtcn, type, status,
+            sender_name, sender_name_mm, sender_nrc, sender_phone, sender_address, sender_passport,
+            receiver_name, receiver_name_mm, receiver_nrc, receiver_phone, receiver_address, receiver_passport,
+            from_country, to_country, source_currency, target_currency,
+            send_amount, exchange_rate, payout_amount, transfer_fee, total_collected,
+            purpose, payout_method, bank_name, bank_account_no,
+            created_by, created_at, approved_by, approved_at, rejected_reason,
+            source_of_funds, remittance_type, created_date,
+            sender_nrc_attachment, sender_nrc_front_attachment, sender_nrc_back_attachment,
+            sender_passport_attachment, proof_document_url, proof_document_name,
+            proof_doc_category, sender_father_name, sender_occupation, sender_date_of_birth
+          ) VALUES (
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?
+          )
+          ON CONFLICT(id) DO UPDATE SET
+            transaction_no=excluded.transaction_no,
+            mtcn=excluded.mtcn,
+            type=excluded.type,
+            status=excluded.status,
+            sender_name=excluded.sender_name,
+            sender_name_mm=excluded.sender_name_mm,
+            sender_nrc=excluded.sender_nrc,
+            sender_phone=excluded.sender_phone,
+            sender_address=excluded.sender_address,
+            sender_passport=excluded.sender_passport,
+            receiver_name=excluded.receiver_name,
+            receiver_name_mm=excluded.receiver_name_mm,
+            receiver_nrc=excluded.receiver_nrc,
+            receiver_phone=excluded.receiver_phone,
+            receiver_address=excluded.receiver_address,
+            receiver_passport=excluded.receiver_passport,
+            from_country=excluded.from_country,
+            to_country=excluded.to_country,
+            source_currency=excluded.source_currency,
+            target_currency=excluded.target_currency,
+            send_amount=excluded.send_amount,
+            exchange_rate=excluded.exchange_rate,
+            payout_amount=excluded.payout_amount,
+            transfer_fee=excluded.transfer_fee,
+            total_collected=excluded.total_collected,
+            purpose=excluded.purpose,
+            payout_method=excluded.payout_method,
+            bank_name=excluded.bank_name,
+            bank_account_no=excluded.bank_account_no,
+            created_by=excluded.created_by,
+            created_at=excluded.created_at,
+            approved_by=excluded.approved_by,
+            approved_at=excluded.approved_at,
+            rejected_reason=excluded.rejected_reason,
+            source_of_funds=excluded.source_of_funds,
+            remittance_type=excluded.remittance_type,
+            created_date=excluded.created_date,
+            sender_nrc_attachment=excluded.sender_nrc_attachment,
+            sender_nrc_front_attachment=excluded.sender_nrc_front_attachment,
+            sender_nrc_back_attachment=excluded.sender_nrc_back_attachment,
+            sender_passport_attachment=excluded.sender_passport_attachment,
+            proof_document_url=excluded.proof_document_url,
+            proof_document_name=excluded.proof_document_name,
+            proof_doc_category=excluded.proof_doc_category,
+            sender_father_name=excluded.sender_father_name,
+            sender_occupation=excluded.sender_occupation,
+            sender_date_of_birth=excluded.sender_date_of_birth;`,
+          args: [
+            tx.id, tx.transactionNo, tx.mtcn || '', tx.type || 'OUTWARD', tx.status || 'PENDING_APPROVAL',
+            tx.senderName || '', tx.senderNameMm || '', tx.senderNrc || '', tx.senderPhone || '', tx.senderAddress || '', tx.senderPassport || '',
+            tx.receiverName || '', tx.receiverNameMm || '', tx.receiverNrc || '', tx.receiverPhone || '', tx.receiverAddress || '', tx.receiverPassport || '',
+            tx.fromCountry || tx.senderCountryCode || 'MM', tx.toCountry || tx.receiverCountryCode || 'MM', tx.sourceCurrency || 'MMK', tx.targetCurrency || 'MMK',
+            Number(tx.sendAmount) || 0, Number(tx.exchangeRate) || 1, Number(tx.payoutAmount || tx.receiveAmount) || 0, Number(tx.transferFee || tx.serviceFee) || 0, Number(tx.totalCollected || tx.totalPayableAmount) || 0,
+            tx.purpose || tx.purposeName || '', tx.payoutMethod || '', tx.bankName || tx.payoutBankName || '', tx.bankAccountNo || tx.payoutAccountNumber || '',
+            tx.createdBy || tx.creatorName || '', tx.createdAt || tx.createdDate || new Date().toISOString(), tx.approvedBy || tx.approverName || '', tx.approvedAt || tx.approvedDate || '', tx.rejectedReason || tx.rejectionReason || '',
+            tx.sourceOfFunds || tx.senderNote || '', tx.remittanceType || tx.scope || '', tx.createdDate || '',
+            tx.senderNrcAttachment || tx.senderNrcFrontAttachment || '',
+            tx.senderNrcFrontAttachment || tx.senderNrcAttachment || '',
+            tx.senderNrcBackAttachment || '',
+            tx.senderPassportAttachment || tx.senderPassbookAttachment || '',
+            tx.proofDocumentUrl || '',
+            tx.proofDocumentName || '',
+            tx.proofDocCategory || '',
+            tx.senderFatherName || '',
+            tx.senderOccupation || '',
+            tx.senderDateOfBirth || ''
+          ]
+        });
+        txSaved++;
+      } catch (txErr: any) {
+        console.warn('Error saving transaction to Turso:', tx.id, txErr?.message);
+      }
     }
   }
 
@@ -596,4 +672,192 @@ export async function syncPullFromTurso() {
     }
   };
 }
+
+export async function seedTursoSystemUsers(clientInstance?: Client) {
+  const client = clientInstance || initTursoClient();
+  const defaultUsers = [
+    { 
+      id: 'USR-001', 
+      username: 'admin', 
+      full_name: 'U Thein Than (System Administrator)', 
+      email: 'admin@remitmyanmar.com', 
+      role: 'ADMIN', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-450012345', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-002', 
+      username: 'maker_thura', 
+      full_name: 'U Thura Lin (Maker / Operator)', 
+      email: 'thura.lin@remitmyanmar.com', 
+      role: 'MAKER', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-798123456', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-003', 
+      username: 'checker_khinmar', 
+      full_name: 'Daw Khin Mar Lar (Checker / Approver)', 
+      email: 'khinmar.lar@remitmyanmar.com', 
+      role: 'CHECKER', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-250987654', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-004', 
+      username: 'auditor_ayeaye', 
+      full_name: 'Daw Aye Aye Win (Compliance Auditor)', 
+      email: 'ayeaye.win@remitmyanmar.com', 
+      role: 'AUDITOR', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-970112233', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-005', 
+      username: 'maker_mandalay', 
+      full_name: 'Ko Kyaw Swar (Mandalay Operator)', 
+      email: 'kyawswar.mdy@remitmyanmar.com', 
+      role: 'MAKER', 
+      branch_id: 'BR-002', 
+      is_active: 1, 
+      phone: '09-440112233', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    }
+  ];
+
+  let inserted = 0;
+  for (const u of defaultUsers) {
+    try {
+      await client.execute({
+        sql: `INSERT INTO system_users (
+          id, username, full_name, email, role, branch_id, is_active, phone, status, password_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(id) DO UPDATE SET
+          username=excluded.username,
+          full_name=excluded.full_name,
+          email=excluded.email,
+          role=excluded.role,
+          branch_id=excluded.branch_id,
+          is_active=excluded.is_active,
+          phone=excluded.phone,
+          status=excluded.status,
+          password_hash=excluded.password_hash;`,
+        args: [u.id, u.username, u.full_name, u.email, u.role, u.branch_id, u.is_active, u.phone, u.status, u.password_hash]
+      });
+      inserted++;
+    } catch (e: any) {
+      console.warn('Error inserting user to Turso:', u.username, e?.message);
+    }
+  }
+
+  return { success: true, count: inserted };
+}
+
+export async function getTursoUsers() {
+  const client = initTursoClient();
+  await initTursoSchema(client);
+
+  const res = await client.execute('SELECT * FROM system_users ORDER BY id ASC;');
+  const users = res.rows.map((r: any) => ({
+    id: String(r.id),
+    username: String(r.username),
+    fullName: String(r.full_name || ''),
+    email: String(r.email || `${r.username}@remitmyanmar.com`),
+    role: String(r.role || 'MAKER'),
+    branchId: String(r.branch_id || 'BR-001'),
+    phone: String(r.phone || ''),
+    status: String(r.status || (r.is_active === 0 ? 'INACTIVE' : 'ACTIVE')),
+    createdAt: String(r.created_at || ''),
+    lastLogin: String(r.last_login || '')
+  }));
+
+  return { success: true, users };
+}
+
+export async function loginTursoUser(usernameOrEmail: string, passwordAttempt: string) {
+  const client = initTursoClient();
+  await initTursoSchema(client);
+
+  const trimmed = usernameOrEmail.trim().toLowerCase();
+  if (!trimmed) {
+    return { success: false, message: 'Username or Email is required.' };
+  }
+
+  const queryRes = await client.execute({
+    sql: `SELECT * FROM system_users 
+          WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) 
+          LIMIT 1;`,
+    args: [trimmed, trimmed]
+  });
+
+  if (!queryRes.rows || queryRes.rows.length === 0) {
+    return { 
+      success: false, 
+      message: `No user found in Turso Cloud database matching "${usernameOrEmail}".` 
+    };
+  }
+
+  const row: any = queryRes.rows[0];
+
+  // Check account status
+  const statusStr = String(row.status || '').toUpperCase();
+  if (statusStr === 'INACTIVE' || row.is_active === 0) {
+    return { 
+      success: false, 
+      message: 'This user account is deactivated in Turso Cloud.' 
+    };
+  }
+
+  // Password verification: support standard password123 or stored password_hash
+  const expectedPassword = row.password_hash || 'password123';
+  if (passwordAttempt && passwordAttempt !== expectedPassword && passwordAttempt !== 'password123') {
+    return { 
+      success: false, 
+      message: 'Invalid password. (Default password for all demo accounts is password123).' 
+    };
+  }
+
+  // Update last_login
+  try {
+    await client.execute({
+      sql: `UPDATE system_users SET last_login = datetime('now') WHERE id = ?;`,
+      args: [row.id]
+    });
+  } catch {
+    // ignore
+  }
+
+  const user = {
+    id: String(row.id),
+    username: String(row.username),
+    fullName: String(row.full_name || ''),
+    email: String(row.email || `${row.username}@remitmyanmar.com`),
+    role: String(row.role || 'MAKER'),
+    branchId: String(row.branch_id || 'BR-001'),
+    phone: String(row.phone || ''),
+    status: 'ACTIVE' as const,
+    lastLogin: new Date().toISOString(),
+    createdAt: String(row.created_at || '')
+  };
+
+  return {
+    success: true,
+    user,
+    message: `Logged in successfully with Turso Cloud as ${user.fullName} (${user.role}).`
+  };
+}
+
 

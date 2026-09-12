@@ -111,6 +111,28 @@ interface RemittanceContextType {
   syncDataToSupabase: () => Promise<{ success: boolean; message: string }>;
   fetchDataFromSupabase: () => Promise<{ success: boolean; message: string }>;
 
+  // Database Provider Selection
+  activeDatabaseProvider: 'TURSO' | 'SUPABASE';
+  setActiveDatabaseProvider: (provider: 'TURSO' | 'SUPABASE') => void;
+
+  // Turso Cloud Database Operations
+  isTursoConnected: boolean;
+  tursoStats: { connected: boolean; url: string; counts?: any } | null;
+  checkTursoStatus: () => Promise<boolean>;
+  loginWithTurso: (
+    usernameOrEmail: string, 
+    password?: string
+  ) => Promise<{
+    success: boolean;
+    message: string;
+    user?: User;
+  }>;
+  fetchTursoUsers: () => Promise<{ success: boolean; users?: User[]; message?: string }>;
+  seedUsersToTurso: () => Promise<{ success: boolean; message: string }>;
+  syncDataToTurso: () => Promise<{ success: boolean; message: string; saved?: any }>;
+  fetchDataFromTurso: () => Promise<{ success: boolean; message: string }>;
+  syncAllLocalToTurso: () => Promise<{ success: boolean; message: string; count: number }>;
+
   // Authentication & Supabase User Verification
   isAuthenticated: boolean;
   loginWithSupabase: (
@@ -205,7 +227,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [db]);
 
-  // Authentication state - Require Supabase user login
+  // Authentication state - Require user login
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
       const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION');
@@ -220,6 +242,127 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     return false;
   });
+
+  // Database Provider Selection (Default: TURSO Cloud)
+  const [activeDatabaseProvider, setActiveDatabaseProvider] = useState<'TURSO' | 'SUPABASE'>(() => {
+    try {
+      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION');
+      if (sessionStr) {
+        const parsed = JSON.parse(sessionStr);
+        if (parsed.provider === 'SUPABASE') return 'SUPABASE';
+      }
+    } catch {}
+    return 'TURSO';
+  });
+
+  // Turso Cloud connection status & statistics
+  const [isTursoConnected, setIsTursoConnected] = useState<boolean>(true);
+  const [tursoStats, setTursoStats] = useState<{ connected: boolean; url: string; counts?: any } | null>(null);
+
+  // Helper to map a transaction to the Turso schema payload
+  const mapTransactionToTursoPayload = (tx: RemittanceTransaction) => {
+    return {
+      id: tx.id,
+      transactionNo: tx.transactionNo,
+      mtcn: tx.mtcn || '',
+      type: tx.type || 'OUTWARD',
+      status: tx.status || 'PENDING_APPROVAL',
+      senderName: tx.senderName || '',
+      senderNameMm: tx.senderNameMm || '',
+      senderNrc: tx.senderNrc || '',
+      senderPhone: tx.senderPhone || '',
+      senderAddress: tx.senderAddress || '',
+      senderPassport: tx.senderPassport || tx.senderPassbook || '',
+      receiverName: tx.receiverName || '',
+      receiverNameMm: tx.receiverNameMm || '',
+      receiverNrc: tx.receiverNrc || '',
+      receiverPhone: tx.receiverPhone || '',
+      receiverAddress: tx.receiverAddress || '',
+      receiverPassport: tx.receiverPassport || tx.receiverPassbook || '',
+      fromCountry: tx.senderCountryCode || 'MM',
+      toCountry: tx.receiverCountryCode || 'MM',
+      sourceCurrency: tx.sourceCurrency || 'MMK',
+      targetCurrency: tx.targetCurrency || 'MMK',
+      sendAmount: Number(tx.sendAmount) || 0,
+      exchangeRate: Number(tx.exchangeRate) || 1,
+      payoutAmount: Number(tx.receiveAmount) || 0,
+      transferFee: Number(tx.serviceFee) || 0,
+      totalCollected: Number(tx.totalPayableAmount) || 0,
+      purpose: tx.purposeName || tx.purposeId || 'General',
+      payoutMethod: tx.payoutMethod || 'CASH_PICKUP',
+      bankName: tx.payoutBankName || '',
+      bankAccountNo: tx.payoutAccountNumber || '',
+      createdBy: tx.creatorName || '',
+      createdAt: tx.createdDate || new Date().toISOString(),
+      approvedBy: tx.approverName || '',
+      approvedAt: tx.approvedDate || '',
+      rejectedReason: tx.rejectionReason || '',
+      sourceOfFunds: tx.senderSourceOfFund || tx.senderNote || '',
+      remittanceType: tx.scope || 'OUTWARD',
+      createdDate: tx.createdDate || '',
+      senderNrcAttachment: tx.senderNrcAttachment || tx.senderNrcFrontAttachment || '',
+      senderNrcFrontAttachment: tx.senderNrcFrontAttachment || tx.senderNrcAttachment || '',
+      senderNrcBackAttachment: tx.senderNrcBackAttachment || '',
+      senderPassportAttachment: tx.senderPassportAttachment || tx.senderPassbookAttachment || '',
+      proofDocumentUrl: tx.proofDocumentUrl || '',
+      proofDocumentName: tx.proofDocumentName || '',
+      proofDocCategory: tx.proofDocCategory || '',
+      senderFatherName: tx.senderFatherName || '',
+      senderOccupation: tx.senderOccupation || '',
+      senderDateOfBirth: tx.senderDateOfBirth || '',
+    };
+  };
+
+  const checkTursoStatus = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/turso/status');
+      const data = await res.json();
+      if (data && data.connected) {
+        setIsTursoConnected(true);
+        setTursoStats(data);
+        return true;
+      }
+      setIsTursoConnected(false);
+      return false;
+    } catch {
+      setIsTursoConnected(false);
+      return false;
+    }
+  };
+
+  // Auto-synchronize local transactions with Turso Cloud on mount
+  useEffect(() => {
+    const autoSyncTurso = async () => {
+      try {
+        const res = await fetch('/api/turso/status');
+        const data = await res.json();
+        if (data && data.connected) {
+          setIsTursoConnected(true);
+          setTursoStats(data);
+
+          // If there are local transactions, ensure all of them are synced to Turso Cloud!
+          if (db.transactions && db.transactions.length > 0) {
+            const txPayload = db.transactions.map(mapTransactionToTursoPayload);
+            fetch('/api/turso/sync-push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ transactions: txPayload })
+            }).then(r => r.json()).then(pushRes => {
+              if (pushRes?.success) {
+                console.log(`[Auto-Sync] Successfully synchronized ${pushRes.saved?.transactions ?? txPayload.length} transactions to Turso Cloud.`);
+              }
+            }).catch(e => {
+              console.warn('[Auto-Sync] Turso push error:', e);
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Initial Turso sync check:', err);
+      }
+    };
+
+    autoSyncTurso();
+  }, []);
 
   const language = db.activeLanguage || 'my';
   const t = translations[language] || translations.en;
@@ -458,62 +601,18 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     // 2. Turso live push
     try {
+      const payload = mapTransactionToTursoPayload(tx);
       fetch('/api/turso/sync-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transactions: [{
-            id: tx.id,
-            transactionNo: tx.transactionNo,
-            mtcn: tx.mtcn,
-            type: tx.type,
-            status: tx.status,
-            senderName: tx.senderName,
-            senderNameMm: tx.senderNameMm,
-            senderNrc: tx.senderNrc,
-            senderPhone: tx.senderPhone,
-            senderAddress: tx.senderAddress,
-            senderPassport: tx.senderPassport || tx.senderPassbook,
-            receiverName: tx.receiverName,
-            receiverNameMm: tx.receiverNameMm,
-            receiverNrc: tx.receiverNrc,
-            receiverPhone: tx.receiverPhone,
-            receiverAddress: tx.receiverAddress,
-            receiverPassport: tx.receiverPassport || tx.receiverPassbook,
-            fromCountry: tx.senderCountryCode,
-            toCountry: tx.receiverCountryCode,
-            sourceCurrency: tx.sourceCurrency,
-            targetCurrency: tx.targetCurrency,
-            sendAmount: tx.sendAmount,
-            exchangeRate: tx.exchangeRate,
-            payoutAmount: tx.receiveAmount,
-            transferFee: tx.serviceFee,
-            totalCollected: tx.totalPayableAmount,
-            purpose: tx.purposeName || tx.purposeId,
-            payoutMethod: tx.payoutMethod,
-            bankName: tx.payoutBankName,
-            bankAccountNo: tx.payoutAccountNumber,
-            createdBy: tx.creatorName,
-            createdAt: tx.createdDate,
-            approvedBy: tx.approverName,
-            approvedAt: tx.approvedDate,
-            rejectedReason: tx.rejectionReason,
-            sourceOfFunds: tx.senderNote,
-            remittanceType: tx.scope,
-            createdDate: tx.createdDate,
-            senderNrcAttachment: tx.senderNrcAttachment || tx.senderNrcFrontAttachment,
-            senderNrcFrontAttachment: tx.senderNrcFrontAttachment || tx.senderNrcAttachment,
-            senderNrcBackAttachment: tx.senderNrcBackAttachment,
-            senderPassportAttachment: tx.senderPassportAttachment || tx.senderPassbookAttachment,
-            proofDocumentUrl: tx.proofDocumentUrl,
-            proofDocumentName: tx.proofDocumentName,
-            proofDocCategory: tx.proofDocCategory,
-            senderFatherName: tx.senderFatherName,
-            senderOccupation: tx.senderOccupation,
-            senderDateOfBirth: tx.senderDateOfBirth,
-          }]
-        })
-      }).catch(() => {});
+        body: JSON.stringify({ transactions: [payload] })
+      }).then(r => r.json()).then(res => {
+        if (res?.success) {
+          console.log(`[Turso Live Push] Transaction ${tx.transactionNo} saved to Turso Cloud.`);
+        }
+      }).catch(err => {
+        console.warn('[Turso Live Push] Error:', err);
+      });
     } catch {
       // ignore
     }
@@ -1957,6 +2056,256 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
+  // Turso Cloud Authentication
+  const loginWithTurso = async (
+    usernameOrEmail: string, 
+    passwordAttempt?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    user?: User;
+  }> => {
+    try {
+      const response = await fetch('/api/turso/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          usernameOrEmail: usernameOrEmail.trim(),
+          password: passwordAttempt || 'password123'
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        return {
+          success: false,
+          message: data.message || 'Login failed with Turso Cloud database.'
+        };
+      }
+
+      const tursoUser = data.user;
+      const authenticatedUser: User = {
+        id: tursoUser.id,
+        username: tursoUser.username,
+        fullName: tursoUser.fullName,
+        email: tursoUser.email,
+        role: tursoUser.role as UserRole,
+        branchId: tursoUser.branchId || 'BR-001',
+        phone: tursoUser.phone || '',
+        status: 'ACTIVE',
+        lastLogin: new Date().toISOString(),
+        createdAt: tursoUser.createdAt || new Date().toISOString(),
+      };
+
+      // Set user in local state context
+      setDb(prev => {
+        const existingIdx = prev.users.findIndex(u => u.id === authenticatedUser.id || u.username === authenticatedUser.username);
+        let newUsers = [...prev.users];
+        if (existingIdx >= 0) {
+          newUsers[existingIdx] = { ...newUsers[existingIdx], ...authenticatedUser };
+        } else {
+          newUsers.push(authenticatedUser);
+        }
+        return {
+          ...prev,
+          users: newUsers,
+          currentUserId: authenticatedUser.id,
+        };
+      });
+
+      // Save session in sessionStorage
+      try {
+        sessionStorage.setItem('REMITTANCE_AUTH_SESSION', JSON.stringify({
+          userId: authenticatedUser.id,
+          username: authenticatedUser.username,
+          role: authenticatedUser.role,
+          fullName: authenticatedUser.fullName,
+          provider: 'TURSO',
+          loginAt: new Date().toISOString(),
+        }));
+      } catch (e) {
+        console.error(e);
+      }
+
+      setActiveDatabaseProvider('TURSO');
+      setIsAuthenticated(true);
+
+      // Auto-reconcile and backup local transactions to Turso
+      syncAllLocalToTurso().catch(console.warn);
+
+      logActionDirect(
+        'LOGIN',
+        'USER',
+        authenticatedUser.username,
+        `User ${authenticatedUser.fullName} (${authenticatedUser.role}) logged in successfully via Turso Cloud (Default)`
+      );
+
+      return {
+        success: true,
+        message: language === 'my'
+          ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! Turso Cloud database မှ အောင်မြင်စွာ login ဝင်ရောက်ပြီးပါပြီ။`
+          : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated with Turso Cloud (Default).`,
+        user: authenticatedUser
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Failed to connect to Turso Cloud for authentication.'
+      };
+    }
+  };
+
+  const fetchTursoUsers = async (): Promise<{ success: boolean; users?: User[]; message?: string }> => {
+    try {
+      const res = await fetch('/api/turso/users');
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to load Turso users');
+      }
+      return { success: true, users: data.users };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Could not fetch Turso users' };
+    }
+  };
+
+  const seedUsersToTurso = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch('/api/turso/seed-users', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to seed Turso users');
+      }
+      return {
+        success: true,
+        message: language === 'my'
+          ? `Turso Cloud သို့ user ${data.count} ဦး ထည့်သွင်းပြီးပါပြီ။`
+          : `Successfully seeded ${data.count} users to Turso Cloud.`
+      };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Could not seed Turso users' };
+    }
+  };
+
+  const syncAllLocalToTurso = async (): Promise<{ success: boolean; message: string; count: number }> => {
+    try {
+      const txPayload = db.transactions.map(mapTransactionToTursoPayload);
+      const ratesPayload = db.exchangeRates.map(r => ({
+        id: r.id,
+        fromCurrency: r.fromCurrency,
+        toCurrency: r.toCurrency,
+        buyRate: r.buyRate,
+        sellRate: r.sellRate,
+        centralBankRate: r.centralBankRate,
+        effectiveDate: r.effectiveDate,
+        updatedAt: r.updatedAt,
+      }));
+      const customersPayload = db.customers.map(c => ({
+        id: c.id,
+        customerCode: c.customerCode,
+        fullNameEn: c.fullNameEn,
+        fullNameMm: c.fullNameMm,
+        nrcNumber: c.nrcNumber,
+        phone: c.phone,
+        address: c.address,
+        customerType: c.customerType,
+        riskRating: c.riskRating,
+        totalTransactions: c.totalTransactions,
+        totalVolumeMMK: c.totalVolumeMMK,
+        createdAt: c.createdAt,
+      }));
+
+      const res = await fetch('/api/turso/sync-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactions: txPayload,
+          exchangeRates: ratesPayload,
+          customers: customersPayload,
+          auditLogs: db.auditLogs.slice(0, 100).map(l => ({
+            id: l.id,
+            timestamp: l.timestamp,
+            userId: l.userId,
+            userName: l.userName,
+            action: l.action,
+            entityType: l.entityType,
+            entityId: l.entityId,
+            details: l.details,
+          }))
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to sync to Turso Cloud');
+      }
+
+      const txSaved = data.saved?.transactions ?? txPayload.length;
+      return {
+        success: true,
+        count: txSaved,
+        message: language === 'my'
+          ? `Local မှ Transaction ${txSaved} ခုနှင့် အချက်အလက်များကို Turso Cloud သို့ အောင်မြင်စွာ Sync လုပ်ပြီးပါပြီ။`
+          : `Successfully synced ${txSaved} transactions & data to Turso Cloud.`
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        count: 0,
+        message: err?.message || 'Sync to Turso Cloud failed'
+      };
+    }
+  };
+
+  const syncDataToTurso = async (): Promise<{ success: boolean; message: string; saved?: any }> => {
+    const res = await syncAllLocalToTurso();
+    return {
+      success: res.success,
+      message: res.message,
+      saved: { transactions: res.count }
+    };
+  };
+
+  const fetchDataFromTurso = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch('/api/turso/sync-pull', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to pull from Turso Cloud');
+      }
+
+      if (data.data?.transactions && Array.isArray(data.data.transactions)) {
+        setDb(prev => {
+          const map = new Map<string, RemittanceTransaction>(prev.transactions.map(t => [t.id, t]));
+          for (const tx of data.data.transactions) {
+            const existing = map.get(tx.id);
+            map.set(tx.id, {
+              ...(existing || {} as RemittanceTransaction),
+              ...tx,
+              sendAmount: Number(tx.sendAmount) || 0,
+              receiveAmount: Number(tx.payoutAmount || tx.receiveAmount) || 0,
+              exchangeRate: Number(tx.exchangeRate) || 1,
+              serviceFee: Number(tx.transferFee || tx.serviceFee) || 0,
+              totalPayableAmount: Number(tx.totalCollected || tx.totalPayableAmount) || 0,
+            });
+          }
+          return {
+            ...prev,
+            transactions: Array.from(map.values()),
+          };
+        });
+      }
+
+      return {
+        success: true,
+        message: language === 'my'
+          ? `Turso Cloud မှ အချက်အလက်များ အောင်မြင်စွာ ဒေါင်းလုဒ်ဆွဲပြီးပါပြီ။`
+          : `Successfully pulled latest data from Turso Cloud.`
+      };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Failed to pull data from Turso' };
+    }
+  };
+
   return (
     <RemittanceContext.Provider
       value={{
@@ -2006,6 +2355,17 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updateSupabaseConfig,
         syncDataToSupabase,
         fetchDataFromSupabase,
+        activeDatabaseProvider,
+        setActiveDatabaseProvider,
+        isTursoConnected,
+        tursoStats,
+        checkTursoStatus,
+        loginWithTurso,
+        fetchTursoUsers,
+        seedUsersToTurso,
+        syncDataToTurso,
+        fetchDataFromTurso,
+        syncAllLocalToTurso,
         isAuthenticated,
         loginWithSupabase,
         logout,

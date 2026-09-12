@@ -12,6 +12,9 @@ import {
   getTursoStats, 
   syncPushToTurso, 
   syncPullFromTurso, 
+  getTursoUsers,
+  loginTursoUser,
+  seedTursoSystemUsers,
   TURSO_SCHEMA_SQL 
 } from './server/turso.js';
 
@@ -99,6 +102,38 @@ app.post('/api/turso/sync-pull', async (req, res) => {
 
 app.get('/api/turso/schema', (req, res) => {
   res.json({ success: true, schemaSql: TURSO_SCHEMA_SQL });
+});
+
+// Turso Authentication & User endpoints
+app.post('/api/turso/login', async (req, res) => {
+  try {
+    const { usernameOrEmail, password } = req.body || {};
+    const result = await loginTursoUser(usernameOrEmail, password);
+    if (!result.success) {
+      return res.status(401).json(result);
+    }
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Turso login failed' });
+  }
+});
+
+app.get('/api/turso/users', async (req, res) => {
+  try {
+    const result = await getTursoUsers();
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to fetch Turso users' });
+  }
+});
+
+app.post('/api/turso/seed-users', async (req, res) => {
+  try {
+    const result = await seedTursoSystemUsers();
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to seed Turso users' });
+  }
 });
 
 // NRC AI OCR Extraction endpoint
