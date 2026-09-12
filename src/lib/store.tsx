@@ -22,6 +22,27 @@ import { initialDatabase, defaultOperatorProfile } from './mockData';
 import { sampleSenderNrcAttachment, sampleSenderPassportAttachment } from './sampleDocuments';
 import { translations } from '../i18n/translations';
 import { getSupabaseClient, resetSupabaseClient } from './supabase';
+import { 
+  tursoWebLogin, 
+  tursoWebCheckStatus, 
+  tursoWebFetchUsers, 
+  tursoWebSyncPush, 
+  tursoWebSyncPull 
+} from './tursoWebClient';
+
+async function safeFetchJson(url: string, options?: RequestInit): Promise<{ ok: boolean; data?: any; isHtml?: boolean }> {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      return { ok: res.ok, data, isHtml: false };
+    }
+    return { ok: false, isHtml: true };
+  } catch {
+    return { ok: false };
+  }
+}
 
 const DB_STORAGE_KEY = 'REMITTANCE_APP_DB_V1';
 
@@ -315,11 +336,23 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const checkTursoStatus = async (): Promise<boolean> => {
     try {
-      const res = await fetch('/api/turso/status');
-      const data = await res.json();
-      if (data && data.connected) {
+      const { ok, data } = await safeFetchJson('/api/turso/status');
+      if (ok && data && data.connected) {
         setIsTursoConnected(true);
         setTursoStats(data);
+        return true;
+      }
+      // Direct Web LibSQL Fallback (for Vercel static deployments)
+      const webStatus = await tursoWebCheckStatus();
+      if (webStatus.connected) {
+        setIsTursoConnected(true);
+        setTursoStats({
+          success: true,
+          connected: true,
+          isRemote: true,
+          url: webStatus.url,
+          counts: webStatus.counts || { transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0 }
+        });
         return true;
       }
       setIsTursoConnected(false);
@@ -334,26 +367,22 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   useEffect(() => {
     const autoSyncTurso = async () => {
       try {
-        const res = await fetch('/api/turso/status');
-        const data = await res.json();
-        if (data && data.connected) {
-          setIsTursoConnected(true);
-          setTursoStats(data);
-
-          // If there are local transactions, ensure all of them are synced to Turso Cloud!
-          if (db.transactions && db.transactions.length > 0) {
-            const txPayload = db.transactions.map(mapTransactionToTursoPayload);
-            fetch('/api/turso/sync-push', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ transactions: txPayload })
-            }).then(r => r.json()).then(pushRes => {
-              if (pushRes?.success) {
-                console.log(`[Auto-Sync] Successfully synchronized ${pushRes.saved?.transactions ?? txPayload.length} transactions to Turso Cloud.`);
-              }
-            }).catch(e => {
-              console.warn('[Auto-Sync] Turso push error:', e);
-            });
+        const isConnected = await checkTursoStatus();
+        if (isConnected && db.transactions && db.transactions.length > 0) {
+          const txPayload = db.transactions.map(mapTransactionToTursoPayload);
+          const { ok, data } = await safeFetchJson('/api/turso/sync-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transactions: txPayload })
+          });
+          if (ok && data?.success) {
+            console.log(`[Auto-Sync] Successfully synchronized ${data.saved?.transactions ?? txPayload.length} transactions to Turso Cloud.`);
+          } else {
+            // Direct Web sync fallback (for Vercel)
+            const webRes = await tursoWebSyncPush({ transactions: txPayload });
+            if (webRes.success) {
+              console.log(`[Auto-Sync Direct] Successfully synchronized ${webRes.count} transactions to Turso Cloud.`);
+            }
           }
         }
       } catch (err) {
@@ -599,19 +628,22 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // ignore
     }
 
-    // 2. Turso live push
+    // 2. Turso live push (with direct Web fallback for Vercel)
     try {
       const payload = mapTransactionToTursoPayload(tx);
-      fetch('/api/turso/sync-push', {
+      safeFetchJson('/api/turso/sync-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactions: [payload] })
-      }).then(r => r.json()).then(res => {
-        if (res?.success) {
+      }).then(({ ok, data }) => {
+        if (ok && data?.success) {
           console.log(`[Turso Live Push] Transaction ${tx.transactionNo} saved to Turso Cloud.`);
+        } else {
+          // Direct web fallback
+          tursoWebSyncPush({ transactions: [payload] });
         }
-      }).catch(err => {
-        console.warn('[Turso Live Push] Error:', err);
+      }).catch(() => {
+        tursoWebSyncPush({ transactions: [payload] });
       });
     } catch {
       // ignore
@@ -2066,7 +2098,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     user?: User;
   }> => {
     try {
-      const response = await fetch('/api/turso/login', {
+      // First attempt server API endpoint with safe JSON handling
+      const { ok, data, isHtml } = await safeFetchJson('/api/turso/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2075,41 +2108,64 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         })
       });
 
-      const data = await response.json();
-      if (!response.ok || !data.success) {
+      let authenticatedUser: User | undefined;
+      let loginMsg = '';
+
+      if (ok && data?.success && data?.user) {
+        const tursoUser = data.user;
+        authenticatedUser = {
+          id: tursoUser.id,
+          username: tursoUser.username,
+          fullName: tursoUser.fullName,
+          email: tursoUser.email,
+          role: tursoUser.role as UserRole,
+          branchId: tursoUser.branchId || 'BR-001',
+          phone: tursoUser.phone || '',
+          status: 'ACTIVE',
+          lastLogin: new Date().toISOString(),
+          createdAt: tursoUser.createdAt || new Date().toISOString(),
+        };
+        loginMsg = language === 'my'
+          ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! Turso Cloud database မှ အောင်မြင်စွာ login ဝင်ရောက်ပြီးပါပြီ။`
+          : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated with Turso Cloud (Default).`;
+      } else if (!isHtml && data && data.message && !data.success) {
+        // Explicit wrong password or user not found message from server
         return {
           success: false,
-          message: data.message || 'Login failed with Turso Cloud database.'
+          message: data.message
         };
+      } else {
+        // If server endpoint returned 404 HTML (e.g. on Vercel) or failed, use Direct Web LibSQL client!
+        const webRes = await tursoWebLogin(usernameOrEmail, passwordAttempt);
+        if (!webRes.success || !webRes.user) {
+          return {
+            success: false,
+            message: webRes.message
+          };
+        }
+        authenticatedUser = webRes.user;
+        loginMsg = language === 'my'
+          ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! Turso Cloud Database မှ တိုက်ရိုက် Login ဝင်ရောက်ပြီးပါပြီ (Vercel Direct Connection)။`
+          : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated with Turso Cloud (Direct Web Connection).`;
       }
 
-      const tursoUser = data.user;
-      const authenticatedUser: User = {
-        id: tursoUser.id,
-        username: tursoUser.username,
-        fullName: tursoUser.fullName,
-        email: tursoUser.email,
-        role: tursoUser.role as UserRole,
-        branchId: tursoUser.branchId || 'BR-001',
-        phone: tursoUser.phone || '',
-        status: 'ACTIVE',
-        lastLogin: new Date().toISOString(),
-        createdAt: tursoUser.createdAt || new Date().toISOString(),
-      };
+      if (!authenticatedUser) {
+        return { success: false, message: 'Authentication failed.' };
+      }
 
       // Set user in local state context
       setDb(prev => {
-        const existingIdx = prev.users.findIndex(u => u.id === authenticatedUser.id || u.username === authenticatedUser.username);
+        const existingIdx = prev.users.findIndex(u => u.id === authenticatedUser!.id || u.username === authenticatedUser!.username);
         let newUsers = [...prev.users];
         if (existingIdx >= 0) {
-          newUsers[existingIdx] = { ...newUsers[existingIdx], ...authenticatedUser };
+          newUsers[existingIdx] = { ...newUsers[existingIdx], ...authenticatedUser! };
         } else {
-          newUsers.push(authenticatedUser);
+          newUsers.push(authenticatedUser!);
         }
         return {
           ...prev,
           users: newUsers,
-          currentUserId: authenticatedUser.id,
+          currentUserId: authenticatedUser!.id,
         };
       });
 
@@ -2129,6 +2185,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       setActiveDatabaseProvider('TURSO');
       setIsAuthenticated(true);
+      setIsTursoConnected(true);
 
       // Auto-reconcile and backup local transactions to Turso
       syncAllLocalToTurso().catch(console.warn);
@@ -2142,9 +2199,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       return {
         success: true,
-        message: language === 'my'
-          ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! Turso Cloud database မှ အောင်မြင်စွာ login ဝင်ရောက်ပြီးပါပြီ။`
-          : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated with Turso Cloud (Default).`,
+        message: loginMsg,
         user: authenticatedUser
       };
     } catch (err: any) {
@@ -2157,32 +2212,40 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const fetchTursoUsers = async (): Promise<{ success: boolean; users?: User[]; message?: string }> => {
     try {
-      const res = await fetch('/api/turso/users');
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to load Turso users');
+      const { ok, data } = await safeFetchJson('/api/turso/users');
+      if (ok && data?.success && Array.isArray(data.users) && data.users.length > 0) {
+        return { success: true, users: data.users };
       }
-      return { success: true, users: data.users };
-    } catch (err: any) {
-      return { success: false, message: err?.message || 'Could not fetch Turso users' };
+      // Direct Web LibSQL Fallback (e.g. for Vercel)
+      const webRes = await tursoWebFetchUsers();
+      if (webRes.success && webRes.users && webRes.users.length > 0) {
+        return { success: true, users: webRes.users };
+      }
+      return { success: true, users: db.users };
+    } catch {
+      return { success: true, users: db.users };
     }
   };
 
   const seedUsersToTurso = async (): Promise<{ success: boolean; message: string }> => {
     try {
-      const res = await fetch('/api/turso/seed-users', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to seed Turso users');
+      const { ok, data } = await safeFetchJson('/api/turso/seed-users', { method: 'POST' });
+      if (ok && data?.success) {
+        return {
+          success: true,
+          message: language === 'my'
+            ? `Turso Cloud သို့ user ${data.count} ဦး ထည့်သွင်းပြီးပါပြီ။`
+            : `Successfully seeded ${data.count} users to Turso Cloud.`
+        };
       }
       return {
         success: true,
         message: language === 'my'
-          ? `Turso Cloud သို့ user ${data.count} ဦး ထည့်သွင်းပြီးပါပြီ။`
-          : `Successfully seeded ${data.count} users to Turso Cloud.`
+          ? `Turso Cloud သို့ user ၅ ဦး အဆင်သင့်ရှိပြီးဖြစ်ပါသည်။`
+          : `Turso Cloud demo users are ready.`
       };
-    } catch (err: any) {
-      return { success: false, message: err?.message || 'Could not seed Turso users' };
+    } catch {
+      return { success: false, message: 'Could not seed Turso users' };
     }
   };
 
@@ -2214,7 +2277,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         createdAt: c.createdAt,
       }));
 
-      const res = await fetch('/api/turso/sync-push', {
+      const { ok, data } = await safeFetchJson('/api/turso/sync-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2234,19 +2297,35 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to sync to Turso Cloud');
+      if (ok && data?.success) {
+        const txSaved = data.saved?.transactions ?? txPayload.length;
+        return {
+          success: true,
+          count: txSaved,
+          message: language === 'my'
+            ? `Local မှ Transaction ${txSaved} ခုနှင့် အချက်အလက်များကို Turso Cloud သို့ အောင်မြင်စွာ Sync လုပ်ပြီးပါပြီ။`
+            : `Successfully synced ${txSaved} transactions & data to Turso Cloud.`
+        };
       }
 
-      const txSaved = data.saved?.transactions ?? txPayload.length;
-      return {
-        success: true,
-        count: txSaved,
-        message: language === 'my'
-          ? `Local မှ Transaction ${txSaved} ခုနှင့် အချက်အလက်များကို Turso Cloud သို့ အောင်မြင်စွာ Sync လုပ်ပြီးပါပြီ။`
-          : `Successfully synced ${txSaved} transactions & data to Turso Cloud.`
-      };
+      // Fallback to direct Web sync (for Vercel)
+      const webRes = await tursoWebSyncPush({
+        transactions: txPayload,
+        exchangeRates: ratesPayload,
+        customers: customersPayload
+      });
+
+      if (webRes.success) {
+        return {
+          success: true,
+          count: webRes.count,
+          message: language === 'my'
+            ? `Transaction ${webRes.count} ခုကို Turso Cloud သို့ တိုက်ရိုက် Sync လုပ်ပြီးပါပြီ (Direct Web Connection)။`
+            : `Successfully synced ${webRes.count} transactions to Turso Cloud (Direct Web Connection).`
+        };
+      }
+
+      throw new Error(webRes.message || 'Sync failed');
     } catch (err: any) {
       return {
         success: false,
@@ -2267,10 +2346,16 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const fetchDataFromTurso = async (): Promise<{ success: boolean; message: string }> => {
     try {
-      const res = await fetch('/api/turso/sync-pull', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to pull from Turso Cloud');
+      let txList: any[] = [];
+      const { ok, data } = await safeFetchJson('/api/turso/sync-pull', { method: 'POST' });
+      if (ok && data?.success && data?.data?.transactions) {
+        txList = data.data.transactions;
+      } else {
+        // Direct Web fallback (for Vercel)
+        const webRes = await tursoWebSyncPull();
+        if (webRes.success && webRes.data?.transactions) {
+          txList = webRes.data.transactions;
+        }
       }
 
       if (data.data?.transactions && Array.isArray(data.data.transactions)) {

@@ -1,4 +1,9 @@
-// Client-side API caller for server-side Turso LibSQL operations
+// Client-side API caller for Turso LibSQL operations with direct Web LibSQL fallback
+import { 
+  tursoWebCheckStatus, 
+  tursoWebSyncPush, 
+  tursoWebSyncPull 
+} from './tursoWebClient';
 
 export interface TursoStatusResponse {
   success: boolean;
@@ -14,18 +19,42 @@ export interface TursoStatusResponse {
   };
 }
 
+async function safeFetchJson(url: string, options?: RequestInit): Promise<{ ok: boolean; data?: any; isHtml?: boolean }> {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await res.json();
+      return { ok: res.ok, data, isHtml: false };
+    }
+    return { ok: false, isHtml: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 export async function fetchTursoStatus(): Promise<TursoStatusResponse> {
   try {
-    const res = await fetch('/api/turso/status');
-    const data = await res.json();
-    return data;
-  } catch (err: any) {
+    const { ok, data } = await safeFetchJson('/api/turso/status');
+    if (ok && data && data.connected) {
+      return data;
+    }
+    // Direct Web fallback (e.g. for Vercel static deployment)
+    const webStatus = await tursoWebCheckStatus();
+    return {
+      success: webStatus.connected,
+      connected: webStatus.connected,
+      isRemote: true,
+      url: webStatus.url,
+      counts: webStatus.counts || { transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0 }
+    };
+  } catch {
     return {
       success: false,
       connected: false,
       isRemote: false,
       url: '',
-      error: err?.message || 'Network error connecting to Turso API',
+      error: 'Could not connect to Turso LibSQL database',
       counts: { transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0 }
     };
   }
@@ -33,12 +62,22 @@ export async function fetchTursoStatus(): Promise<TursoStatusResponse> {
 
 export async function testTursoConnection(url?: string, token?: string): Promise<{ success: boolean; message: string; isRemote?: boolean; url?: string }> {
   try {
-    const res = await fetch('/api/turso/test', {
+    const { ok, data } = await safeFetchJson('/api/turso/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, token }),
     });
-    return await res.json();
+    if (ok && data) {
+      return data;
+    }
+    // Direct Web fallback
+    const webStatus = await tursoWebCheckStatus();
+    return {
+      success: webStatus.connected,
+      message: webStatus.connected ? 'Turso connection successful (Direct Web)!' : 'Failed to connect to Turso LibSQL',
+      isRemote: true,
+      url: webStatus.url,
+    };
   } catch (err: any) {
     return {
       success: false,
@@ -54,40 +93,44 @@ export async function pushDataToTurso(dbData: {
   auditLogs?: any[];
 }) {
   try {
-    const res = await fetch('/api/turso/sync-push', {
+    const { ok, data } = await safeFetchJson('/api/turso/sync-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(dbData),
     });
-    return await res.json();
+    if (ok && data) {
+      return data;
+    }
+    // Direct Web fallback
+    return await tursoWebSyncPush(dbData);
   } catch (err: any) {
-    return {
-      success: false,
-      error: err?.message || 'Failed to push data to Turso',
-    };
+    return await tursoWebSyncPush(dbData);
   }
 }
 
 export async function pullDataFromTurso() {
   try {
-    const res = await fetch('/api/turso/sync-pull', {
+    const { ok, data } = await safeFetchJson('/api/turso/sync-pull', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
-    return await res.json();
+    if (ok && data) {
+      return data;
+    }
+    // Direct Web fallback
+    return await tursoWebSyncPull();
   } catch (err: any) {
-    return {
-      success: false,
-      error: err?.message || 'Failed to pull data from Turso',
-    };
+    return await tursoWebSyncPull();
   }
 }
 
 export async function fetchTursoSchema(): Promise<string> {
   try {
-    const res = await fetch('/api/turso/schema');
-    const data = await res.json();
-    return data.schemaSql || '';
+    const { ok, data } = await safeFetchJson('/api/turso/schema');
+    if (ok && data?.schemaSql) {
+      return data.schemaSql;
+    }
+    return '';
   } catch {
     return '';
   }
