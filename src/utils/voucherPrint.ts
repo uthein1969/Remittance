@@ -8,20 +8,43 @@ export function generateVoucherHtml({
   language = 'my',
 }: {
   transaction: RemittanceTransaction;
-  branch: Branch;
+  branch?: Branch;
   partner?: Company;
-  operatorProfile: OperatorProfile;
+  operatorProfile?: OperatorProfile;
   language?: Language;
 }): string {
   const isOutward = transaction.type === 'OUTWARD';
-  const createdDate = new Date(transaction.createdDate).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+
+  let createdDate = '';
+  try {
+    const d = new Date(transaction.createdDate || Date.now());
+    createdDate = isNaN(d.getTime()) ? String(transaction.createdDate || '') : d.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch {
+    createdDate = String(transaction.createdDate || '');
+  }
+
+  const op = {
+    companyNameMm: operatorProfile?.companyNameMm || 'ရွှေမြန်မာ အပြည်ပြည်ဆိုင်ရာ ငွေလွှဲလုပ်ငန်း',
+    companyNameEn: operatorProfile?.companyNameEn || 'Golden Myanmar Remittance Co., Ltd',
+    licenseNo: operatorProfile?.licenseNo || 'CBM/NBFI/RO-042/2024',
+    addressMm: operatorProfile?.addressMm || 'အမှတ် (၁၂)၊ ကုန်သည်လမ်း၊ ကျောက်တံတားမြို့နယ်၊ ရန်ကုန်မြို့။',
+    addressEn: operatorProfile?.addressEn || 'No. 12, Merchant Road, Kyauktada Township, Yangon, Myanmar',
+    phone: operatorProfile?.phone || '+95 1 230 4567',
+    hotline: operatorProfile?.hotline || '1899',
+  };
+
+  const fmtNum = (n: any, fallback = '0'): string => {
+    if (n === null || n === undefined || n === '') return fallback;
+    const val = Number(n);
+    return isNaN(val) ? fallback : val.toLocaleString('en-US');
+  };
 
   const voucherTitle = isOutward
     ? (language === 'my' ? 'ငွေလွှဲပို့ ပြေစာ (OUTWARD REMITTANCE SLIP)' : 'OUTWARD REMITTANCE SLIP')
@@ -44,7 +67,7 @@ export function generateVoucherHtml({
       case 'CANCELLED':
         return language === 'my' ? 'ဖျက်သိမ်းပြီး (Cancelled)' : 'CANCELLED';
       default:
-        return String(transaction.status).replace(/_/g, ' ');
+        return String(transaction.status || '').replace(/_/g, ' ');
     }
   })();
 
@@ -59,23 +82,29 @@ export function generateVoucherHtml({
       case 'MOBILE_WALLET':
         return language === 'my' ? 'မိုဘိုင်းပိုက်ဆံအိတ် (Mobile Wallet)' : 'Mobile Wallet';
       default:
-        return transaction.payoutMethod;
+        return transaction.payoutMethod || 'Cash Pickup';
     }
   })();
+
+  const sourceCur = transaction.sourceCurrency || 'MMK';
+  const targetCur = transaction.targetCurrency || 'MMK';
+  const sendAmt = transaction.sendAmount ?? (transaction as any).sourceAmount ?? 0;
+  const recvAmt = transaction.receiveAmount ?? (transaction as any).targetAmount ?? 0;
+  const feeAmt = transaction.serviceFee ?? (transaction as any).transferFee ?? 0;
+  const commAmt = transaction.commissionFee ?? 0;
+  const rateAmt = transaction.exchangeRate ?? 1;
+  const totalAmt = transaction.totalPayableAmount ?? (sendAmt + feeAmt);
 
   return `<!DOCTYPE html>
 <html lang="${language}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Voucher_${transaction.mtcn}_${transaction.transactionNo}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+Myanmar:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <title>Voucher_${transaction.mtcn || ''}_${transaction.transactionNo || ''}</title>
   <style>
     @page {
       size: A4 portrait;
-      margin: 8mm 12mm 8mm 12mm;
+      margin: 8mm 10mm 8mm 10mm;
     }
 
     *, *::before, *::after {
@@ -206,7 +235,7 @@ export function generateVoucherHtml({
       margin-top: 2px;
     }
     .ref-code {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-weight: 700;
       color: #0f172a;
       font-size: 11px;
@@ -261,7 +290,7 @@ export function generateVoucherHtml({
       color: #7c2d12;
       border: 1px solid #fdba74;
       font-size: 9.5px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-weight: 600;
       padding: 1px 6px;
       border-radius: 3px;
@@ -303,7 +332,7 @@ export function generateVoucherHtml({
       letter-spacing: 0.4px;
     }
     .mtcn-number {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 21px;
       font-weight: 700;
       color: #451a03;
@@ -395,7 +424,7 @@ export function generateVoucherHtml({
     }
     .fin-table .val {
       text-align: right;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-weight: 600;
       color: #0f172a;
     }
@@ -450,7 +479,7 @@ export function generateVoucherHtml({
     }
     .sig-line {
       width: 100%;
-      height: 64px;
+      height: 52px;
       border-bottom: 1.5px solid #64748b;
       margin-bottom: 6px;
       display: flex;
@@ -461,7 +490,7 @@ export function generateVoucherHtml({
     .stamp-box {
       width: 100%;
       max-width: 150px;
-      height: 54px;
+      height: 50px;
       border: 1.5px dashed #94a3b8;
       color: #94a3b8;
       font-size: 9.5px;
@@ -499,17 +528,19 @@ export function generateVoucherHtml({
 
     @media print {
       html, body {
-        height: 100% !important;
+        height: auto !important;
         background: #ffffff !important;
         font-size: 11px !important;
         line-height: 1.3 !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
       .no-print, .no-print-bar {
         display: none !important;
       }
       .page-container {
         margin: 0 !important;
-        padding: 0 !important;
+        padding: 4px 6px !important;
         box-shadow: none !important;
         border: none !important;
         max-width: 100% !important;
@@ -528,7 +559,7 @@ export function generateVoucherHtml({
   <div class="no-print-bar no-print">
     <div style="display:flex; align-items:center; gap: 10px;">
       <span style="font-weight:700; font-size:13px; color:#34d399;">🖨️ ${language === 'my' ? 'ပြေစာ ပုံနှိပ်ခြင်း' : 'Remittance Print View'}</span>
-      <span style="font-size:11px; opacity: 0.85; font-family: 'JetBrains Mono', monospace;">Ref: ${transaction.transactionNo} | MTCN: ${transaction.mtcn}</span>
+      <span style="font-size:11px; opacity: 0.85; font-family: monospace;">Ref: ${transaction.transactionNo || ''} | MTCN: ${transaction.mtcn || ''}</span>
     </div>
     <div style="display:flex; align-items:center; gap: 8px;">
       <button onclick="window.print()" class="btn btn-print">
@@ -553,7 +584,7 @@ export function generateVoucherHtml({
       <div style="text-align: right;">
         <span class="voucher-type-badge">${voucherTitle}</span>
         <div class="meta-line">${language === 'my' ? 'နေ့စွဲ' : 'Date'}: ${createdDate}</div>
-        <div class="ref-code">Ref: ${transaction.transactionNo}</div>
+        <div class="ref-code">Ref: ${transaction.transactionNo || 'N/A'}</div>
       </div>
     </div>
 
@@ -564,22 +595,22 @@ export function generateVoucherHtml({
         <div>
           <div class="orange-box-badges">
             <span class="badge-orange">${language === 'my' ? 'ငွေလွှဲဝန်ဆောင်မှု လုပ်ငန်းလုပ်ကိုင်ခွင့်ရ ကုမ္ပဏီ' : 'LICENSED REMITTANCE OPERATOR'}</span>
-            ${operatorProfile.licenseNo ? `<span class="badge-license">${operatorProfile.licenseNo}</span>` : ''}
+            ${op.licenseNo ? `<span class="badge-license">${op.licenseNo}</span>` : ''}
           </div>
           <div class="company-name">
-            ${language === 'my' ? `${operatorProfile.companyNameMm} (${operatorProfile.companyNameEn})` : operatorProfile.companyNameEn}
+            ${language === 'my' ? `${op.companyNameMm} (${op.companyNameEn})` : op.companyNameEn}
           </div>
         </div>
       </div>
       <div class="orange-box-grid">
         <div>
           <strong>${language === 'my' ? 'ရုံးချုပ် လိပ်စာ' : 'Head Office'}: </strong>
-          <span>${language === 'my' ? operatorProfile.addressMm : operatorProfile.addressEn}</span>
+          <span>${language === 'my' ? op.addressMm : op.addressEn}</span>
         </div>
         <div>
           <strong>${language === 'my' ? 'ဆက်သွယ်ရန် ဖုန်းနံပါတ်' : 'Contact Phone'}: </strong>
-          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600;">${operatorProfile.phone}</span>
-          ${operatorProfile.hotline ? `<span style="margin-left: 6px; color:#c2410c;">(Hotline: <b>${operatorProfile.hotline}</b>)</span>` : ''}
+          <span style="font-family: monospace; font-weight: 600;">${op.phone}</span>
+          ${op.hotline ? `<span style="margin-left: 6px; color:#c2410c;">(Hotline: <b>${op.hotline}</b>)</span>` : ''}
         </div>
       </div>
     </div>
@@ -588,7 +619,7 @@ export function generateVoucherHtml({
     <div class="mtcn-box">
       <div>
         <div class="mtcn-label">${language === 'my' ? 'ငွေလွှဲ လျှို့ဝှက်ကုဒ် / MTCN' : 'Money Transfer Control Number (MTCN)'}</div>
-        <div class="mtcn-number">${transaction.mtcn}</div>
+        <div class="mtcn-number">${transaction.mtcn || ''}</div>
       </div>
       <div style="text-align: right;">
         <span class="status-badge">${statusDisplay}</span>
@@ -601,20 +632,20 @@ export function generateVoucherHtml({
         <div class="party-card-title">${language === 'my' ? 'ငွေလွှဲပို့သူ (SENDER)' : 'SENDER INFORMATION'}</div>
         <div class="party-row">
           <div class="label">${language === 'my' ? 'အမည်' : 'Name'}:</div>
-          <div class="value">${language === 'my' && transaction.senderNameMm ? `${transaction.senderNameMm} (${transaction.senderName})` : transaction.senderName}</div>
+          <div class="value">${language === 'my' && transaction.senderNameMm ? `${transaction.senderNameMm} (${transaction.senderName || ''})` : (transaction.senderName || 'N/A')}</div>
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'မှတ်ပုံတင်' : 'NRC / ID'}:</span>
-          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.senderNrc || 'N/A'}</span>
+          <span class="value" style="font-family: monospace;"> ${transaction.senderNrc || 'N/A'}</span>
         </div>
         ${transaction.senderPassport ? `
         <div class="party-row">
           <span class="label">${language === 'my' ? 'နိုင်ငံကူးလက်မှတ်' : 'Passport No'}:</span>
-          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.senderPassport}</span>
+          <span class="value" style="font-family: monospace;"> ${transaction.senderPassport}</span>
         </div>` : ''}
         <div class="party-row">
           <span class="label">${language === 'my' ? 'ဖုန်း' : 'Phone'}:</span>
-          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.senderPhone}</span>
+          <span class="value" style="font-family: monospace;"> ${transaction.senderPhone || 'N/A'}</span>
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'လိပ်စာ' : 'Address'}:</span>
@@ -622,7 +653,7 @@ export function generateVoucherHtml({
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'နိုင်ငံ' : 'Country'}:</span>
-          <span class="value"> ${transaction.senderCountryCode}</span>
+          <span class="value"> ${transaction.senderCountryCode || 'MM'}</span>
         </div>
       </div>
 
@@ -630,20 +661,20 @@ export function generateVoucherHtml({
         <div class="party-card-title">${language === 'my' ? 'ငွေလက်ခံသူ (BENEFICIARY)' : 'BENEFICIARY / RECEIVER'}</div>
         <div class="party-row">
           <div class="label">${language === 'my' ? 'အမည်' : 'Name'}:</div>
-          <div class="value">${language === 'my' && transaction.receiverNameMm ? `${transaction.receiverNameMm} (${transaction.receiverName})` : transaction.receiverName}</div>
+          <div class="value">${language === 'my' && transaction.receiverNameMm ? `${transaction.receiverNameMm} (${transaction.receiverName || ''})` : (transaction.receiverName || 'N/A')}</div>
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'မှတ်ပုံတင်' : 'NRC / ID'}:</span>
-          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.receiverNrc || 'N/A'}</span>
+          <span class="value" style="font-family: monospace;"> ${transaction.receiverNrc || 'N/A'}</span>
         </div>
         ${transaction.receiverPassport ? `
         <div class="party-row">
           <span class="label">${language === 'my' ? 'နိုင်ငံကူးလက်မှတ်' : 'Passport No'}:</span>
-          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.receiverPassport}</span>
+          <span class="value" style="font-family: monospace;"> ${transaction.receiverPassport}</span>
         </div>` : ''}
         <div class="party-row">
           <span class="label">${language === 'my' ? 'ဖုန်း' : 'Phone'}:</span>
-          <span class="value" style="font-family: 'JetBrains Mono', monospace;"> ${transaction.receiverPhone}</span>
+          <span class="value" style="font-family: monospace;"> ${transaction.receiverPhone || 'N/A'}</span>
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'လိပ်စာ' : 'Address'}:</span>
@@ -651,7 +682,7 @@ export function generateVoucherHtml({
         </div>
         <div class="party-row">
           <span class="label">${language === 'my' ? 'ခရီးဆုံး နိုင်ငံ' : 'Destination'}:</span>
-          <span class="value"> ${transaction.receiverCountryCode}</span>
+          <span class="value"> ${transaction.receiverCountryCode || 'N/A'}</span>
         </div>
       </div>
     </div>
@@ -666,24 +697,24 @@ export function generateVoucherHtml({
       <tbody>
         <tr>
           <td>${language === 'my' ? 'လွှဲပို့ငွေ မူလပမာဏ (Send Principal)' : 'Send Principal Amount'}:</td>
-          <td class="val">${transaction.sendAmount.toLocaleString()} ${transaction.sourceCurrency}</td>
+          <td class="val">${fmtNum(sendAmt)} ${sourceCur}</td>
         </tr>
         <tr class="row-alt">
           <td>${language === 'my' ? 'တွက်ချက်ထားသော ငွေလဲနှုန်း (Applied Exchange Rate)' : 'Applied Exchange Rate'}:</td>
-          <td class="val">1 ${transaction.sourceCurrency === 'MMK' ? transaction.targetCurrency : transaction.sourceCurrency} = ${transaction.exchangeRate.toLocaleString()} MMK</td>
+          <td class="val">1 ${sourceCur === 'MMK' ? targetCur : sourceCur} = ${fmtNum(rateAmt, '1')} MMK</td>
         </tr>
         <tr>
           <td>${language === 'my' ? 'ငွေလွှဲ ဝန်ဆောင်ခ (Service Fee)' : 'Remittance Service Fee'}:</td>
-          <td class="val">${transaction.serviceFee.toLocaleString()} MMK</td>
+          <td class="val">${fmtNum(feeAmt)} MMK</td>
         </tr>
-        ${transaction.commissionFee > 0 ? `
+        ${commAmt > 0 ? `
         <tr class="row-alt">
           <td>${language === 'my' ? 'မိတ်ဖက် ကော်မရှင်ခ (Partner Commission)' : 'Partner Commission'}:</td>
-          <td class="val">${transaction.commissionFee.toLocaleString()} MMK</td>
+          <td class="val">${fmtNum(commAmt)} MMK</td>
         </tr>` : ''}
         <tr class="total-row">
           <td>${language === 'my' ? 'လက်ခံရရှိငွေ စုစုပေါင်း (Total Payout / Receive Amount)' : 'Total Payout / Receive Amount'}:</td>
-          <td class="val">${transaction.receiveAmount.toLocaleString()} ${transaction.targetCurrency}</td>
+          <td class="val">${fmtNum(recvAmt)} ${targetCur}</td>
         </tr>
       </tbody>
     </table>
@@ -691,14 +722,14 @@ export function generateVoucherHtml({
     <!-- Additional Details -->
     <div class="details-box">
       <div>
-        <strong>${language === 'my' ? 'လွှဲပို့ရည်ရွယ်ချက်' : 'Purpose'}:</strong> ${transaction.purposeName}
+        <strong>${language === 'my' ? 'လွှဲပို့ရည်ရွယ်ချက်' : 'Purpose'}:</strong> ${transaction.purposeName || 'Family Support / Living Expenses'}
       </div>
       <div>
         <strong>${language === 'my' ? 'ငွေထုတ်ယူနည်း' : 'Payout Method'}:</strong> ${payoutMethodText}
       </div>
       ${partner ? `
       <div style="grid-column: 1 / -1;">
-        <strong>${language === 'my' ? 'မိတ်ဖက် ကွန်ရက်' : 'Partner Channel'}:</strong> ${partner.nameEn} (${partner.swiftCode || partner.code})
+        <strong>${language === 'my' ? 'မိတ်ဖက် ကွန်ရက်' : 'Partner Channel'}:</strong> ${partner.nameEn || ''} (${partner.swiftCode || partner.code || ''})
       </div>` : ''}
       ${transaction.senderNote ? `
       <div style="grid-column: 1 / -1; font-style: italic;">
@@ -719,7 +750,7 @@ export function generateVoucherHtml({
             <span>${language === 'my' ? 'ဘဏ်ခွဲ တံဆိပ်တုံး' : 'Branch Stamp'}</span>
           </div>
         </div>
-        <div class="sig-name">${language === 'my' ? 'ဘဏ်ခွဲ အတည်ပြုတံဆိပ်တုံး' : 'Branch Verification Stamp'}</div>
+        <div class="sig-name">${branch ? (language === 'my' ? (branch.nameMm || branch.nameEn) : branch.nameEn) : (language === 'my' ? 'ဘဏ်ခွဲ အတည်ပြုတံဆိပ်တုံး' : 'Branch Verification Stamp')}</div>
         <div class="sig-title">${language === 'my' ? 'ဗဟိုဘဏ် စည်းမျဉ်းကိုက်' : 'CBM Compliance'}</div>
       </div>
       <div class="sig-col">
@@ -736,69 +767,103 @@ export function generateVoucherHtml({
         : 'This remittance transaction has been screened in compliance with the Central Bank of Myanmar Anti-Money Laundering (AML) & Counter-Terrorism Financing (CFT) guidelines. Beneficiary must present valid original Myanmar NRC for counter collection.'}
     </div>
   </div>
-
-  <script>
-    // Auto-trigger print when opened in a dedicated window or tab
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        try {
-          window.focus();
-          window.print();
-        } catch (e) {
-          console.warn('Auto print was blocked or ignored:', e);
-        }
-      }, 350);
-    });
-  </script>
 </body>
 </html>`;
 }
 
+/**
+ * Reliably prints the voucher document using an isolated, hidden iframe.
+ * Avoids browser popup blockers, blank tab blob restrictions in Chrome/Edge,
+ * and eliminates 4-blank-page issues from SPA root layout nesting.
+ */
 export function printVoucherDocument(params: {
   transaction: RemittanceTransaction;
-  branch: Branch;
+  branch?: Branch;
   partner?: Company;
-  operatorProfile: OperatorProfile;
+  operatorProfile?: OperatorProfile;
   language?: Language;
-}): { success: boolean; url: string } {
-  const html = generateVoucherHtml(params);
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const blobUrl = URL.createObjectURL(blob);
-
-  // Method 1: Try window.open directly
+}): { success: boolean } {
   try {
-    const printWindow = window.open(blobUrl, '_blank');
-    if (printWindow) {
-      return { success: true, url: blobUrl };
+    const html = generateVoucherHtml(params);
+
+    const frameId = 'voucher-hidden-print-frame';
+    let iframe = document.getElementById(frameId) as HTMLIFrameElement | null;
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = frameId;
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      document.body.appendChild(iframe);
+    }
+
+    const frameDoc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (!frameDoc || !iframe.contentWindow) {
+      throw new Error('Print iframe could not be initialized');
+    }
+
+    frameDoc.open();
+    frameDoc.write(html);
+    frameDoc.close();
+
+    // Trigger print cleanly after rendering
+    setTimeout(() => {
+      try {
+        iframe?.contentWindow?.focus();
+        iframe?.contentWindow?.print();
+      } catch (printErr) {
+        console.warn('Iframe print error, falling back to window.open:', printErr);
+        openVoucherInNewTab(params);
+      }
+    }, 250);
+
+    return { success: true };
+  } catch (err) {
+    console.error('printVoucherDocument failed:', err);
+    try {
+      openVoucherInNewTab(params);
+      return { success: true };
+    } catch {
+      return { success: false };
+    }
+  }
+}
+
+/**
+ * Opens the voucher in a dedicated tab without using blob: URL.
+ * Uses window.open('', '_blank') and direct document.write so it is NEVER blank or blocked in Chrome.
+ */
+export function openVoucherInNewTab(params: {
+  transaction: RemittanceTransaction;
+  branch?: Branch;
+  partner?: Company;
+  operatorProfile?: OperatorProfile;
+  language?: Language;
+}): void {
+  try {
+    const html = generateVoucherHtml(params);
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.focus();
     }
   } catch (err) {
-    console.warn('window.open blocked, trying anchor click fallback:', err);
+    console.error('Failed to open voucher in new tab:', err);
   }
-
-  // Method 2: Anchor click fallback (works through popup blockers)
-  try {
-    const link = document.createElement('a');
-    link.href = blobUrl;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      document.body.removeChild(link);
-    }, 1000);
-    return { success: true, url: blobUrl };
-  } catch (err) {
-    console.warn('Anchor click fallback failed:', err);
-  }
-
-  return { success: false, url: blobUrl };
 }
 
 export function downloadVoucherHtml(params: {
   transaction: RemittanceTransaction;
-  branch: Branch;
+  branch?: Branch;
   partner?: Company;
-  operatorProfile: OperatorProfile;
+  operatorProfile?: OperatorProfile;
   language?: Language;
 }): void {
   const html = generateVoucherHtml(params);
@@ -814,3 +879,4 @@ export function downloadVoucherHtml(params: {
     URL.revokeObjectURL(blobUrl);
   }, 1000);
 }
+

@@ -20,7 +20,7 @@ import {
 import { RemittanceTransaction } from '../types';
 import { useRemittance } from '../lib/store';
 import { CompanyProfileModal } from './CompanyProfileModal';
-import { generateVoucherHtml, printVoucherDocument, downloadVoucherHtml } from '../utils/voucherPrint';
+import { generateVoucherHtml, printVoucherDocument, downloadVoucherHtml, openVoucherInNewTab } from '../utils/voucherPrint';
 
 interface VoucherModalProps {
   transaction: RemittanceTransaction | null;
@@ -47,28 +47,6 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
   const branch = transaction ? (db.branches.find(b => b.id === transaction.sendingBranchId) || db.branches[0]) : db.branches[0];
   const partner = transaction ? db.companies.find(c => c.id === transaction.partnerCompanyId) : undefined;
 
-  // Pre-generate a standalone Blob URL for direct anchor navigation and download
-  const printableBlobUrl = React.useMemo(() => {
-    if (!transaction) return '';
-    const html = generateVoucherHtml({
-      transaction,
-      branch,
-      partner,
-      operatorProfile,
-      language,
-    });
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    return URL.createObjectURL(blob);
-  }, [transaction, branch, partner, operatorProfile, language]);
-
-  React.useEffect(() => {
-    return () => {
-      if (printableBlobUrl) {
-        URL.revokeObjectURL(printableBlobUrl);
-      }
-    };
-  }, [printableBlobUrl]);
-
   if (!isOpen || !transaction) return null;
 
   const copyMtcn = () => {
@@ -80,7 +58,6 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
   const handlePrint = (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
 
-    // 1. Try dedicated document printing (opens printable view that auto-triggers print dialog)
     printVoucherDocument({
       transaction,
       branch,
@@ -89,21 +66,23 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
       language,
     });
 
-    // 2. Also attempt direct window.print with try-catch
-    try {
-      if (window.self === window.top) {
-        window.print();
-      }
-    } catch (err) {
-      console.warn('Standard window.print call restricted by sandbox:', err);
-    }
-
     setFeedbackMsg(
       language === 'my' 
-        ? 'ပုံနှိပ်စာမျက်နှာ ဖွင့်လှစ်နေပါသည် (Opening Print Dialog)...' 
-        : 'Opening print dialog / new tab...'
+        ? 'ပုံနှိပ်စာမျက်နှာ ဖွင့်လှစ်နေပါသည် (Printing Voucher)...' 
+        : 'Opening printer dialog...'
     );
     setTimeout(() => setFeedbackMsg(null), 3500);
+  };
+
+  const handleOpenNewTab = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    openVoucherInNewTab({
+      transaction,
+      branch,
+      partner,
+      operatorProfile,
+      language,
+    });
   };
 
   const handleDownload = (e?: React.MouseEvent) => {
@@ -169,18 +148,15 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
             </button>
 
             {/* Direct Open in New Tab Print Link */}
-            {printableBlobUrl && (
-              <a
-                href={printableBlobUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hidden md:flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium border border-slate-700 transition-colors"
-                title={language === 'my' ? 'စာမျက်နှာသစ်ဖြင့် တိုက်ရိုက်ပုံနှိပ်ရန်' : 'Open in new tab to print'}
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-slate-300" />
-                <span>{language === 'my' ? 'စာမျက်နှာသစ်' : 'New Tab'}</span>
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={handleOpenNewTab}
+              className="hidden md:flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium border border-slate-700 transition-colors cursor-pointer"
+              title={language === 'my' ? 'စာမျက်နှာသစ်ဖြင့် တိုက်ရိုက်ကြည့်ရှု ပုံနှိပ်ရန်' : 'Open in new tab to print'}
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-slate-300" />
+              <span>{language === 'my' ? 'စာမျက်နှာသစ်' : 'New Tab'}</span>
+            </button>
 
             {/* Download Voucher HTML/PDF */}
             <button
@@ -209,16 +185,13 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
               <Check className="w-4 h-4" />
               <span>{feedbackMsg}</span>
             </div>
-            {printableBlobUrl && (
-              <a 
-                href={printableBlobUrl} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="underline hover:text-emerald-100 font-semibold ml-3"
-              >
-                {language === 'my' ? 'စာမျက်နှာသစ်သို့ နှိပ်၍ဖွင့်ရန် ↗' : 'Click to open tab ↗'}
-              </a>
-            )}
+            <button 
+              type="button"
+              onClick={handleOpenNewTab}
+              className="underline hover:text-emerald-100 font-semibold ml-3 cursor-pointer"
+            >
+              {language === 'my' ? 'စာမျက်နှာသစ်သို့ နှိပ်၍ဖွင့်ရန် ↗' : 'Click to open tab ↗'}
+            </button>
           </div>
         )}
 
@@ -587,18 +560,15 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
               : '↕ Scroll up/down to review full voucher details'}
           </div>
           <div className="flex items-center space-x-2">
-            {printableBlobUrl && (
-              <a
-                href={printableBlobUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center space-x-1.5 border border-slate-300 shadow-2xs transition-colors"
-                title={language === 'my' ? 'စာမျက်နှာသစ်ဖြင့် တိုက်ရိုက်ပုံနှိပ်ရန်' : 'Open in new tab'}
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                <span>{language === 'my' ? 'စာမျက်နှာသစ်' : 'New Tab'}</span>
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={handleOpenNewTab}
+              className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center space-x-1.5 border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+              title={language === 'my' ? 'စာမျက်နှာသစ်ဖြင့် တိုက်ရိုက်ကြည့်ရှု ပုံနှိပ်ရန်' : 'Open in new tab'}
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+              <span>{language === 'my' ? 'စာမျက်နှာသစ်' : 'New Tab'}</span>
+            </button>
             <button
               type="button"
               onClick={handleDownload}

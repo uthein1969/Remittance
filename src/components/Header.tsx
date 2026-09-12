@@ -10,7 +10,8 @@ import {
   LogOut,
   MapPin,
   Phone,
-  Edit3
+  Edit3,
+  RefreshCw
 } from 'lucide-react';
 import { useRemittance } from '../lib/store';
 import { CompanyProfileModal } from './CompanyProfileModal';
@@ -28,7 +29,20 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMobileMenu,
   onNavigateCompanySetting 
 }) => {
-  const { db, language, setLanguage, currentUser, switchUser, logout, t, operatorProfile } = useRemittance();
+  const { 
+    db, 
+    language, 
+    setLanguage, 
+    currentUser, 
+    switchUser, 
+    logout, 
+    t, 
+    operatorProfile,
+    isTursoConnected,
+    isSyncingTurso,
+    syncTursoBidirectional,
+    lastTursoSyncTime
+  } = useRemittance();
   const [showCompanyModal, setShowCompanyModal] = React.useState(false);
 
   const pendingCount = db.transactions.filter(t => t.status === 'PENDING_APPROVAL').length;
@@ -133,15 +147,31 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-[11px]">{language === 'my' ? 'ကုမ္ပဏီ' : 'Company'}</span>
         </button>
 
-        {/* Turso Cloud Status Pill */}
-        <button
-          onClick={onOpenTurso || onOpenBackup}
-          className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-          title={language === 'my' ? 'Turso Cloud Database (ချိတ်ဆက်ထားသည်)' : 'Turso Cloud Database (Connected & Active)'}
-        >
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>{language === 'my' ? 'Turso Cloud အသင့်ရှိ' : 'Turso Cloud Active'}</span>
-        </button>
+        {/* Turso Cloud Status Pill with Interactive Sync */}
+        <div className="hidden md:flex items-center space-x-1 bg-emerald-50 border border-emerald-200 rounded-md p-0.5">
+          <button
+            onClick={onOpenTurso || onOpenBackup}
+            className="flex items-center space-x-1.5 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100/70 rounded transition-colors"
+            title={language === 'my' 
+              ? `Turso Cloud Database (ချိတ်ဆက်ထားသည်)${lastTursoSyncTime ? ` - နောက်ဆုံး Sync: ${lastTursoSyncTime}` : ''}` 
+              : `Turso Cloud Database (Connected & Active)${lastTursoSyncTime ? ` - Last synced: ${lastTursoSyncTime}` : ''}`}
+          >
+            <div className={`w-2 h-2 rounded-full ${isTursoConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+            <span>{language === 'my' ? 'Turso Cloud' : 'Turso Cloud'}</span>
+          </button>
+          
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              await syncTursoBidirectional();
+            }}
+            disabled={isSyncingTurso}
+            className="p-1 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100 rounded transition-all"
+            title={language === 'my' ? 'Turso Cloud မှ စာရင်းအသစ်များ ရယူရန် / Sync လုပ်ရန် နှိပ်ပါ' : 'Click to fetch latest transactions & sync with Turso Cloud'}
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncingTurso ? 'animate-spin text-emerald-600' : 'text-emerald-600 hover:rotate-180 transition-transform duration-300'}`} />
+          </button>
+        </div>
 
         {/* Branch Badge */}
         <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-700">

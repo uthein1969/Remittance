@@ -24,7 +24,8 @@ import {
   Maximize2,
   Trash2,
   Sparkles,
-  Receipt
+  Receipt,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -42,7 +43,17 @@ import {
 import { extractNrcInfoFromUpload, scanNrcWithAi } from '../../lib/nrcOcrParser';
 
 export const OutwardApproveView: React.FC = () => {
-  const { db, language, t, approveTransaction, rejectTransaction, holdTransaction, updateTransaction } = useRemittance();
+  const { 
+    db, 
+    language, 
+    t, 
+    approveTransaction, 
+    rejectTransaction, 
+    holdTransaction, 
+    updateTransaction,
+    isSyncingTurso,
+    syncTursoBidirectional
+  } = useRemittance();
   
   const [filterStatus, setFilterStatus] = useState<string>('PENDING_APPROVAL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -405,31 +416,44 @@ export const OutwardApproveView: React.FC = () => {
           </p>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-semibold">
+        {/* Filter Tabs & Cloud Sync */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-semibold">
+            <button
+              onClick={() => setFilterStatus('PENDING_APPROVAL')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                filterStatus === 'PENDING_APPROVAL' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {language === 'my' ? 'စိစစ်ရန်ကျန်' : 'Pending'} ({outwardTxs.filter(t => t.status === 'PENDING_APPROVAL').length})
+            </button>
+            <button
+              onClick={() => setFilterStatus('APPROVED')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                filterStatus === 'APPROVED' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {language === 'my' ? 'အတည်ပြုပြီး' : 'Approved'}
+            </button>
+            <button
+              onClick={() => setFilterStatus('ALL')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                filterStatus === 'ALL' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {t.all}
+            </button>
+          </div>
+
+          {/* Turso Cloud Live Sync Button */}
           <button
-            onClick={() => setFilterStatus('PENDING_APPROVAL')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              filterStatus === 'PENDING_APPROVAL' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={() => syncTursoBidirectional()}
+            disabled={isSyncingTurso}
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-all text-xs font-semibold shadow-xs"
+            title={language === 'my' ? 'Turso Cloud မှ စာရင်းအသစ်များ ရယူရန် / Refresh လုပ်ရန် နှိပ်ပါ' : 'Fetch latest transactions from Turso Cloud'}
           >
-            {language === 'my' ? 'စိစစ်ရန်ကျန်' : 'Pending'} ({outwardTxs.filter(t => t.status === 'PENDING_APPROVAL').length})
-          </button>
-          <button
-            onClick={() => setFilterStatus('APPROVED')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              filterStatus === 'APPROVED' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            {language === 'my' ? 'အတည်ပြုပြီး' : 'Approved'}
-          </button>
-          <button
-            onClick={() => setFilterStatus('ALL')}
-            className={`px-3 py-1.5 rounded-lg transition-all ${
-              filterStatus === 'ALL' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            {t.all}
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingTurso ? 'animate-spin text-emerald-400' : 'text-emerald-400'}`} />
+            <span>{isSyncingTurso ? (language === 'my' ? 'Sync လုပ်နေသည်...' : 'Syncing...') : (language === 'my' ? 'Cloud Sync' : 'Sync Cloud')}</span>
           </button>
         </div>
       </div>

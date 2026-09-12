@@ -42,24 +42,49 @@
     overflow: visible !important;
     background: white !important;
   }
+
+  /* Neutralize modal wrappers so nothing is clipped */
+  .fixed.inset-0 {
+    position: static !important;
+    overflow: visible !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-height: none !important;
+    height: auto !important;
+    transform: none !important;
+    display: block !important;
+  }
+
+  [class*="max-h-"], .max-w-3xl {
+    max-height: none !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+    transform: none !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
   body * {
     visibility: hidden;
   }
+
   #printable-voucher, #printable-voucher * {
     visibility: visible;
   }
+
   #printable-voucher {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 24px;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 12px !important;
     background: white !important;
     color: black !important;
     overflow: visible !important;
     max-height: none !important;
+    display: block !important;
   }
+
   .no-print {
     display: none !important;
   }

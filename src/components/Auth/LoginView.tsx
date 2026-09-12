@@ -70,8 +70,8 @@ export const LoginView: React.FC = () => {
   const [seedingSupabaseUsers, setSeedingSupabaseUsers] = useState(false);
 
   // Connection settings state (Supabase)
-  const [cfgUrl, setCfgUrl] = useState(db.supabaseConfig.url || '');
-  const [cfgKey, setCfgKey] = useState(db.supabaseConfig.anonKey || '');
+  const [cfgUrl, setCfgUrl] = useState(db?.supabaseConfig?.url || '');
+  const [cfgKey, setCfgKey] = useState(db?.supabaseConfig?.anonKey || '');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [testingConn, setTestingConn] = useState(false);
 
@@ -84,10 +84,10 @@ export const LoginView: React.FC = () => {
         setTursoUsers(res.users);
       } else {
         // Fallback to local system users if remote table not seeded yet
-        setTursoUsers(db.users);
+        setTursoUsers(db?.users || []);
       }
     } catch {
-      setTursoUsers(db.users);
+      setTursoUsers(db?.users || []);
     } finally {
       setLoadingTursoUsers(false);
     }
@@ -95,7 +95,7 @@ export const LoginView: React.FC = () => {
 
   // Load Supabase users
   const loadSupabaseUsers = async () => {
-    if (!db.supabaseConfig.url || !db.supabaseConfig.anonKey) return;
+    if (!db?.supabaseConfig?.url || !db?.supabaseConfig?.anonKey) return;
     setLoadingSupabaseUsers(true);
     const res = await fetchSupabaseUsers();
     if (res.success && res.users) {
@@ -113,7 +113,7 @@ export const LoginView: React.FC = () => {
     if (selectedProvider === 'SUPABASE') {
       loadSupabaseUsers();
     }
-  }, [selectedProvider, db.supabaseConfig.url, db.supabaseConfig.anonKey]);
+  }, [selectedProvider, db?.supabaseConfig?.url, db?.supabaseConfig?.anonKey]);
 
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -327,7 +327,7 @@ export const LoginView: React.FC = () => {
               >
                 <Cloud className={`w-3.5 h-3.5 ${selectedProvider === 'SUPABASE' ? 'text-white' : 'text-slate-400'}`} />
                 <span>Supabase</span>
-                {db.supabaseConfig.isConnected && (
+                {db?.supabaseConfig?.isConnected && (
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                 )}
               </button>
@@ -352,12 +352,12 @@ export const LoginView: React.FC = () => {
                 </div>
               ) : (
                 <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
-                  db.supabaseConfig.isConnected 
+                  db?.supabaseConfig?.isConnected 
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' 
                     : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
                 }`}>
-                  <div className={`w-2 h-2 rounded-full ${db.supabaseConfig.isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                  <span>{db.supabaseConfig.isConnected ? 'Supabase Connected' : 'DB Not Connected'}</span>
+                  <div className={`w-2 h-2 rounded-full ${db?.supabaseConfig?.isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                  <span>{db?.supabaseConfig?.isConnected ? 'Supabase Connected' : 'DB Not Connected'}</span>
                 </div>
               )}
             </div>

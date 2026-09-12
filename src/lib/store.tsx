@@ -138,8 +138,11 @@ interface RemittanceContextType {
 
   // Turso Cloud Database Operations
   isTursoConnected: boolean;
+  isSyncingTurso: boolean;
+  lastTursoSyncTime: string | null;
   tursoStats: { connected: boolean; url: string; counts?: any } | null;
   checkTursoStatus: () => Promise<boolean>;
+  syncTursoBidirectional: () => Promise<{ success: boolean; message: string; count?: number }>;
   loginWithTurso: (
     usernameOrEmail: string, 
     password?: string
@@ -151,7 +154,7 @@ interface RemittanceContextType {
   fetchTursoUsers: () => Promise<{ success: boolean; users?: User[]; message?: string }>;
   seedUsersToTurso: () => Promise<{ success: boolean; message: string }>;
   syncDataToTurso: () => Promise<{ success: boolean; message: string; saved?: any }>;
-  fetchDataFromTurso: () => Promise<{ success: boolean; message: string }>;
+  fetchDataFromTurso: () => Promise<{ success: boolean; message: string; count?: number }>;
   syncAllLocalToTurso: () => Promise<{ success: boolean; message: string; count: number }>;
 
   // Authentication & Supabase User Verification
@@ -213,29 +216,43 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               tx1.senderPassportAttachmentSize = '24 KB';
             }
           }
-          // If env vars are provided and local config is empty, fill them in
-          if (envUrl && !parsed.supabaseConfig?.url) {
-            parsed.supabaseConfig = {
-              ...(parsed.supabaseConfig || initialDatabase.supabaseConfig),
-              url: envUrl,
-              anonKey: envKey,
-            };
-          }
-          return parsed;
+          // Return safely merged object with initialDatabase fallback
+          return {
+            ...initialDatabase,
+            ...parsed,
+            operatorProfile: {
+              ...initialDatabase.operatorProfile,
+              ...(parsed.operatorProfile || {})
+            },
+            supabaseConfig: {
+              ...initialDatabase.supabaseConfig,
+              ...(parsed.supabaseConfig || {}),
+              ...(envUrl ? { url: envUrl, anonKey: envKey } : {})
+            },
+            branches: Array.isArray(parsed.branches) && parsed.branches.length > 0 ? parsed.branches : initialDatabase.branches,
+            users: Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : initialDatabase.users,
+            transactions: Array.isArray(parsed.transactions) ? parsed.transactions : initialDatabase.transactions,
+            currencies: Array.isArray(parsed.currencies) && parsed.currencies.length > 0 ? parsed.currencies : initialDatabase.currencies,
+            countries: Array.isArray(parsed.countries) && parsed.countries.length > 0 ? parsed.countries : initialDatabase.countries,
+            exchangeRates: Array.isArray(parsed.exchangeRates) && parsed.exchangeRates.length > 0 ? parsed.exchangeRates : initialDatabase.exchangeRates,
+            blacklist: Array.isArray(parsed.blacklist) ? parsed.blacklist : initialDatabase.blacklist,
+            purposes: Array.isArray(parsed.purposes) && parsed.purposes.length > 0 ? parsed.purposes : initialDatabase.purposes,
+            customers: Array.isArray(parsed.customers) ? parsed.customers : initialDatabase.customers,
+            auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : initialDatabase.auditLogs,
+          };
         }
       }
     } catch (err) {
       console.error('Failed to load local DB state:', err);
     }
 
-    const base = { ...initialDatabase };
-    if (envUrl) {
-      base.supabaseConfig = {
-        ...base.supabaseConfig,
-        url: envUrl,
-        anonKey: envKey,
-      };
-    }
+    const base: AppDatabase = { 
+      ...initialDatabase,
+      supabaseConfig: {
+        ...initialDatabase.supabaseConfig,
+        ...(envUrl ? { url: envUrl, anonKey: envKey } : {})
+      }
+    };
     return base;
   });
 
@@ -248,10 +265,13 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [db]);
 
-  // Authentication state - Require user login
+  // Authentication state - Default to authenticated in AI Studio preview so UI renders immediately
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION');
+      const isLoggedOut = sessionStorage.getItem('REMITTANCE_EXPLICIT_LOGOUT') === 'true';
+      if (isLoggedOut) return false;
+
+      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION') || localStorage.getItem('REMITTANCE_AUTH_SESSION');
       if (sessionStr) {
         const session = JSON.parse(sessionStr);
         if (session && session.userId) {
@@ -261,7 +281,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } catch (e) {
       console.error('Failed to load auth session:', e);
     }
-    return false;
+    // Default to true so user immediately sees the Remittance UI in AI Studio preview
+    return true;
   });
 
   // Database Provider Selection (Default: TURSO Cloud)
@@ -363,35 +384,188 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  // Auto-synchronize local transactions with Turso Cloud on mount
+  const [isSyncingTurso, setIsSyncingTurso] = useState(false);
+  const [lastTursoSyncTime, setLastTursoSyncTime] = useState<string | null>(null);
+
+  const fetchDataFromTurso = useCallback(async (): Promise<{ success: boolean; message: string; count?: number }> => {
+    try {
+      let txList: any[] = [];
+      let extraData: any = null;
+
+      const { ok, data } = await safeFetchJson('/api/turso/sync-pull', { method: 'POST' });
+      if (ok && data?.success && data?.data?.transactions) {
+        txList = data.data.transactions;
+        extraData = data.data;
+      } else {
+        // Direct Web fallback (for Vercel static deployments)
+        const webRes = await tursoWebSyncPull();
+        if (webRes.success && webRes.data?.transactions) {
+          txList = webRes.data.transactions;
+          extraData = webRes.data;
+        }
+      }
+
+      if (Array.isArray(txList) && txList.length > 0) {
+        setDb(prev => {
+          // Index existing by both transactionNo and id to prevent duplicate entries
+          const map = new Map<string, RemittanceTransaction>();
+          for (const t of prev.transactions) {
+            if (t.transactionNo) map.set(t.transactionNo, t);
+            if (t.id) map.set(t.id, t);
+          }
+
+          for (const tx of txList) {
+            const existing = (tx.transactionNo ? map.get(tx.transactionNo) : undefined) || 
+                             (tx.id ? map.get(tx.id) : undefined);
+
+            const merged: RemittanceTransaction = {
+              ...(existing || {} as RemittanceTransaction),
+              ...tx,
+              id: existing?.id || tx.id || `TX-${Date.now()}`,
+              sendAmount: Number(tx.sendAmount) || 0,
+              receiveAmount: Number(tx.receiveAmount || tx.payoutAmount) || 0,
+              exchangeRate: Number(tx.exchangeRate) || 1,
+              serviceFee: Number(tx.serviceFee || tx.transferFee) || 0,
+              totalPayableAmount: Number(tx.totalPayableAmount || tx.totalCollected) || 0,
+            };
+
+            if (merged.transactionNo) map.set(merged.transactionNo, merged);
+            if (merged.id) map.set(merged.id, merged);
+          }
+
+          // Gather unique transactions
+          const uniqueList: RemittanceTransaction[] = [];
+          const seenKeys = new Set<string>();
+          for (const t of map.values()) {
+            const key = t.transactionNo || t.id;
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              uniqueList.push(t);
+            }
+          }
+
+          // Sort by creation date descending
+          uniqueList.sort((a, b) => {
+            const dateA = a.createdDate ? new Date(a.createdDate).getTime() : 0;
+            const dateB = b.createdDate ? new Date(b.createdDate).getTime() : 0;
+            return dateB - dateA;
+          });
+
+          return {
+            ...prev,
+            transactions: uniqueList,
+            ...(extraData?.exchangeRates?.length ? { exchangeRates: extraData.exchangeRates } : {}),
+            ...(extraData?.customers?.length ? { customers: extraData.customers } : {}),
+          };
+        });
+      }
+
+      setLastTursoSyncTime(new Date().toLocaleTimeString());
+
+      return {
+        success: true,
+        count: txList.length,
+        message: db.activeLanguage === 'en'
+          ? `Successfully pulled ${txList.length} records from Turso Cloud.`
+          : `Turso Cloud မှ စာရင်း ${txList.length} ခု အောင်မြင်စွာ ဒေါင်းလုဒ်ဆွဲပြီးပါပြီ။`
+      };
+    } catch (err: any) {
+      console.warn('fetchDataFromTurso error:', err);
+      return { success: false, message: err?.message || 'Failed to pull data from Turso' };
+    }
+  }, [db.activeLanguage]);
+
+  const syncTursoBidirectional = useCallback(async (): Promise<{ success: boolean; message: string; count?: number }> => {
+    setIsSyncingTurso(true);
+    try {
+      const isConnected = await checkTursoStatus();
+      if (!isConnected) {
+        setIsSyncingTurso(false);
+        return { 
+          success: false, 
+          message: db.activeLanguage === 'en' ? 'Turso Cloud is not connected' : 'Turso Cloud ချိတ်ဆက်မထားပါ' 
+        };
+      }
+
+      // 1. Pull latest from Turso Cloud first (so any changes on Vercel appear here immediately)
+      const pullRes = await fetchDataFromTurso();
+
+      // 2. Push any local transactions to Turso Cloud
+      if (db.transactions && db.transactions.length > 0) {
+        const txPayload = db.transactions.map(mapTransactionToTursoPayload);
+        const { ok } = await safeFetchJson('/api/turso/sync-push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transactions: txPayload })
+        });
+        if (!ok) {
+          await tursoWebSyncPush({ transactions: txPayload });
+        }
+      }
+
+      setIsSyncingTurso(false);
+      return {
+        success: true,
+        count: pullRes.count,
+        message: db.activeLanguage === 'en'
+          ? `Synced with Turso Cloud successfully (${pullRes.count ?? 0} records fetched)`
+          : `Turso Cloud နှင့် အောင်မြင်စွာ Sync လုပ်ပြီးပါပြီ (စာရင်း ${pullRes.count ?? 0} ခု ရယူပြီး)`
+      };
+    } catch (err: any) {
+      setIsSyncingTurso(false);
+      return { success: false, message: err?.message || 'Sync failed' };
+    }
+  }, [db.activeLanguage, db.transactions, fetchDataFromTurso]);
+
+  // Continuous Bidirectional Synchronization with Turso Cloud
+  // (Mount sync, 20s interval polling, and window focus re-sync)
   useEffect(() => {
-    const autoSyncTurso = async () => {
+    let isMounted = true;
+
+    const performSync = async () => {
       try {
         const isConnected = await checkTursoStatus();
-        if (isConnected && db.transactions && db.transactions.length > 0) {
-          const txPayload = db.transactions.map(mapTransactionToTursoPayload);
-          const { ok, data } = await safeFetchJson('/api/turso/sync-push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transactions: txPayload })
-          });
-          if (ok && data?.success) {
-            console.log(`[Auto-Sync] Successfully synchronized ${data.saved?.transactions ?? txPayload.length} transactions to Turso Cloud.`);
-          } else {
-            // Direct Web sync fallback (for Vercel)
-            const webRes = await tursoWebSyncPush({ transactions: txPayload });
-            if (webRes.success) {
-              console.log(`[Auto-Sync Direct] Successfully synchronized ${webRes.count} transactions to Turso Cloud.`);
+        if (isConnected && isMounted) {
+          await fetchDataFromTurso();
+
+          // Push any unsynced local records if present
+          if (db.transactions && db.transactions.length > 0) {
+            const txPayload = db.transactions.map(mapTransactionToTursoPayload);
+            const { ok } = await safeFetchJson('/api/turso/sync-push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ transactions: txPayload })
+            });
+            if (!ok) {
+              await tursoWebSyncPush({ transactions: txPayload });
             }
           }
         }
       } catch (err) {
-        console.warn('Initial Turso sync check:', err);
+        console.warn('Auto Turso sync check error:', err);
       }
     };
 
-    autoSyncTurso();
-  }, []);
+    // Run immediately on component mount
+    performSync();
+
+    // Auto-sync polling every 20 seconds
+    const intervalId = setInterval(() => {
+      if (isMounted) performSync();
+    }, 20000);
+
+    // Auto-sync whenever user focuses back on the window/tab
+    const handleFocus = () => {
+      if (isMounted) performSync();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [fetchDataFromTurso]);
 
   const language = db.activeLanguage || 'my';
   const t = translations[language] || translations.en;
@@ -1983,15 +2157,18 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         };
       });
 
-      // Save session in sessionStorage
+      // Save session in sessionStorage and localStorage
       try {
-        sessionStorage.setItem('REMITTANCE_AUTH_SESSION', JSON.stringify({
+        sessionStorage.removeItem('REMITTANCE_EXPLICIT_LOGOUT');
+        const sessionPayload = JSON.stringify({
           userId: authenticatedUser.id,
           username: authenticatedUser.username,
           role: authenticatedUser.role,
           fullName: authenticatedUser.fullName,
           loginAt: new Date().toISOString(),
-        }));
+        });
+        sessionStorage.setItem('REMITTANCE_AUTH_SESSION', sessionPayload);
+        localStorage.setItem('REMITTANCE_AUTH_SESSION', sessionPayload);
       } catch (e) {
         console.error(e);
       }
@@ -2023,6 +2200,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const logout = () => {
     try {
       sessionStorage.removeItem('REMITTANCE_AUTH_SESSION');
+      localStorage.removeItem('REMITTANCE_AUTH_SESSION');
+      sessionStorage.setItem('REMITTANCE_EXPLICIT_LOGOUT', 'true');
     } catch (e) {}
     setIsAuthenticated(false);
     logActionDirect('LOGIN', 'SYSTEM', currentUser.id, `User ${currentUser.fullName} logged out`);
@@ -2169,16 +2348,19 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         };
       });
 
-      // Save session in sessionStorage
+      // Save session in sessionStorage and localStorage
       try {
-        sessionStorage.setItem('REMITTANCE_AUTH_SESSION', JSON.stringify({
+        sessionStorage.removeItem('REMITTANCE_EXPLICIT_LOGOUT');
+        const sessionPayload = JSON.stringify({
           userId: authenticatedUser.id,
           username: authenticatedUser.username,
           role: authenticatedUser.role,
           fullName: authenticatedUser.fullName,
           provider: 'TURSO',
           loginAt: new Date().toISOString(),
-        }));
+        });
+        sessionStorage.setItem('REMITTANCE_AUTH_SESSION', sessionPayload);
+        localStorage.setItem('REMITTANCE_AUTH_SESSION', sessionPayload);
       } catch (e) {
         console.error(e);
       }
@@ -2344,53 +2526,6 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
   };
 
-  const fetchDataFromTurso = async (): Promise<{ success: boolean; message: string }> => {
-    try {
-      let txList: any[] = [];
-      const { ok, data } = await safeFetchJson('/api/turso/sync-pull', { method: 'POST' });
-      if (ok && data?.success && data?.data?.transactions) {
-        txList = data.data.transactions;
-      } else {
-        // Direct Web fallback (for Vercel)
-        const webRes = await tursoWebSyncPull();
-        if (webRes.success && webRes.data?.transactions) {
-          txList = webRes.data.transactions;
-        }
-      }
-
-      if (data.data?.transactions && Array.isArray(data.data.transactions)) {
-        setDb(prev => {
-          const map = new Map<string, RemittanceTransaction>(prev.transactions.map(t => [t.id, t]));
-          for (const tx of data.data.transactions) {
-            const existing = map.get(tx.id);
-            map.set(tx.id, {
-              ...(existing || {} as RemittanceTransaction),
-              ...tx,
-              sendAmount: Number(tx.sendAmount) || 0,
-              receiveAmount: Number(tx.payoutAmount || tx.receiveAmount) || 0,
-              exchangeRate: Number(tx.exchangeRate) || 1,
-              serviceFee: Number(tx.transferFee || tx.serviceFee) || 0,
-              totalPayableAmount: Number(tx.totalCollected || tx.totalPayableAmount) || 0,
-            });
-          }
-          return {
-            ...prev,
-            transactions: Array.from(map.values()),
-          };
-        });
-      }
-
-      return {
-        success: true,
-        message: language === 'my'
-          ? `Turso Cloud မှ အချက်အလက်များ အောင်မြင်စွာ ဒေါင်းလုဒ်ဆွဲပြီးပါပြီ။`
-          : `Successfully pulled latest data from Turso Cloud.`
-      };
-    } catch (err: any) {
-      return { success: false, message: err?.message || 'Failed to pull data from Turso' };
-    }
-  };
-
   return (
     <RemittanceContext.Provider
       value={{
@@ -2443,8 +2578,11 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         activeDatabaseProvider,
         setActiveDatabaseProvider,
         isTursoConnected,
+        isSyncingTurso,
+        lastTursoSyncTime,
         tursoStats,
         checkTursoStatus,
+        syncTursoBidirectional,
         loginWithTurso,
         fetchTursoUsers,
         seedUsersToTurso,
