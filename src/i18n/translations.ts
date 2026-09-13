@@ -318,6 +318,14 @@ export const translations = {
     operationSuccessful: 'Operation completed successfully.',
     recordsFound: 'Records Found',
     noData: 'No records available.',
+    date: 'Date',
+    type: 'Type',
+    country: 'Country',
+    baseCurrency: 'Base Currency',
+    currency: 'Currency',
+    currencyPair: 'Currency Pair',
+    module: 'Module',
+    action: 'Action',
   },
   my: {
     // App & Header
@@ -636,5 +644,13 @@ export const translations = {
     operationSuccessful: 'လုပ်ဆောင်ချက် အောင်မြင်စွာ ပြီးမြောက်ပါသည်။',
     recordsFound: 'တွေ့ရှိသော မှတ်တမ်း အရေအတွက်',
     noData: 'မှတ်တမ်း မရှိသေးပါ။',
+    date: 'ရက်စွဲ',
+    type: 'အမျိုးအစား',
+    country: 'နိုင်ငံ',
+    baseCurrency: 'အခြေခံ ငွေကြေး',
+    currency: 'ငွေကြေး',
+    currencyPair: 'ငွေကြေးအတွဲ',
+    module: 'ကဏ္ဍ',
+    action: 'လုပ်ဆောင်ချက်',
   }
 };

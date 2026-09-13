@@ -785,10 +785,8 @@ export const OutwardEntryView: React.FC = () => {
 
       {/* Main Entry Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Section 1 & 2: Sender & Receiver Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* SENDER CARD */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+        {/* UPPER FRAME: Sender Information */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2">
                 <User className="w-4 h-4 text-emerald-400" />
@@ -1406,15 +1404,26 @@ export const OutwardEntryView: React.FC = () => {
             </div>
           </div>
 
-          {/* RECEIVER CARD */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center space-x-2">
-                <UserCheck2 className="w-4 h-4 text-sky-400" />
+        {/* LOWER FRAME: Receiver Information */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                <UserCheck2 className="w-4 h-4" />
+              </div>
+              <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
                   {t.receiverInformation}
                 </h3>
+                <p className="text-[11px] text-slate-400">
+                  {language === 'my' ? 'ငွေလက်ခံသူ၏ ကိုယ်ရေးအချက်အလက်များနှင့် လိပ်စာ' : 'Receiver identity, ID / Passport & destination country'}
+                </p>
               </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] font-semibold text-sky-400 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-500/20">
+                {language === 'my' ? 'ငွေလက်ခံသူ' : 'Receiver Details'}
+              </span>
               <select
                 onChange={(e) => handleSelectReceiverCustomer(e.target.value)}
                 className="bg-slate-800 text-slate-300 text-xs rounded-lg px-2.5 py-1 border border-slate-700 focus:outline-none"
@@ -1426,99 +1435,99 @@ export const OutwardEntryView: React.FC = () => {
                 ))}
               </select>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverName} *</label>
-                <input
-                  type="text"
-                  required
-                  value={receiverName}
-                  onChange={(e) => setReceiverName(e.target.value)}
-                  placeholder="e.g. Somchai Prasert / Ma Su Myat"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
-                />
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 text-xs">
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverName} *</label>
+              <input
+                type="text"
+                required
+                value={receiverName}
+                onChange={(e) => setReceiverName(e.target.value)}
+                placeholder="e.g. Somchai Prasert / Ma Su Myat"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+              />
+            </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverNameMm}</label>
-                <input
-                  type="text"
-                  value={receiverNameMm}
-                  onChange={(e) => setReceiverNameMm(e.target.value)}
-                  placeholder="e.g. မဆုမြတ်ထက်"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
-                />
-              </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverNameMm}</label>
+              <input
+                type="text"
+                value={receiverNameMm}
+                onChange={(e) => setReceiverNameMm(e.target.value)}
+                placeholder="e.g. မဆုမြတ်ထက်"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+              />
+            </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">
-                  {t.receiverNrc} {receiverMatch ? <span className="text-rose-400 font-bold">(FLAGGED)</span> : ''}
-                </label>
-                <input
-                  type="text"
-                  value={receiverNrc}
-                  onChange={(e) => setReceiverNrc(e.target.value)}
-                  placeholder="12/BAHANA(N)291840 or Foreign ID"
-                  className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:outline-none ${
-                    receiverMatch ? 'border-rose-500 bg-rose-950/30' : 'border-slate-700 focus:border-sky-500'
-                  }`}
-                />
-              </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">
+                {t.receiverNrc} {receiverMatch ? <span className="text-rose-400 font-bold">(FLAGGED)</span> : ''}
+              </label>
+              <input
+                type="text"
+                value={receiverNrc}
+                onChange={(e) => setReceiverNrc(e.target.value)}
+                placeholder="12/BAHANA(N)291840 or Foreign ID"
+                className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:outline-none ${
+                  receiverMatch ? 'border-rose-500 bg-rose-950/30' : 'border-slate-700 focus:border-sky-500'
+                }`}
+              />
+            </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverPassbook}</label>
-                <input
-                  type="text"
-                  value={receiverPassport}
-                  onChange={(e) => setReceiverPassport(e.target.value)}
-                  placeholder="Passport No / ID"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-sky-500 focus:outline-none"
-                />
-              </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverPassbook}</label>
+              <input
+                type="text"
+                value={receiverPassport}
+                onChange={(e) => setReceiverPassport(e.target.value)}
+                placeholder="Passport No / ID"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+              />
+            </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverPhone} *</label>
-                <input
-                  type="text"
-                  required
-                  value={receiverPhone}
-                  onChange={(e) => setReceiverPhone(e.target.value)}
-                  placeholder="+66-89-123-9988"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
-                />
-              </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverPhone} *</label>
+              <input
+                type="text"
+                required
+                value={receiverPhone}
+                onChange={(e) => setReceiverPhone(e.target.value)}
+                placeholder="+66-89-123-9988"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+              />
+            </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverCountry}</label>
-                <select
-                  value={receiverCountryCode}
-                  onChange={(e) => {
-                    setReceiverCountryCode(e.target.value);
-                    const country = db.countries.find(c => c.code === e.target.value);
-                    if (country && country.currencyCode) {
-                      setTargetCurrency(country.currencyCode);
-                    }
-                  }}
-                  disabled={scope === 'DOMESTIC'}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-sky-500 focus:outline-none disabled:opacity-60"
-                >
-                  {db.countries.map(c => (
-                    <option key={c.id} value={c.code}>{c.flagEmoji} {language === 'my' ? c.nameMm : c.nameEn}</option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverCountry}</label>
+              <select
+                value={receiverCountryCode}
+                onChange={(e) => {
+                  setReceiverCountryCode(e.target.value);
+                  const country = db.countries.find(c => c.code === e.target.value);
+                  if (country && country.currencyCode) {
+                    setTargetCurrency(country.currencyCode);
+                  }
+                }}
+                disabled={scope === 'DOMESTIC'}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-sky-500 focus:outline-none disabled:opacity-60"
+              >
+                {db.countries.map(c => (
+                  <option key={c.id} value={c.code}>{c.flagEmoji} {language === 'my' ? c.nameMm : c.nameEn}</option>
+                ))}
+              </select>
+            </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverAddress}</label>
-                <input
-                  type="text"
-                  value={receiverAddress}
-                  onChange={(e) => setReceiverAddress(e.target.value)}
-                  placeholder="Pratunam Market, Ratchathewi, Bangkok, Thailand"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
-                />
-              </div>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverAddress}</label>
+              <input
+                type="text"
+                value={receiverAddress}
+                onChange={(e) => setReceiverAddress(e.target.value)}
+                placeholder="Pratunam Market, Ratchathewi, Bangkok, Thailand"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+              />
             </div>
           </div>
         </div>

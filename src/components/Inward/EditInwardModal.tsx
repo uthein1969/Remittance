@@ -567,11 +567,11 @@ export const EditInwardModal: React.FC<EditInwardModalProps> = ({
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-emerald-500 focus:outline-none"
                 >
                   <option value="CASH_PICKUP">Cash Pickup (ငွေသားတိုက်ရိုက်ထုတ်ယူခြင်း)</option>
-                  <option value="BANK_TRANSFER">Bank Deposit (ဘဏ်စာရင်းသို့ လွှဲပြောင်းပေးခြင်း)</option>
+                  <option value="BANK_ACCOUNT">Bank Deposit (ဘဏ်စာရင်းသို့ လွှဲပြောင်းပေးခြင်း)</option>
                 </select>
               </div>
 
-              {formData.payoutMethod === 'BANK_TRANSFER' && (
+              {formData.payoutMethod === 'BANK_ACCOUNT' && (
                 <>
                   <div>
                     <label className="block text-slate-400 font-semibold mb-1">

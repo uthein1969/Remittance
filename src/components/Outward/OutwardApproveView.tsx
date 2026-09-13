@@ -227,9 +227,9 @@ export const OutwardApproveView: React.FC = () => {
       const depositUrl = createSampleDepositReceiptSvg(
         selectedTx.senderName,
         selectedTx.senderNrc || '12/BAHANA(N)184920',
-        `${selectedTx.sendAmount?.toLocaleString()} ${selectedTx.sendCurrency}`,
+        `${selectedTx.sendAmount?.toLocaleString()} ${selectedTx.sourceCurrency || 'MMK'}`,
         curBranch?.nameEn || 'Yangon Main Branch',
-        selectedTx.date ? formatToDDMMYYYY(selectedTx.date) : '07/09/2026'
+        selectedTx.createdDate ? formatToDDMMYYYY(selectedTx.createdDate) : '07/09/2026'
       );
       const depositName = `Deposit_Receipt_${selectedTx.transactionNo || Date.now().toString().slice(-4)}.svg`;
       updated = {

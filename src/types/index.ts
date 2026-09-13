@@ -12,6 +12,7 @@ export type RemittanceStatus =
   | 'APPROVED' 
   | 'REJECTED' 
   | 'PAID_OUT' 
+  | 'COMPLETED'
   | 'ON_HOLD'
   | 'CANCELLED';
 
@@ -102,6 +103,8 @@ export interface BlacklistEntry {
   id: string;
   fullNameEn: string;
   fullNameMm: string;
+  nameEn?: string; // alias for fullNameEn
+  nameMm?: string; // alias for fullNameMm
   nrcNumber: string; // Myanmar NRC e.g. 12/LKN(N)123456
   passportNumber?: string; // Passport No
   passbookNumber?: string; // Legacy alias
@@ -221,11 +224,14 @@ export interface RemittanceTransaction {
   proofDocumentUrl?: string;
   proofDocumentType?: string;
   proofDocumentSize?: string;
-  proofDocCategory?: 'NRC' | 'DEPOSIT_RECEIPT' | 'PASSPORT' | 'OTHER';
+  proofDocCategory?: 'NRC' | 'DEPOSIT_RECEIPT' | 'PASSPORT' | 'OTHER' | 'CUSTOM';
   
   // Security & Screening
   blacklistChecked: boolean;
-  blacklistAlert?: string;
+  blacklistAlert?: string | boolean;
+  receiverRelationship?: string;
+  date?: string;
+  sendCurrency?: string;
   
   // Maker-Checker
   creatorUserId: string;

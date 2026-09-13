@@ -25,13 +25,19 @@ import {
   Loader2,
   ExternalLink,
   MapPin,
-  Phone
+  Phone,
+  Upload,
+  Maximize2,
+  FileCheck,
+  Sparkles
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
-import { RemittanceTransaction, PayoutMethod, BlacklistEntry, Company } from '../../types';
+import { RemittanceTransaction, RemittanceScope, PayoutMethod, BlacklistEntry, Company } from '../../types';
 import { VoucherModal } from '../VoucherModal';
 import { uploadPassportToSupabase } from '../../lib/supabase';
+import { DocumentLightboxModal } from '../Common/DocumentLightboxModal';
+import { createSampleMyanmarNrcSvg, createSampleMyanmarNrcBackSvg } from '../../lib/sampleDocuments';
 
 export const InwardEntryView: React.FC = () => {
   const { 
@@ -46,6 +52,11 @@ export const InwardEntryView: React.FC = () => {
     saveCompany,
     deleteCompany
   } = useRemittance();
+
+  // Remittance Scope: 'INTERNATIONAL' | 'DOMESTIC'
+  const [scope, setScope] = useState<RemittanceScope>('INTERNATIONAL');
+  const [originBranchId, setOriginBranchId] = useState('BR-002');
+  const [senderNrc, setSenderNrc] = useState('');
 
   // Search MTCN
   const [searchMtcn, setSearchMtcn] = useState('');
@@ -79,6 +90,24 @@ export const InwardEntryView: React.FC = () => {
   const [isDraggingPassport, setIsDraggingPassport] = useState(false);
   const [showPassportPreviewModal, setShowPassportPreviewModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Synchronize country, currencies and rate when scope toggles
+  useEffect(() => {
+    if (scope === 'DOMESTIC') {
+      setSenderCountryCode('MM');
+      setSourceCurrency('MMK');
+      setTargetCurrency('MMK');
+      setExchangeRate(1);
+    } else {
+      if (senderCountryCode === 'MM') {
+        setSenderCountryCode('TH');
+        setSourceCurrency('THB');
+        setTargetCurrency('MMK');
+        const rate = getExchangeRate('THB', 'MMK') || 134.50;
+        setExchangeRate(rate);
+      }
+    }
+  }, [scope]);
 
   // Handle Sender Passport File Attachment (Persist to Supabase Storage & Base64 Database)
   const handlePassportFile = async (file: File) => {
@@ -168,6 +197,197 @@ export const InwardEntryView: React.FC = () => {
     setSenderPassportAttachmentSize('');
     setPassportUploadStatus(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Sender NRC Front & Back Attachments for Domestic Inward
+  const [senderNrcFrontDoc, setSenderNrcFrontDoc] = useState<{ url?: string; name?: string; type?: string; size?: string } | null>(null);
+  const [senderNrcBackDoc, setSenderNrcBackDoc] = useState<{ url?: string; name?: string; type?: string; size?: string } | null>(null);
+  const [isUploadingNrcFront, setIsUploadingNrcFront] = useState(false);
+  const [isUploadingNrcBack, setIsUploadingNrcBack] = useState(false);
+  const [isDraggingNrcFront, setIsDraggingNrcFront] = useState(false);
+  const [isDraggingNrcBack, setIsDraggingNrcBack] = useState(false);
+  const [nrcUploadStatus, setNrcUploadStatus] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
+  const [lightboxDoc, setLightboxDoc] = useState<{ 
+    isOpen: boolean; 
+    title: string; 
+    url?: string; 
+    name?: string; 
+    type?: string; 
+    size?: string; 
+    idNumber?: string 
+  } | null>(null);
+  const nrcFrontInputRef = useRef<HTMLInputElement>(null);
+  const nrcBackInputRef = useRef<HTMLInputElement>(null);
+
+  const handleNrcFile = async (file: File, side: 'front' | 'back') => {
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      setNrcUploadStatus({
+        type: 'error',
+        text: language === 'my' ? 'ဖိုင်အရွယ်အစား 15MB ထက် မကျော်ရပါ' : 'File size must be under 15MB'
+      });
+      return;
+    }
+
+    const fileSizeStr = file.size > 1024 * 1024 
+      ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` 
+      : `${(file.size / 1024).toFixed(1)} KB`;
+
+    const sideLabel = side === 'front' 
+      ? (language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (Front)' : 'NRC Front Side')
+      : (language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (Back)' : 'NRC Back Side');
+
+    if (side === 'front') setIsUploadingNrcFront(true);
+    else setIsUploadingNrcBack(true);
+
+    setNrcUploadStatus({
+      type: 'info',
+      text: language === 'my' ? `${sideLabel} ဖိုင် တင်ပို့နေပါသည်...` : `Uploading ${sideLabel}...`
+    });
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
+      const initialDoc = {
+        url: dataUrl,
+        name: file.name,
+        type: file.type || 'image/jpeg',
+        size: fileSizeStr
+      };
+
+      if (side === 'front') setSenderNrcFrontDoc(initialDoc);
+      else setSenderNrcBackDoc(initialDoc);
+
+      try {
+        const folder = side === 'front' ? 'inward_nrc_front' : 'inward_nrc_back';
+        const uploadRes = await uploadPassportToSupabase(db.supabaseConfig, file, folder);
+        if (uploadRes.success && uploadRes.url) {
+          const updatedDoc = {
+            url: uploadRes.url,
+            name: file.name,
+            type: file.type || 'image/jpeg',
+            size: fileSizeStr
+          };
+          if (side === 'front') setSenderNrcFrontDoc(updatedDoc);
+          else setSenderNrcBackDoc(updatedDoc);
+
+          setNrcUploadStatus({
+            type: 'success',
+            text: language === 'my'
+              ? `${sideLabel} Supabase Storage တွင် အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ`
+              : `${sideLabel} uploaded & synced successfully`
+          });
+        } else {
+          setNrcUploadStatus({
+            type: 'success',
+            text: language === 'my'
+              ? `${sideLabel} ပူးတွဲစာရင်းသွင်းရန် အသင့်ဖြစ်ပါပြီ`
+              : `${sideLabel} attached ready for submission`
+          });
+        }
+      } catch {
+        setNrcUploadStatus({
+          type: 'info',
+          text: language === 'my'
+            ? `${sideLabel} ပူးတွဲပြီးပါပြီ`
+            : `${sideLabel} attached successfully`
+        });
+      } finally {
+        if (side === 'front') setIsUploadingNrcFront(false);
+        else setIsUploadingNrcBack(false);
+      }
+    };
+    reader.onerror = () => {
+      if (side === 'front') setIsUploadingNrcFront(false);
+      else setIsUploadingNrcBack(false);
+      setNrcUploadStatus({
+        type: 'error',
+        text: language === 'my' ? 'ဖိုင်ဖတ်ရှု၍ မရပါ' : 'Failed to read file'
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAttachSampleNrcFront = () => {
+    const nrcVal = senderNrc || '12/BAHANA(N)184920';
+    const nameVal = senderName || 'U ZAW WIN HTET';
+    const url = createSampleMyanmarNrcSvg(nrcVal, 'ဦးဇော်ဝင်းထက်', nameVal, '14/07/1988', 'U TIN AUNG');
+    const name = `NRC_Front_${nrcVal.replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
+    setSenderNrcFrontDoc({
+      url,
+      name,
+      type: 'image/svg+xml',
+      size: '18.4 KB'
+    });
+    if (!senderNrc) setSenderNrc(nrcVal);
+    setNrcUploadStatus({
+      type: 'success',
+      text: language === 'my' 
+        ? 'လွှဲပို့သူ၏ မှတ်ပုံတင် အရှေ့ခြမ်း (Front) နမူနာ ပူးတွဲပြီးပါပြီ' 
+        : "Sender's NRC Front sample attached successfully"
+    });
+    setTimeout(() => setNrcUploadStatus(null), 4000);
+  };
+
+  const handleAttachSampleNrcBack = () => {
+    const url = createSampleMyanmarNrcBackSvg('ကုမ္ပဏီဝန်ထမ်း (Company Staff)', senderAddress || 'အမှတ် (၁၂)၊ ဗဟန်းလမ်း၊ ဗဟန်းမြို့နယ်၊ ရန်ကုန်');
+    const nrcVal = senderNrc || '12/BAHANA(N)184920';
+    const name = `NRC_Back_${nrcVal.replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
+    setSenderNrcBackDoc({
+      url,
+      name,
+      type: 'image/svg+xml',
+      size: '16.2 KB'
+    });
+    setNrcUploadStatus({
+      type: 'success',
+      text: language === 'my' 
+        ? 'လွှဲပို့သူ၏ မှတ်ပုံတင် အနောက်ခြမ်း (Back) နမူနာ ပူးတွဲပြီးပါပြီ' 
+        : "Sender's NRC Back sample attached successfully"
+    });
+    setTimeout(() => setNrcUploadStatus(null), 4000);
+  };
+
+  const handleAttachBothSampleNrc = () => {
+    handleAttachSampleNrcFront();
+    handleAttachSampleNrcBack();
+    setNrcUploadStatus({
+      type: 'success',
+      text: language === 'my' 
+        ? 'လွှဲပို့သူ၏ မှတ်ပုံတင် ကတ်ပြား အရှေ့နှင့် အနောက်ခြမ်း (Front & Back) အပြည့်အစုံ နမူနာ တွဲပြီးပါပြီ' 
+        : "Both Sender's NRC Front and Back samples attached successfully"
+    });
+    setTimeout(() => setNrcUploadStatus(null), 4500);
+  };
+
+  const handleRemoveNrcDoc = (side: 'front' | 'back') => {
+    if (side === 'front') {
+      setSenderNrcFrontDoc(null);
+      if (nrcFrontInputRef.current) nrcFrontInputRef.current.value = '';
+    } else {
+      setSenderNrcBackDoc(null);
+      if (nrcBackInputRef.current) nrcBackInputRef.current.value = '';
+    }
+  };
+
+  const openLightbox = (doc: {
+    title: string;
+    url?: string;
+    name?: string;
+    type?: string;
+    size?: string;
+    idNumber?: string;
+  }) => {
+    setLightboxDoc({
+      isOpen: true,
+      title: doc.title,
+      url: doc.url,
+      name: doc.name,
+      type: doc.type,
+      size: doc.size,
+      idNumber: doc.idNumber
+    });
   };
   
   // Financials
@@ -356,6 +576,26 @@ export const InwardEntryView: React.FC = () => {
           : `MTCN ${found.mtcn} found in system! Details loaded.`
       });
       setMtcn(found.mtcn);
+      if (found.scope) setScope(found.scope);
+      if (found.senderNrc) setSenderNrc(found.senderNrc);
+      const nrcFront = found.senderNrcFrontAttachment || found.senderNrcAttachment;
+      if (nrcFront) {
+        setSenderNrcFrontDoc({
+          url: nrcFront,
+          name: found.senderNrcFrontAttachmentName || found.senderNrcAttachmentName || 'Sender_NRC_Front',
+          type: found.senderNrcFrontAttachmentType || found.senderNrcAttachmentType || 'image/jpeg',
+          size: found.senderNrcFrontAttachmentSize || found.senderNrcAttachmentSize || 'Attached'
+        });
+      }
+      if (found.senderNrcBackAttachment) {
+        setSenderNrcBackDoc({
+          url: found.senderNrcBackAttachment,
+          name: found.senderNrcBackAttachmentName || 'Sender_NRC_Back',
+          type: found.senderNrcBackAttachmentType || 'image/jpeg',
+          size: found.senderNrcBackAttachmentSize || 'Attached'
+        });
+      }
+      if (found.sendingBranchId) setOriginBranchId(found.sendingBranchId);
       setSenderName(found.senderName);
       setSenderPhone(found.senderPhone);
       setSenderAddress(found.senderAddress);
@@ -384,8 +624,8 @@ export const InwardEntryView: React.FC = () => {
       setLookupMessage({
         type: 'error',
         text: language === 'my' 
-          ? `MTCN (${searchMtcn}) မတွေ့ရှိပါ။ ပြည်ပမိတ်ဖက်လိုင်းသစ်အဖြစ် လက်ဖြင့် စာရင်းသွင်းနိုင်ပါသည်။` 
-          : `MTCN (${searchMtcn}) not in local database. You can manually enter partner inbound remittance claim.`
+          ? `MTCN (${searchMtcn}) မတွေ့ရှိပါ။ လိုင်းသစ်အဖြစ် လက်ဖြင့် စာရင်းသွင်းနိုင်ပါသည်။` 
+          : `MTCN (${searchMtcn}) not in local database. You can manually enter inbound remittance claim.`
       });
       setMtcn(searchMtcn.trim());
     }
@@ -398,19 +638,23 @@ export const InwardEntryView: React.FC = () => {
   }, [receiverNrc, receiverPassport, receiverName, checkBlacklist]);
 
   React.useEffect(() => {
-    const match = checkBlacklist('', '', senderName);
+    const match = checkBlacklist(scope === 'DOMESTIC' ? senderNrc : '', senderPassport, senderName);
     setSenderMatch(match);
-  }, [senderName, checkBlacklist]);
+  }, [scope, senderNrc, senderPassport, senderName, checkBlacklist]);
 
   // Recalculate exchange rate
   React.useEffect(() => {
-    if (sourceCurrency !== 'MMK') {
+    if (scope === 'DOMESTIC') {
+      setExchangeRate(1);
+    } else if (sourceCurrency !== 'MMK') {
       const rate = getExchangeRate(sourceCurrency, 'MMK');
-      setExchangeRate(rate);
+      if (rate > 0) setExchangeRate(rate);
     }
-  }, [sourceCurrency, getExchangeRate]);
+  }, [scope, sourceCurrency, getExchangeRate]);
 
-  const calculatedPayoutMMK = Number((sendAmount * exchangeRate).toFixed(2));
+  const calculatedPayoutMMK = scope === 'DOMESTIC'
+    ? Math.round(Number(sendAmount || 0))
+    : Number((sendAmount * exchangeRate).toFixed(2));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -436,11 +680,24 @@ export const InwardEntryView: React.FC = () => {
     try {
       const newTx = await createInwardRemittance({
         mtcn: mtcn || undefined,
-        scope: 'INTERNATIONAL',
-        senderName: senderName || 'Overseas Remitter',
-        senderPhone: senderPhone || '+66-00-000-000',
-        senderAddress: senderAddress || 'Overseas',
-        senderCountryCode,
+        scope,
+        senderName: senderName || (scope === 'DOMESTIC' ? 'Local Remitter' : 'Overseas Remitter'),
+        senderPhone: senderPhone || (scope === 'DOMESTIC' ? '09-000000000' : '+66-00-000-000'),
+        senderAddress: senderAddress || (scope === 'DOMESTIC' ? 'Myanmar' : 'Overseas'),
+        senderCountryCode: scope === 'DOMESTIC' ? 'MM' : senderCountryCode,
+        senderNrc: scope === 'DOMESTIC' ? senderNrc : undefined,
+        senderNrcAttachment: senderNrcFrontDoc?.url || undefined,
+        senderNrcAttachmentName: senderNrcFrontDoc?.name || undefined,
+        senderNrcAttachmentType: senderNrcFrontDoc?.type || undefined,
+        senderNrcAttachmentSize: senderNrcFrontDoc?.size || undefined,
+        senderNrcFrontAttachment: senderNrcFrontDoc?.url || undefined,
+        senderNrcFrontAttachmentName: senderNrcFrontDoc?.name || undefined,
+        senderNrcFrontAttachmentType: senderNrcFrontDoc?.type || undefined,
+        senderNrcFrontAttachmentSize: senderNrcFrontDoc?.size || undefined,
+        senderNrcBackAttachment: senderNrcBackDoc?.url || undefined,
+        senderNrcBackAttachmentName: senderNrcBackDoc?.name || undefined,
+        senderNrcBackAttachmentType: senderNrcBackDoc?.type || undefined,
+        senderNrcBackAttachmentSize: senderNrcBackDoc?.size || undefined,
         senderPassport: senderPassport || undefined,
         senderPassportAttachment: senderPassportAttachment || undefined,
         senderPassportAttachmentName: senderPassportAttachmentName || undefined,
@@ -459,10 +716,10 @@ export const InwardEntryView: React.FC = () => {
         receiverPhone,
         receiverAddress,
         receiverCountryCode: 'MM',
-        sourceCurrency,
+        sourceCurrency: scope === 'DOMESTIC' ? 'MMK' : sourceCurrency,
         targetCurrency: 'MMK',
         sendAmount: Number(sendAmount),
-        exchangeRate: Number(exchangeRate),
+        exchangeRate: scope === 'DOMESTIC' ? 1 : Number(exchangeRate),
         receiveAmount: Number(calculatedPayoutMMK),
         serviceFee: 0,
         commissionFee: 0,
@@ -470,10 +727,11 @@ export const InwardEntryView: React.FC = () => {
         payoutMethod,
         payoutBankName: payoutMethod === 'BANK_ACCOUNT' ? payoutBankName : undefined,
         payoutAccountNumber: payoutMethod === 'BANK_ACCOUNT' ? payoutAccountNumber : undefined,
+        sendingBranchId: scope === 'DOMESTIC' ? originBranchId : 'BR-001',
         payoutBranchId,
-        partnerCompanyId,
+        partnerCompanyId: scope === 'DOMESTIC' ? undefined : (partnerCompanyId || undefined),
         purposeId,
-        purposeName: selectedPurpose ? (language === 'my' ? selectedPurpose.nameMm : selectedPurpose.nameEn) : 'Labor Remittance',
+        purposeName: selectedPurpose ? (language === 'my' ? selectedPurpose.nameMm : selectedPurpose.nameEn) : (scope === 'DOMESTIC' ? 'Local Remittance' : 'Labor Remittance'),
         senderNote,
         status: 'PENDING_APPROVAL',
       });
@@ -489,8 +747,8 @@ export const InwardEntryView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Title */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Title & Scope Tabs */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
             <span className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
@@ -505,14 +763,67 @@ export const InwardEntryView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
-          <Building2 className="w-4 h-4 text-sky-400" />
-          <span>{t.payoutBranch}: </span>
-          <strong className="text-white font-semibold">
-            {db.branches.find(b => b.id === payoutBranchId)?.nameEn || 'Yangon HQ'} ({db.branches.find(b => b.id === payoutBranchId)?.code || payoutBranchId})
-          </strong>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
+            <Building2 className="w-4 h-4 text-sky-400" />
+            <span>{t.payoutBranch}: </span>
+            <strong className="text-white font-semibold">
+              {db.branches.find(b => b.id === payoutBranchId)?.nameEn || 'Yangon HQ'} ({db.branches.find(b => b.id === payoutBranchId)?.code || payoutBranchId})
+            </strong>
+          </div>
+
+          <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
+            <button
+              type="button"
+              onClick={() => setScope('INTERNATIONAL')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                scope === 'INTERNATIONAL'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🌐</span>
+              <span>{language === 'my' ? 'ပြည်ပ (International)' : t.international}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScope('DOMESTIC')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                scope === 'DOMESTIC'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>🇲🇲</span>
+              <span>{language === 'my' ? 'ပြည်တွင်း (Domestic)' : t.domestic}</span>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Domestic Process Notice Banner */}
+      {scope === 'DOMESTIC' && (
+        <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-2xl p-4 flex items-center justify-between gap-3 text-xs text-emerald-300 shadow-sm animate-in fade-in">
+          <div className="flex items-center space-x-3">
+            <span className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg flex-shrink-0">
+              🇲🇲
+            </span>
+            <div>
+              <div className="font-bold text-emerald-200">
+                {language === 'my' ? 'ပြည်တွင်း ငွေလွှဲထုတ်ယူမှု လုပ်ငန်းစဉ် (Domestic Local Remittance Process)' : 'Domestic Remittance Payout Process (Myanmar Kyat)'}
+              </div>
+              <div className="text-[11px] text-emerald-400/90 mt-0.5">
+                {language === 'my' 
+                  ? 'မြန်မာနိုင်ငံအတွင်း ဘဏ်ခွဲအချင်းချင်း သို့မဟုတ် ပြည်တွင်းဌာနများမှ ပေးပို့ငွေအား မြန်မာကျပ်ငွေ (MMK) ဖြင့် 1:1 တိုက်ရိုက်ထုတ်ယူပေးချေခြင်း ဖြစ်ပါသည်'
+                  : 'Domestic local remittance claim across domestic branches in Myanmar Kyat (1:1 Fixed MMK Rate)'}
+              </div>
+            </div>
+          </div>
+          <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-mono text-[11px] font-bold">
+            DOMESTIC • MMK
+          </span>
+        </div>
+      )}
 
       {/* MTCN Lookup Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-3">
@@ -569,263 +880,208 @@ export const InwardEntryView: React.FC = () => {
 
       {/* Main Entry Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Beneficiary Receiver Info */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center space-x-2 pb-3 border-b border-slate-800">
-              <UserCheck2 className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                {language === 'my' ? 'ငွေထုတ်ယူမည့် ဖောက်သည် အချက်အလက်' : 'Beneficiary / Receiver Details'}
-              </h3>
+        {/* UPPER FRAME: Domestic Sender & Origin Branch / Overseas Sender & Partner */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <User className="w-4 h-4 text-sky-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  {scope === 'DOMESTIC' 
+                    ? (language === 'my' ? 'ပြည်တွင်း လွှဲပို့သူ နှင့် မူလဘဏ်ခွဲ' : 'Domestic Sender & Origin Branch')
+                    : (language === 'my' ? 'ပြည်ပ လွှဲပို့သူ နှင့် မိတ်ဖက်အဖွဲ့အစည်း' : 'Overseas Sender & Partner')}
+                </h3>
+              </div>
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                scope === 'DOMESTIC'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30'
+              }`}>
+                {scope === 'DOMESTIC' ? '🇲🇲 DOMESTIC' : '🌐 INTERNATIONAL'}
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverName} *</label>
-                <input
-                  type="text"
-                  required
-                  value={receiverName}
-                  onChange={(e) => setReceiverName(e.target.value)}
-                  placeholder="e.g. Ko Aung Kyaw Moe"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverNameMm}</label>
-                <input
-                  type="text"
-                  value={receiverNameMm}
-                  onChange={(e) => setReceiverNameMm(e.target.value)}
-                  placeholder="e.g. ကိုအောင်ကျော်မိုး"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              {/* Beneficiary Myanmar NRC - Dropdown List with Manual Entry option */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-slate-400 font-medium">
-                    {t.beneficiaryNrc} * {receiverMatch ? <span className="text-rose-400 font-bold">(BLACKLIST MATCH)</span> : ''}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsManualNrc(!isManualNrc);
-                      if (!isManualNrc) setReceiverNrc('');
-                    }}
-                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-normal transition-colors"
-                  >
-                    {isManualNrc 
-                      ? (language === 'my' ? '← စာရင်းမှ ရွေးမည်' : '← Select from List') 
-                      : (language === 'my' ? '+ အသစ်ရိုက်မည်' : '+ Enter Manual')}
-                  </button>
-                </div>
-
-                {isManualNrc ? (
-                  <input
-                    type="text"
-                    required
-                    value={receiverNrc}
-                    onChange={(e) => setReceiverNrc(e.target.value)}
-                    placeholder="12/DAGANA(N)019482"
-                    className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:outline-none ${
-                      receiverMatch ? 'border-rose-500 bg-rose-950/30 text-rose-200' : 'border-slate-700 focus:border-indigo-500'
-                    }`}
-                  />
-                ) : (
-                  <select
-                    required
-                    value={receiverNrc}
-                    onChange={(e) => handleSelectNrc(e.target.value)}
-                    className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono focus:outline-none ${
-                      receiverMatch ? 'border-rose-500 bg-rose-950/30 text-rose-200' : 'border-slate-700 focus:border-indigo-500'
-                    }`}
-                  >
-                    <option value="">
-                      -- {language === 'my' ? 'မှတ်ပုံတင် ရွေးချယ်ပါ (Select Beneficiary NRC)' : 'Select Beneficiary NRC'} --
-                    </option>
-                    {beneficiaryOptions.map(b => (
-                      <option key={b.nrc} value={b.nrc}>
-                        {b.nrc} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
-                      </option>
-                    ))}
-                    <option value="__NEW_NRC__">
-                      + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom NRC)...' : 'Enter Custom NRC...'}
-                    </option>
-                  </select>
-                )}
-              </div>
-
-              {/* Passport No - Dropdown List with Manual Entry option */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-slate-400 font-medium">
-                    {t.beneficiaryPassbook}
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsManualPassport(!isManualPassport);
-                      if (!isManualPassport) setReceiverPassport('');
-                    }}
-                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-normal transition-colors"
-                  >
-                    {isManualPassport 
-                      ? (language === 'my' ? '← စာရင်းမှ ရွေးမည်' : '← Select from List') 
-                      : (language === 'my' ? '+ အသစ်ရိုက်မည်' : '+ Enter Manual')}
-                  </button>
-                </div>
-
-                {isManualPassport ? (
-                  <input
-                    type="text"
-                    value={receiverPassport}
-                    onChange={(e) => setReceiverPassport(e.target.value)}
-                    placeholder="MB-102948"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                  />
-                ) : (
-                  <select
-                    value={receiverPassport}
-                    onChange={(e) => handleSelectPassport(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none"
-                  >
-                    <option value="">
-                      -- {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် ရွေးချယ်ပါ' : 'Select Passport No'} --
-                    </option>
-                    {beneficiaryOptions.filter(b => b.passport).map(b => (
-                      <option key={b.passport} value={b.passport}>
-                        {b.passport} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
-                      </option>
-                    ))}
-                    <option value="__NEW_PASSPORT__">
-                      + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom Passport)...' : 'Enter Custom Passport...'}
-                    </option>
-                  </select>
-                )}
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverPhone} *</label>
-                <input
-                  type="text"
-                  required
-                  value={receiverPhone}
-                  onChange={(e) => setReceiverPhone(e.target.value)}
-                  placeholder="09-974820194"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-slate-400 mb-1 font-medium">{t.receiverAddress}</label>
-                <input
-                  type="text"
-                  value={receiverAddress}
-                  onChange={(e) => setReceiverAddress(e.target.value)}
-                  placeholder="Room 402, Building 8, South Dagon, Yangon"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Sender & Origin Info */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center space-x-2 pb-3 border-b border-slate-800">
-              <User className="w-4 h-4 text-sky-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                {language === 'my' ? 'ပြည်ပ လွှဲပို့သူ နှင့် မိတ်ဖက်အဖွဲ့အစည်း' : 'Overseas Sender & Partner'}
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.senderName}</label>
+                <label className="block text-slate-400 mb-1 font-medium">{t.senderName} *</label>
                 <input
                   type="text"
                   value={senderName}
                   onChange={(e) => setSenderName(e.target.value)}
-                  placeholder="e.g. U Min Hein Thu"
+                  placeholder={scope === 'DOMESTIC' ? "ဥပမာ - ဦးမောင်မောင် (U Maung Maung)" : "e.g. U Min Hein Thu"}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-medium">{t.senderCountry}</label>
-                <select
-                  value={senderCountryCode}
-                  onChange={(e) => {
-                    setSenderCountryCode(e.target.value);
-                    const country = db.countries.find(c => c.code === e.target.value);
-                    if (country && country.currencyCode) setSourceCurrency(country.currencyCode);
-                  }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
-                >
-                  {db.countries.filter(c => !c.isDomestic).map(c => (
-                    <option key={c.id} value={c.code}>{c.flagEmoji} {language === 'my' ? c.nameMm : c.nameEn}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Partner Bank / Agent with Add New, Edit, Delete */}
-              <div className="sm:col-span-2">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-slate-400 font-medium">
-                    {t.partnerCompany} *
-                  </label>
-                  <div className="flex items-center space-x-1">
-                    <button
-                      type="button"
-                      onClick={handleOpenAddPartner}
-                      className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
-                      title={language === 'my' ? 'မိတ်ဖက်အသစ် ထည့်သွင်းမည်' : 'Add New Partner Bank/Agent'}
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>{language === 'my' ? 'အသစ်ထည့်' : 'Add New'}</span>
-                    </button>
-                    {partnerCompanyId && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleOpenEditPartner}
-                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
-                          title={language === 'my' ? 'လက်ရှိမိတ်ဖက် ပြင်ဆင်မည်' : 'Edit Selected Partner'}
-                        >
-                          <Edit2 className="w-3 h-3" />
-                          <span>{language === 'my' ? 'ပြင်မည်' : 'Edit'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPartnerDeleteConfirmId(partnerCompanyId)}
-                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-950 hover:bg-rose-900 border border-rose-700/50 text-rose-300 transition-colors"
-                          title={language === 'my' ? 'လက်ရှိမိတ်ဖက် ဖျက်ပစ်မည်' : 'Delete Selected Partner'}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>{language === 'my' ? 'ဖျက်မည်' : 'Delete'}</span>
-                        </button>
-                      </>
-                    )}
+              {scope === 'DOMESTIC' ? (
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">{t.senderCountry}</label>
+                  <div className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-emerald-300 font-medium flex items-center space-x-2">
+                    <span>🇲🇲</span>
+                    <span>{language === 'my' ? 'မြန်မာ (ပြည်တွင်း)' : 'Myanmar (Domestic)'}</span>
                   </div>
                 </div>
+              ) : (
+                <div>
+                  <label className="block text-slate-400 mb-1 font-medium">{t.senderCountry}</label>
+                  <select
+                    value={senderCountryCode}
+                    onChange={(e) => {
+                      setSenderCountryCode(e.target.value);
+                      const country = db.countries.find(c => c.code === e.target.value);
+                      if (country && country.currencyCode) setSourceCurrency(country.currencyCode);
+                    }}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    {db.countries.filter(c => !c.isDomestic).map(c => (
+                      <option key={c.id} value={c.code}>{c.flagEmoji} {language === 'my' ? c.nameMm : c.nameEn}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-                <select
-                  value={partnerCompanyId}
-                  onChange={(e) => setPartnerCompanyId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
-                >
-                  {db.companies.map(c => {
-                    const country = db.countries.find(cty => cty.code === c.countryCode);
+              {/* Sender NRC for Domestic scope */}
+              {scope === 'DOMESTIC' && (
+                <div className="sm:col-span-2 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-slate-400 font-medium">
+                      {language === 'my' ? 'လွှဲပို့သူ၏ မှတ်ပုံတင်အမှတ် (Sender NRC)' : 'Sender National Registration Card (NRC)'}
+                    </label>
+                    {senderMatch && (
+                      <span className="text-rose-400 text-[10px] font-bold flex items-center space-x-1">
+                        <AlertCircle className="w-3 h-3" />
+                        <span>Blacklist Match!</span>
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={senderNrc}
+                    onChange={(e) => setSenderNrc(e.target.value)}
+                    placeholder="12/LKN(N)123456"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none font-mono"
+                  />
+                </div>
+              )}
+
+              {/* Domestic: Sending / Origin Branch vs International: Partner Bank / Agent */}
+              {scope === 'DOMESTIC' ? (
+                <div className="sm:col-span-2 space-y-2">
+                  <label className="block text-slate-400 font-medium">
+                    {language === 'my' ? 'ငွေလွှဲပေးပို့ခဲ့သည့် မူလဘဏ်ခွဲ (Origin Sending Branch)' : 'Origin Sending Branch'} *
+                  </label>
+                  <select
+                    value={originBranchId}
+                    onChange={(e) => setOriginBranchId(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none font-medium"
+                  >
+                    {db.branches.map(b => {
+                      const country = db.countries.find(c => c.code === (b.countryCode || 'MM'));
+                      return (
+                        <option key={b.id} value={b.id}>
+                          {b.code} - {b.nameEn} ({country?.flagEmoji || '🇲🇲'} {b.city})
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {/* Sending Branch Details Card */}
+                  {(() => {
+                    const sendBranch = db.branches.find(b => b.id === originBranchId) || db.branches[0];
+                    if (!sendBranch) return null;
                     return (
-                      <option key={c.id} value={c.id}>
-                        [{c.code}] {c.nameEn} ({country?.flagEmoji || '🌐'} {c.type} - {c.countryCode})
-                      </option>
+                      <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div className="flex items-start space-x-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <Building className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <span className="font-bold text-white text-xs">
+                                {language === 'my' && sendBranch.nameMm ? `${sendBranch.nameMm} (${sendBranch.nameEn})` : sendBranch.nameEn}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px] font-bold">
+                                {sendBranch.code}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-400 text-[11px] mt-1">
+                              <span className="flex items-center space-x-1">
+                                <MapPin className="w-3 h-3 text-emerald-400" />
+                                <span>{sendBranch.address}, {sendBranch.city}</span>
+                              </span>
+                              <span className="flex items-center space-x-1">
+                                <Phone className="w-3 h-3 text-emerald-400" />
+                                <span className="font-mono text-slate-300">{sendBranch.phone}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right text-[11px] text-slate-400 shrink-0 border-t sm:border-t-0 pt-1.5 sm:pt-0 sm:border-l border-slate-800 sm:pl-3">
+                          <span className="text-slate-500 block">{language === 'my' ? 'ဘဏ်ခွဲ မန်နေဂျာ' : 'Branch Manager'}</span>
+                          <span className="font-bold text-slate-200">{sendBranch.managerName}</span>
+                        </div>
+                      </div>
                     );
-                  })}
-                </select>
-              </div>
+                  })()}
+                </div>
+              ) : (
+                /* Partner Bank / Agent with Add New, Edit, Delete */
+                <div className="sm:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-400 font-medium">
+                      {t.partnerCompany} *
+                    </label>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        type="button"
+                        onClick={handleOpenAddPartner}
+                        className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                        title={language === 'my' ? 'မိတ်ဖက်အသစ် ထည့်သွင်းမည်' : 'Add New Partner Bank/Agent'}
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{language === 'my' ? 'အသစ်ထည့်' : 'Add New'}</span>
+                      </button>
+                      {partnerCompanyId && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleOpenEditPartner}
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
+                            title={language === 'my' ? 'လက်ရှိမိတ်ဖက် ပြင်ဆင်မည်' : 'Edit Selected Partner'}
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ပြင်မည်' : 'Edit'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPartnerDeleteConfirmId(partnerCompanyId)}
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-950 hover:bg-rose-900 border border-rose-700/50 text-rose-300 transition-colors"
+                            title={language === 'my' ? 'လက်ရှိမိတ်ဖက် ဖျက်ပစ်မည်' : 'Delete Selected Partner'}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ဖျက်မည်' : 'Delete'}</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <select
+                    value={partnerCompanyId}
+                    onChange={(e) => setPartnerCompanyId(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:border-indigo-500 focus:outline-none"
+                  >
+                    {db.companies.map(c => {
+                      const country = db.countries.find(cty => cty.code === c.countryCode);
+                      return (
+                        <option key={c.id} value={c.id}>
+                          [{c.code}] {c.nameEn} ({country?.flagEmoji || '🌐'} {c.type} - {c.countryCode})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
 
               {/* Partner Delete Confirmation alert if active */}
               {partnerDeleteConfirmId && (
@@ -942,14 +1198,16 @@ export const InwardEntryView: React.FC = () => {
                   type="text"
                   value={senderPhone}
                   onChange={(e) => setSenderPhone(e.target.value)}
-                  placeholder="+60-11-2948-1928"
+                  placeholder={scope === 'DOMESTIC' ? "09-420011223" : "+60-11-2948-1928"}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-slate-400 mb-1 font-medium">
-                  {language === 'my' ? 'ငွေလွှဲသူ နိုင်ငံကူးလက်မှတ် (Passport No)' : 'Sender Passport No'}
+                  {scope === 'DOMESTIC' 
+                    ? (language === 'my' ? 'လွှဲပို့သူ၏ နိုင်ငံကူးလက်မှတ် (ရှိလျှင်)' : "Sender's Passport (Optional)") 
+                    : (language === 'my' ? 'ငွေလွှဲသူ နိုင်ငံကူးလက်မှတ် (Passport No)' : 'Sender Passport No')}
                 </label>
                 <input
                   type="text"
@@ -960,135 +1218,661 @@ export const InwardEntryView: React.FC = () => {
                 />
               </div>
 
-              {/* Sender Passport Attachment (Supabase Storage / Database) */}
-              <div className="sm:col-span-2 pt-2 border-t border-slate-800">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
-                  <label className="flex items-center space-x-1.5 text-slate-200 font-semibold text-xs">
-                    <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>
-                      {language === 'my' 
-                        ? 'ငွေလွှဲသူ၏ နိုင်ငံကူးလက်မှတ် / Passport ပူးတွဲစာရွက်စာတမ်း (Supabase)' 
-                        : "Overseas Sender's Passport Attachment (Supabase)"}
-                    </span>
-                  </label>
-                  <span className="inline-flex items-center space-x-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span className="font-mono">☁️ Supabase Sync</span>
-                  </span>
-                </div>
-
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handlePassportFileChange}
-                  accept="image/*,application/pdf"
-                  className="hidden"
-                  id="sender-passport-upload-input"
-                />
-
-                {!senderPassportAttachment ? (
-                  <div
-                    onDragOver={(e) => { e.preventDefault(); setIsDraggingPassport(true); }}
-                    onDragLeave={() => setIsDraggingPassport(false)}
-                    onDrop={handlePassportDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center gap-3 ${
-                      isDraggingPassport 
-                        ? 'border-indigo-400 bg-indigo-500/10' 
-                        : 'border-slate-700 hover:border-indigo-500/60 bg-slate-800/40 hover:bg-slate-800/80'
-                    }`}
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
-                      {isUploadingPassport ? (
-                        <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
-                      ) : (
-                        <UploadCloud className="w-5 h-5" />
-                      )}
+              {/* SENDER NRC ATTACHMENTS (FRONT & BACK) FOR DOMESTIC INWARD */}
+              {scope === 'DOMESTIC' && (
+                <div className="sm:col-span-2 pt-3 border-t border-slate-800 space-y-3">
+                  {/* Section Header with Quick Actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2">
+                      <FileCheck className="w-4 h-4 text-emerald-400" />
+                      <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                        {language === 'my' 
+                          ? 'လွှဲပို့သူ၏ မှတ်ပုံတင် အထောက်အထား (NRC Front & Back Documents)' 
+                          : "Sender's NRC Documents (Front & Back Sides)"}
+                      </span>
                     </div>
-                    <div className="text-center sm:text-left">
-                      <p className="text-xs font-semibold text-slate-200">
-                        {language === 'my' 
-                          ? 'ငွေလွှဲသူ၏ Passport ဓာတ်ပုံ သို့မဟုတ် PDF တွဲရန် နှိပ်ပါ (သို့မဟုတ် ဖိုင်ဆွဲထည့်ပါ)' 
-                          : "Click to upload or drag & drop Sender's Passport (Image / PDF)"}
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {language === 'my' 
-                          ? 'JPG, PNG, PDF, WEBP (အများဆုံး 15MB) • Supabase Storage & Database တွင် အလိုအလျောက် သိမ်းဆည်းပါမည်' 
-                          : 'Supports JPG, PNG, PDF up to 15MB • Persisted to Supabase'}
-                      </p>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAttachBothSampleNrc}
+                        className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-semibold cursor-pointer transition-colors"
+                        title={language === 'my' ? 'အရှေ့နှင့် အနောက်ခြမ်း နမူနာ ၂ ခုလုံး တစ်ပြိုင်နက် တွဲမည်' : 'Attach both Front & Back sample NRCs'}
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{language === 'my' ? '+ နမူနာ ကတ်အပြည့်အစုံ တွဲမည်' : '+ Attach Both Samples'}</span>
+                      </button>
+
+                      <span className="inline-flex items-center space-x-1 text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span className="font-mono">☁️ Supabase Ready</span>
+                      </span>
                     </div>
                   </div>
-                ) : (
-                  /* Attached Passport Preview Card */
-                  <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
-                    <div className="flex items-center space-x-3 overflow-hidden w-full sm:w-auto">
-                      {senderPassportAttachment.startsWith('data:image') || senderPassportAttachmentType?.startsWith('image/') || senderPassportAttachment.match(/\.(jpeg|jpg|png|webp)/i) ? (
-                        <div 
-                          onClick={() => setShowPassportPreviewModal(true)}
-                          className="w-14 h-14 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden cursor-pointer hover:opacity-85 transition-opacity flex-shrink-0 relative group"
-                          title={language === 'my' ? 'ပုံကြီးချဲ့ကြည့်ရှုရန် နှိပ်ပါ' : 'Click to preview'}
-                        >
-                          <img 
-                            src={senderPassportAttachment} 
-                            alt="Sender Passport Preview" 
-                            className="w-full h-full object-cover" 
-                          />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                            <Eye className="w-4 h-4 text-white" />
+
+                  {/* Status message */}
+                  {nrcUploadStatus && (
+                    <div className={`text-xs px-3 py-1.5 rounded-lg flex items-center space-x-2 ${
+                      nrcUploadStatus.type === 'error' 
+                        ? 'bg-rose-500/10 border border-rose-500/30 text-rose-300' 
+                        : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
+                    }`}>
+                      {nrcUploadStatus.type === 'error' ? (
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      )}
+                      <span>{nrcUploadStatus.text}</span>
+                    </div>
+                  )}
+
+                  {/* Dual Grid: NRC Front Box and NRC Back Box */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* NRC Front Box */}
+                    <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-3.5 space-y-2.5 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
+                          <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>{language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (NRC Front)' : 'NRC Card - Front Side'}</span>
+                        </span>
+                        {senderNrcFrontDoc ? (
+                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full flex items-center space-x-1 border border-emerald-500/30">
+                            <Check className="w-2.5 h-2.5" />
+                            <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-0.5 rounded-full border border-slate-800">
+                            {language === 'my' ? 'မတွဲရသေးပါ' : 'Not Attached'}
+                          </span>
+                        )}
+                      </div>
+
+                      <input
+                        type="file"
+                        ref={nrcFrontInputRef}
+                        accept="image/*,.pdf,.svg"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleNrcFile(f, 'front');
+                        }}
+                      />
+
+                      {senderNrcFrontDoc?.url ? (
+                        <div className="space-y-2">
+                          <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/10] flex items-center justify-center">
+                            <img 
+                              src={senderNrcFrontDoc.url} 
+                              alt="Sender NRC Front" 
+                              className="w-full h-full object-cover" 
+                            />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
+                              <button
+                                type="button"
+                                onClick={() => openLightbox({
+                                  title: language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (Front Side)' : "Sender's NRC Card (Front)",
+                                  url: senderNrcFrontDoc.url,
+                                  name: senderNrcFrontDoc.name,
+                                  type: senderNrcFrontDoc.type,
+                                  size: senderNrcFrontDoc.size,
+                                  idNumber: senderNrc
+                                })}
+                                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
+                                title={language === 'my' ? 'ပုံကြီးချဲ့ကြည့်ရှုရန်' : 'Enlarge'}
+                              >
+                                <Maximize2 className="w-4 h-4 text-emerald-400" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs text-slate-400">
+                            <span className="truncate max-w-[170px] font-mono text-slate-300">
+                              {senderNrcFrontDoc.name || 'NRC_Front.png'}
+                            </span>
+                            <span className="text-emerald-400 font-mono font-semibold">
+                              {senderNrcFrontDoc.size || 'Attached'}
+                            </span>
+                          </div>
+
+                          {/* Action buttons: View, Replace, Remove */}
+                          <div className="flex items-center space-x-1.5 pt-1 border-t border-slate-700/60">
+                            <button
+                              type="button"
+                              onClick={() => openLightbox({
+                                title: language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (Front Side)' : "Sender's NRC Card (Front)",
+                                url: senderNrcFrontDoc.url,
+                                name: senderNrcFrontDoc.name,
+                                type: senderNrcFrontDoc.type,
+                                size: senderNrcFrontDoc.size,
+                                idNumber: senderNrc
+                              })}
+                              className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-2 rounded-lg bg-slate-900 hover:bg-slate-850 text-slate-200 text-xs font-medium cursor-pointer transition-colors border border-slate-700"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{language === 'my' ? 'ကြည့်ရှုမည်' : 'View'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => nrcFrontInputRef.current?.click()}
+                              className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveNrcDoc('front')}
+                              className="p-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 cursor-pointer transition-colors"
+                              title="Remove"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="w-14 h-14 rounded-lg bg-indigo-950/60 border border-indigo-800/60 flex items-center justify-center text-indigo-400 flex-shrink-0">
-                          <FileText className="w-7 h-7" />
+                        <div 
+                          onDragOver={(e) => { e.preventDefault(); setIsDraggingNrcFront(true); }}
+                          onDragLeave={() => setIsDraggingNrcFront(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDraggingNrcFront(false);
+                            const f = e.dataTransfer.files?.[0];
+                            if (f) handleNrcFile(f, 'front');
+                          }}
+                          className={`border-2 border-dashed rounded-xl p-4 text-center space-y-2 transition-all ${
+                            isDraggingNrcFront 
+                              ? 'border-emerald-400 bg-emerald-500/10' 
+                              : 'border-slate-700 hover:border-emerald-500/60 bg-slate-900/50'
+                          }`}
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                            {isUploadingNrcFront ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <UploadCloud className="w-4 h-4" />
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 leading-tight">
+                            {language === 'my' ? 'အရှေ့ခြမ်း ဓာတ်ပုံ သို့မဟုတ် PDF တွဲရန်' : 'Front NRC document (Image/PDF)'}
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={handleAttachSampleNrcFront}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold cursor-pointer transition-colors"
+                            >
+                              + {language === 'my' ? 'နမူနာ အရှေ့ခြမ်း' : 'Sample Front'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => nrcFrontInputRef.current?.click()}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer transition-colors flex items-center space-x-1"
+                            >
+                              <Upload className="w-3 h-3" />
+                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
+                            </button>
+                          </div>
                         </div>
                       )}
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-[280px]">
-                            {senderPassportAttachmentName || 'Sender_Passport'}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            ({senderPassportAttachmentSize || 'Attached'})
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400 mt-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                          <span className="truncate">
-                            {passportUploadStatus?.text || (language === 'my' ? 'Supabase တွင် သိမ်းဆည်းရန် အသင့်ဖြစ်ပါပြီ' : 'Passport attached & ready to save in Supabase')}
-                          </span>
-                        </div>
-                      </div>
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center space-x-2 self-end sm:self-center">
-                      <button
-                        type="button"
-                        onClick={() => setShowPassportPreviewModal(true)}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors text-xs font-medium flex items-center space-x-1 cursor-pointer"
-                        title={language === 'my' ? 'ကြည့်ရှုမည်' : 'View Passport'}
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>{language === 'my' ? 'ကြည့်မည်' : 'Preview'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRemovePassport}
-                        className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 transition-colors text-xs cursor-pointer"
-                        title={language === 'my' ? 'ဖယ်ရှားမည်' : 'Remove Attachment'}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    {/* NRC Back Box - USER REQUEST: "Add NRC Back Attach for Domestic Inward Sender Frame" */}
+                    <div className="bg-slate-800/80 border border-slate-700/80 rounded-xl p-3.5 space-y-2.5 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
+                          <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>{language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (NRC Back)' : 'NRC Card - Back Side'}</span>
+                        </span>
+                        {senderNrcBackDoc ? (
+                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full flex items-center space-x-1 border border-emerald-500/30">
+                            <Check className="w-2.5 h-2.5" />
+                            <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-slate-900 text-slate-400 px-2 py-0.5 rounded-full border border-slate-800">
+                            {language === 'my' ? 'မတွဲရသေးပါ' : 'Not Attached'}
+                          </span>
+                        )}
+                      </div>
+
+                      <input
+                        type="file"
+                        ref={nrcBackInputRef}
+                        accept="image/*,.pdf,.svg"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleNrcFile(f, 'back');
+                        }}
+                      />
+
+                      {senderNrcBackDoc?.url ? (
+                        <div className="space-y-2">
+                          <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/10] flex items-center justify-center">
+                            <img 
+                              src={senderNrcBackDoc.url} 
+                              alt="Sender NRC Back" 
+                              className="w-full h-full object-cover" 
+                            />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
+                              <button
+                                type="button"
+                                onClick={() => openLightbox({
+                                  title: language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (Back Side)' : "Sender's NRC Card (Back)",
+                                  url: senderNrcBackDoc.url,
+                                  name: senderNrcBackDoc.name,
+                                  type: senderNrcBackDoc.type,
+                                  size: senderNrcBackDoc.size,
+                                  idNumber: senderNrc
+                                })}
+                                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
+                                title={language === 'my' ? 'ပုံကြီးချဲ့ကြည့်ရှုရန်' : 'Enlarge'}
+                              >
+                                <Maximize2 className="w-4 h-4 text-emerald-400" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs text-slate-400">
+                            <span className="truncate max-w-[170px] font-mono text-slate-300">
+                              {senderNrcBackDoc.name || 'NRC_Back.png'}
+                            </span>
+                            <span className="text-emerald-400 font-mono font-semibold">
+                              {senderNrcBackDoc.size || 'Attached'}
+                            </span>
+                          </div>
+
+                          {/* Action buttons: View, Replace, Remove */}
+                          <div className="flex items-center space-x-1.5 pt-1 border-t border-slate-700/60">
+                            <button
+                              type="button"
+                              onClick={() => openLightbox({
+                                title: language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (Back Side)' : "Sender's NRC Card (Back)",
+                                url: senderNrcBackDoc.url,
+                                name: senderNrcBackDoc.name,
+                                type: senderNrcBackDoc.type,
+                                size: senderNrcBackDoc.size,
+                                idNumber: senderNrc
+                              })}
+                              className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-2 rounded-lg bg-slate-900 hover:bg-slate-850 text-slate-200 text-xs font-medium cursor-pointer transition-colors border border-slate-700"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{language === 'my' ? 'ကြည့်ရှုမည်' : 'View'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => nrcBackInputRef.current?.click()}
+                              className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveNrcDoc('back')}
+                              className="p-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 cursor-pointer transition-colors"
+                              title="Remove"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div 
+                          onDragOver={(e) => { e.preventDefault(); setIsDraggingNrcBack(true); }}
+                          onDragLeave={() => setIsDraggingNrcBack(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setIsDraggingNrcBack(false);
+                            const f = e.dataTransfer.files?.[0];
+                            if (f) handleNrcFile(f, 'back');
+                          }}
+                          className={`border-2 border-dashed rounded-xl p-4 text-center space-y-2 transition-all ${
+                            isDraggingNrcBack 
+                              ? 'border-emerald-400 bg-emerald-500/10' 
+                              : 'border-slate-700 hover:border-emerald-500/60 bg-slate-900/50'
+                          }`}
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                            {isUploadingNrcBack ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <UploadCloud className="w-4 h-4" />
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 leading-tight">
+                            {language === 'my' ? 'အနောက်ခြမ်း ဓာတ်ပုံ သို့မဟုတ် PDF တွဲရန်' : 'Back NRC document (Image/PDF)'}
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+                            <button
+                              type="button"
+                              onClick={handleAttachSampleNrcBack}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold cursor-pointer transition-colors"
+                            >
+                              + {language === 'my' ? 'နမူနာ အနောက်ခြမ်း' : 'Sample Back'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => nrcBackInputRef.current?.click()}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer transition-colors flex items-center space-x-1"
+                            >
+                              <Upload className="w-3 h-3" />
+                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
+                </div>
+              )}
+
+              {/* Sender Passport Attachment (Supabase Storage / Database) for International */}
+              {scope === 'INTERNATIONAL' && (
+                <div className="sm:col-span-2 pt-2 border-t border-slate-800">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                    <label className="flex items-center space-x-1.5 text-slate-200 font-semibold text-xs">
+                      <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>
+                        {language === 'my' 
+                          ? 'ငွေလွှဲသူ၏ နိုင်ငံကူးလက်မှတ် / Passport ပူးတွဲစာရွက်စာတမ်း (Supabase)' 
+                          : "Overseas Sender's Passport Attachment (Supabase)"}
+                      </span>
+                    </label>
+                    <span className="inline-flex items-center space-x-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span className="font-mono">☁️ Supabase Sync</span>
+                    </span>
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handlePassportFileChange}
+                    accept="image/*,application/pdf"
+                    className="hidden"
+                    id="sender-passport-upload-input"
+                  />
+
+                  {!senderPassportAttachment ? (
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setIsDraggingPassport(true); }}
+                      onDragLeave={() => setIsDraggingPassport(false)}
+                      onDrop={handlePassportDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-center gap-3 ${
+                        isDraggingPassport 
+                          ? 'border-indigo-400 bg-indigo-500/10' 
+                          : 'border-slate-700 hover:border-indigo-500/60 bg-slate-800/40 hover:bg-slate-800/80'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
+                        {isUploadingPassport ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                        ) : (
+                          <UploadCloud className="w-5 h-5" />
+                        )}
+                      </div>
+                      <div className="text-center sm:text-left">
+                        <p className="text-xs font-semibold text-slate-200">
+                          {language === 'my' 
+                            ? 'ငွေလွှဲသူ၏ Passport ဓာတ်ပုံ သို့မဟုတ် PDF တွဲရန် နှိပ်ပါ (သို့မဟုတ် ဖိုင်ဆွဲထည့်ပါ)' 
+                            : "Click to upload or drag & drop Sender's Passport (Image / PDF)"}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {language === 'my' 
+                            ? 'JPG, PNG, PDF, WEBP (အများဆုံး 15MB) • Supabase Storage & Database တွင် အလိုအလျောက် သိမ်းဆည်းပါမည်' 
+                            : 'Supports JPG, PNG, PDF up to 15MB • Persisted to Supabase'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Attached Passport Preview Card */
+                    <div className="bg-slate-800/90 border border-slate-700 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
+                      <div className="flex items-center space-x-3 overflow-hidden w-full sm:w-auto">
+                        {senderPassportAttachment.startsWith('data:image') || senderPassportAttachmentType?.startsWith('image/') || senderPassportAttachment.match(/\.(jpeg|jpg|png|webp)/i) ? (
+                          <div 
+                            onClick={() => setShowPassportPreviewModal(true)}
+                            className="w-14 h-14 rounded-lg bg-slate-900 border border-slate-700 overflow-hidden cursor-pointer hover:opacity-85 transition-opacity flex-shrink-0 relative group"
+                            title={language === 'my' ? 'ပုံကြီးချဲ့ကြည့်ရှုရန် နှိပ်ပါ' : 'Click to preview'}
+                          >
+                            <img 
+                              src={senderPassportAttachment} 
+                              alt="Sender Passport Preview" 
+                              className="w-full h-full object-cover" 
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                              <Eye className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-indigo-950/60 border border-indigo-800/60 flex items-center justify-center text-indigo-400 flex-shrink-0">
+                            <FileText className="w-7 h-7" />
+                          </div>
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-bold text-white truncate max-w-[200px] sm:max-w-[280px]">
+                              {senderPassportAttachmentName || 'Sender_Passport'}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              ({senderPassportAttachmentSize || 'Attached'})
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400 mt-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                            <span className="truncate">
+                              {passportUploadStatus?.text || (language === 'my' ? 'Supabase တွင် သိမ်းဆည်းရန် အသင့်ဖြစ်ပါပြီ' : 'Passport attached & ready to save in Supabase')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center space-x-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => setShowPassportPreviewModal(true)}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors text-xs font-medium flex items-center space-x-1 cursor-pointer"
+                          title={language === 'my' ? 'ကြည့်ရှုမည်' : 'View Passport'}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>{language === 'my' ? 'ကြည့်မည်' : 'Preview'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemovePassport}
+                          className="p-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 transition-colors text-xs cursor-pointer"
+                          title={language === 'my' ? 'ဖယ်ရှားမည်' : 'Remove Attachment'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+        {/* LOWER FRAME: Beneficiary / Receiver Details */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                <UserCheck2 className="w-4 h-4" />
               </div>
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  {language === 'my' ? 'ငွေထုတ်ယူမည့် ဖောက်သည် အချက်အလက်' : 'Beneficiary / Receiver Details'}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  {language === 'my' ? 'ငွေထုတ်ယူမည့် ဖောက်သည်၏ ကိုယ်ရေးအချက်အလက်များနှင့် မှတ်ပုံတင်' : 'Recipient identity, NRC/Passport & contact details'}
+                </p>
+              </div>
+            </div>
+            <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+              {language === 'my' ? 'ငွေလက်ခံသူ' : 'Beneficiary Details'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverName} *</label>
+              <input
+                type="text"
+                required
+                value={receiverName}
+                onChange={(e) => setReceiverName(e.target.value)}
+                placeholder="e.g. Ko Aung Kyaw Moe"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverNameMm}</label>
+              <input
+                type="text"
+                value={receiverNameMm}
+                onChange={(e) => setReceiverNameMm(e.target.value)}
+                placeholder="e.g. ကိုအောင်ကျော်မိုး"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverPhone} *</label>
+              <input
+                type="text"
+                required
+                value={receiverPhone}
+                onChange={(e) => setReceiverPhone(e.target.value)}
+                placeholder="09-974820194"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Beneficiary Myanmar NRC - Dropdown List with Manual Entry option */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-400 font-medium">
+                  {t.beneficiaryNrc} * {receiverMatch ? <span className="text-rose-400 font-bold">(BLACKLIST MATCH)</span> : ''}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsManualNrc(!isManualNrc);
+                    if (!isManualNrc) setReceiverNrc('');
+                  }}
+                  className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-normal transition-colors"
+                >
+                  {isManualNrc 
+                    ? (language === 'my' ? '← စာရင်းမှ ရွေးမည်' : '← Select from List') 
+                    : (language === 'my' ? '+ အသစ်ရိုက်မည်' : '+ Enter Manual')}
+                </button>
+              </div>
+
+              {isManualNrc ? (
+                <input
+                  type="text"
+                  required
+                  value={receiverNrc}
+                  onChange={(e) => setReceiverNrc(e.target.value)}
+                  placeholder="12/DAGANA(N)019482"
+                  className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:outline-none ${
+                    receiverMatch ? 'border-rose-500 bg-rose-950/30 text-rose-200' : 'border-slate-700 focus:border-indigo-500'
+                  }`}
+                />
+              ) : (
+                <select
+                  required
+                  value={receiverNrc}
+                  onChange={(e) => handleSelectNrc(e.target.value)}
+                  className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-white font-mono focus:outline-none ${
+                    receiverMatch ? 'border-rose-500 bg-rose-950/30 text-rose-200' : 'border-slate-700 focus:border-indigo-500'
+                  }`}
+                >
+                  <option value="">
+                    -- {language === 'my' ? 'မှတ်ပုံတင် ရွေးချယ်ပါ (Select Beneficiary NRC)' : 'Select Beneficiary NRC'} --
+                  </option>
+                  {beneficiaryOptions.map(b => (
+                    <option key={b.nrc} value={b.nrc}>
+                      {b.nrc} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
+                    </option>
+                  ))}
+                  <option value="__NEW_NRC__">
+                    + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom NRC)...' : 'Enter Custom NRC...'}
+                  </option>
+                </select>
+              )}
+            </div>
+
+            {/* Passport No - Dropdown List with Manual Entry option */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-400 font-medium">
+                  {t.beneficiaryPassbook}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsManualPassport(!isManualPassport);
+                    if (!isManualPassport) setReceiverPassport('');
+                  }}
+                  className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-normal transition-colors"
+                >
+                  {isManualPassport 
+                    ? (language === 'my' ? '← စာရင်းမှ ရွေးမည်' : '← Select from List') 
+                    : (language === 'my' ? '+ အသစ်ရိုက်မည်' : '+ Enter Manual')}
+                </button>
+              </div>
+
+              {isManualPassport ? (
+                <input
+                  type="text"
+                  value={receiverPassport}
+                  onChange={(e) => setReceiverPassport(e.target.value)}
+                  placeholder="MB-102948"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                />
+              ) : (
+                <select
+                  value={receiverPassport}
+                  onChange={(e) => handleSelectPassport(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">
+                    -- {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် ရွေးချယ်ပါ' : 'Select Passport No'} --
+                  </option>
+                  {beneficiaryOptions.filter(b => b.passport).map(b => (
+                    <option key={b.passport} value={b.passport}>
+                      {b.passport} — {b.nameEn} {b.nameMm ? `(${b.nameMm})` : ''}
+                    </option>
+                  ))}
+                  <option value="__NEW_PASSPORT__">
+                    + {language === 'my' ? 'အသစ်ရိုက်ထည့်မည် (Enter Custom Passport)...' : 'Enter Custom Passport...'}
+                  </option>
+                </select>
+              )}
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-1">
+              <label className="block text-slate-400 mb-1 font-medium">{t.receiverAddress}</label>
+              <input
+                type="text"
+                value={receiverAddress}
+                onChange={(e) => setReceiverAddress(e.target.value)}
+                placeholder="Room 402, Building 8, South Dagon, Yangon"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              />
             </div>
           </div>
         </div>
-
-        {/* Financials & Payout Methods */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
           <div className="flex items-center space-x-2 pb-3 border-b border-slate-800">
             <Coins className="w-5 h-5 text-amber-400" />
@@ -1100,19 +1884,28 @@ export const InwardEntryView: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
             <div>
               <label className="block text-slate-400 mb-1 font-medium">{t.sourceCurrency}</label>
-              <select
-                value={sourceCurrency}
-                onChange={(e) => setSourceCurrency(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-bold focus:border-indigo-500 focus:outline-none"
-              >
-                {db.currencies.map(c => (
-                  <option key={c.id} value={c.code}>{c.code} - {c.nameEn}</option>
-                ))}
-              </select>
+              {scope === 'DOMESTIC' ? (
+                <div className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2.5 text-emerald-400 font-bold flex items-center justify-between">
+                  <span>MMK - Myanmar Kyat</span>
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">1:1</span>
+                </div>
+              ) : (
+                <select
+                  value={sourceCurrency}
+                  onChange={(e) => setSourceCurrency(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-bold focus:border-indigo-500 focus:outline-none"
+                >
+                  {db.currencies.map(c => (
+                    <option key={c.id} value={c.code}>{c.code} - {c.nameEn}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1 font-medium">{t.sendAmount}</label>
+              <label className="block text-slate-400 mb-1 font-medium">
+                {t.sendAmount} {scope === 'DOMESTIC' ? '(MMK)' : `(${sourceCurrency})`}
+              </label>
               <input
                 type="number"
                 min="1"
@@ -1125,13 +1918,20 @@ export const InwardEntryView: React.FC = () => {
 
             <div>
               <label className="block text-slate-400 mb-1 font-medium">{t.exchangeRate}</label>
-              <input
-                type="number"
-                step="any"
-                value={exchangeRate}
-                onChange={(e) => setExchangeRate(Number(e.target.value))}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-emerald-400 font-mono font-bold text-sm focus:border-indigo-500 focus:outline-none"
-              />
+              {scope === 'DOMESTIC' ? (
+                <div className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2.5 text-emerald-400 font-mono font-bold text-sm flex items-center justify-between">
+                  <span>1.0000</span>
+                  <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded font-sans">DOMESTIC</span>
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  step="any"
+                  value={exchangeRate}
+                  onChange={(e) => setExchangeRate(Number(e.target.value))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-emerald-400 font-mono font-bold text-sm focus:border-indigo-500 focus:outline-none"
+                />
+              )}
             </div>
 
             <div>
@@ -1427,6 +2227,22 @@ export const InwardEntryView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Document Lightbox Modal for NRC Front & Back */}
+      {lightboxDoc?.isOpen && (
+        <DocumentLightboxModal
+          isOpen={lightboxDoc.isOpen}
+          onClose={() => setLightboxDoc(null)}
+          title={lightboxDoc.title}
+          documentUrl={lightboxDoc.url}
+          documentName={lightboxDoc.name}
+          documentType={lightboxDoc.type}
+          documentSize={lightboxDoc.size}
+          nrcOrPassportNumber={lightboxDoc.idNumber}
+          senderName={senderName}
+          language={language}
+        />
       )}
     </div>
   );

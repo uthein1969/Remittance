@@ -788,23 +788,24 @@ export function printVoucherDocument(params: {
 
     const frameId = 'voucher-hidden-print-frame';
     let iframe = document.getElementById(frameId) as HTMLIFrameElement | null;
-    if (!iframe) {
-      iframe = document.createElement('iframe');
-      iframe.id = frameId;
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      iframe.style.opacity = '0';
-      iframe.style.pointerEvents = 'none';
-      document.body.appendChild(iframe);
+    if (iframe) {
+      iframe.remove();
     }
+    iframe = document.createElement('iframe');
+    iframe.id = frameId;
+    iframe.style.position = 'fixed';
+    iframe.style.left = '-9999px';
+    iframe.style.top = '-9999px';
+    iframe.style.width = '1024px';
+    iframe.style.height = '768px';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+    document.body.appendChild(iframe);
 
     const frameDoc = iframe.contentWindow?.document || iframe.contentDocument;
     if (!frameDoc || !iframe.contentWindow) {
-      throw new Error('Print iframe could not be initialized');
+      window.print();
+      return { success: true };
     }
 
     frameDoc.open();
@@ -817,19 +818,28 @@ export function printVoucherDocument(params: {
         iframe?.contentWindow?.focus();
         iframe?.contentWindow?.print();
       } catch (printErr) {
-        console.warn('Iframe print error, falling back to window.open:', printErr);
-        openVoucherInNewTab(params);
+        console.warn('Iframe print error, falling back to window.print():', printErr);
+        try {
+          window.print();
+        } catch {
+          openVoucherInNewTab(params);
+        }
       }
-    }, 250);
+    }, 150);
 
     return { success: true };
   } catch (err) {
     console.error('printVoucherDocument failed:', err);
     try {
-      openVoucherInNewTab(params);
+      window.print();
       return { success: true };
     } catch {
-      return { success: false };
+      try {
+        openVoucherInNewTab(params);
+        return { success: true };
+      } catch {
+        return { success: false };
+      }
     }
   }
 }

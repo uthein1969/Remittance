@@ -14,7 +14,7 @@ import {
 interface DocumentLightboxModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title?: string;
   documentUrl?: string;
   documentName?: string;
   documentType?: string;
@@ -22,29 +22,54 @@ interface DocumentLightboxModalProps {
   nrcOrPassportNumber?: string;
   senderName?: string;
   language?: 'en' | 'my';
+  // Compatibility aliases
+  fileName?: string;
+  fileType?: string;
+  fileSize?: string;
+  idNumber?: string;
+  docTitle?: string;
+  docUrl?: string;
+  docName?: string;
+  docSize?: string;
+  docType?: string;
 }
 
 export const DocumentLightboxModal: React.FC<DocumentLightboxModalProps> = ({
   isOpen,
   onClose,
-  title,
+  title = 'Document Attachment',
   documentUrl,
   documentName = 'Document_Attachment',
   documentType = 'image/png',
   documentSize = '',
   nrcOrPassportNumber,
   senderName,
-  language = 'my'
+  language = 'my',
+  fileName,
+  fileType,
+  fileSize,
+  idNumber,
+  docTitle,
+  docUrl,
+  docName,
+  docSize,
+  docType
 }) => {
+  const actualTitle = docTitle || title;
+  const actualUrl = docUrl || documentUrl;
+  const actualName = docName || fileName || documentName;
+  const actualType = docType || fileType || documentType;
+  const actualSize = docSize || fileSize || documentSize;
+  const actualIdNumber = idNumber || nrcOrPassportNumber;
   const [zoom, setZoom] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
 
-  if (!isOpen || !documentUrl) return null;
+  if (!isOpen || !actualUrl) return null;
 
   const isImage = 
-    documentUrl.startsWith('data:image') || 
-    documentType.startsWith('image/') || 
-    documentUrl.match(/\.(jpeg|jpg|png|webp|svg)/i);
+    actualUrl.startsWith('data:image') || 
+    actualType.startsWith('image/') || 
+    actualUrl.match(/\.(jpeg|jpg|png|webp|svg)/i);
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));

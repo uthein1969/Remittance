@@ -58,19 +58,26 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
   const handlePrint = (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
 
-    printVoucherDocument({
-      transaction,
-      branch,
-      partner,
-      operatorProfile,
-      language,
-    });
-
     setFeedbackMsg(
       language === 'my' 
         ? 'ပုံနှိပ်စာမျက်နှာ ဖွင့်လှစ်နေပါသည် (Printing Voucher)...' 
-        : 'Opening printer dialog...'
+        : 'Opening print box dialog...'
     );
+
+    // Call window.print() directly so browser Print Box appears immediately
+    try {
+      window.print();
+    } catch (err) {
+      console.warn('Direct window.print encountered an error, trying document printer:', err);
+      printVoucherDocument({
+        transaction,
+        branch,
+        partner,
+        operatorProfile,
+        language,
+      });
+    }
+
     setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
@@ -366,6 +373,53 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                   <span className="text-slate-500">{language === 'my' ? 'မှတ်ပုံတင်' : 'NRC / ID'}:</span>{' '}
                   <strong className="font-mono text-slate-800">{transaction.senderNrc || 'N/A'}</strong>
                 </div>
+                {((transaction.senderNrcFrontAttachment || transaction.senderNrcAttachment) || transaction.senderNrcBackAttachment) && (
+                  <div className="pt-1.5 border-t border-slate-200 mt-1.5 space-y-1">
+                    <span className="text-slate-500 block text-[11px]">
+                      {language === 'my' ? 'ပူးတွဲမှတ်ပုံတင် (NRC Attachments):' : 'Attached NRC Documents:'}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(transaction.senderNrcFrontAttachment || transaction.senderNrcAttachment) && (
+                        <div className="flex items-center space-x-1.5">
+                          <span className="inline-flex items-center space-x-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                            <Paperclip className="w-3 h-3 text-emerald-600" />
+                            <span className="truncate max-w-[110px]">
+                              {transaction.senderNrcFrontAttachmentName || transaction.senderNrcAttachmentName || 'NRC_Front'}
+                            </span>
+                          </span>
+                          <a
+                            href={transaction.senderNrcFrontAttachment || transaction.senderNrcAttachment}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 underline no-print cursor-pointer flex items-center space-x-0.5"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
+                          </a>
+                        </div>
+                      )}
+                      {transaction.senderNrcBackAttachment && (
+                        <div className="flex items-center space-x-1.5">
+                          <span className="inline-flex items-center space-x-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                            <Paperclip className="w-3 h-3 text-emerald-600" />
+                            <span className="truncate max-w-[110px]">
+                              {transaction.senderNrcBackAttachmentName || 'NRC_Back'}
+                            </span>
+                          </span>
+                          <a
+                            href={transaction.senderNrcBackAttachment}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 underline no-print cursor-pointer flex items-center space-x-0.5"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {(transaction.senderPassport || transaction.senderPassbook) && (
                   <div>
                     <span className="text-slate-500">{language === 'my' ? 'နိုင်ငံကူးလက်မှတ်' : 'Passport No'}:</span>{' '}
@@ -515,6 +569,34 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
             {transaction.senderNote && (
               <div className="col-span-2 italic bg-slate-50 p-2 rounded border border-slate-200">
                 {language === 'my' ? 'မှတ်ချက်' : 'Note'}: "{transaction.senderNote}"
+              </div>
+            )}
+
+            {/* Attached Verification Documents indicator on Voucher */}
+            {(transaction.senderNrcFrontAttachment || transaction.senderNrcAttachment || transaction.senderNrcBackAttachment || transaction.senderPassportAttachment) && (
+              <div className="col-span-2 bg-emerald-50/50 border border-emerald-200 rounded-lg p-2.5 flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-bold text-slate-800 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>{language === 'my' ? 'စိစစ်ပြီး ပူးတွဲစာရွက်စာတမ်းများ (KYC Verified)' : 'Verified KYC Attachments'}:</span>
+                </span>
+                {(transaction.senderNrcFrontAttachment || transaction.senderNrcAttachment) && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white text-emerald-800 text-[11px] font-semibold border border-emerald-300 shadow-2xs">
+                    <Check className="w-3 h-3 text-emerald-600" />
+                    {language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (NRC Front)' : 'NRC Front Side'}
+                  </span>
+                )}
+                {transaction.senderNrcBackAttachment && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white text-emerald-800 text-[11px] font-semibold border border-emerald-300 shadow-2xs">
+                    <Check className="w-3 h-3 text-emerald-600" />
+                    {language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (NRC Back)' : 'NRC Back Side'}
+                  </span>
+                )}
+                {transaction.senderPassportAttachment && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white text-indigo-800 text-[11px] font-semibold border border-indigo-300 shadow-2xs">
+                    <Check className="w-3 h-3 text-indigo-600" />
+                    {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : 'Passport Document'}
+                  </span>
+                )}
               </div>
             )}
           </div>

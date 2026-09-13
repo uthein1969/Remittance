@@ -224,13 +224,30 @@ export async function tursoWebSyncPush(data: {
     }
 
     if (data.auditLogs && Array.isArray(data.auditLogs)) {
+      try {
+        await client.execute(`CREATE TABLE IF NOT EXISTS audit_logs (
+          id TEXT PRIMARY KEY,
+          timestamp TEXT,
+          user_id TEXT,
+          user_name TEXT,
+          action TEXT,
+          entity_type TEXT,
+          entity_id TEXT,
+          details TEXT
+        );`);
+      } catch {
+        // Table may already exist
+      }
+
       for (const log of data.auditLogs) {
         try {
           if (!log.id) continue;
           await client.execute({
-            sql: `INSERT OR IGNORE INTO audit_logs (
+            sql: `INSERT INTO audit_logs (
               id, timestamp, user_id, user_name, action, entity_type, entity_id, details
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              details=excluded.details;`,
             args: [
               log.id,
               log.timestamp || new Date().toISOString(),

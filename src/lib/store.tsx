@@ -865,7 +865,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Real-time Cloud Auto-Sync for Live Data (Supabase & Turso)
-  const syncLiveTransactionToCloud = (tx: RemittanceTransaction) => {
+  const syncLiveTransactionToCloud = (tx: RemittanceTransaction, auditRecord?: AuditRecord) => {
     // 1. Supabase live upsert
     try {
       const client = getSupabaseClient(db.supabaseConfig);
@@ -936,6 +936,24 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         }], { onConflict: 'id' }).then(({ error }: any) => {
           if (error) console.warn('Supabase live sync warning:', error.message);
         }, () => {});
+
+        if (auditRecord) {
+          client.from('audit_logs').upsert([{
+            id: auditRecord.id,
+            timestamp: auditRecord.timestamp,
+            user_id: auditRecord.userId,
+            user_name: auditRecord.userName,
+            user_role: auditRecord.userRole,
+            action: auditRecord.action,
+            entity_type: auditRecord.entityType,
+            entity_id: auditRecord.entityId,
+            details: auditRecord.details,
+            previous_value: auditRecord.previousValue || null,
+            new_value: auditRecord.newValue || null,
+          }], { onConflict: 'id' }).then(({ error }: any) => {
+            if (error) console.warn('Supabase live audit log sync warning:', error.message);
+          }, () => {});
+        }
       }
     } catch {
       // ignore
@@ -944,19 +962,36 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // 2. Turso live push (with direct Web fallback for Vercel)
     try {
       const payload = mapTransactionToTursoPayload(tx);
+      const requestPayload: any = {
+        transactions: [payload]
+      };
+
+      if (auditRecord) {
+        requestPayload.auditLogs = [{
+          id: auditRecord.id,
+          timestamp: auditRecord.timestamp,
+          userId: auditRecord.userId,
+          userName: auditRecord.userName,
+          action: auditRecord.action,
+          entityType: auditRecord.entityType,
+          entityId: auditRecord.entityId,
+          details: auditRecord.details,
+        }];
+      }
+
       safeFetchJson('/api/turso/sync-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactions: [payload] })
+        body: JSON.stringify(requestPayload)
       }).then(({ ok, data }) => {
         if (ok && data?.success) {
-          console.log(`[Turso Live Push] Transaction ${tx.transactionNo} saved to Turso Cloud.`);
+          console.log(`[Turso Live Push] Transaction ${tx.transactionNo} & Audit Log saved to Turso Cloud.`);
         } else {
           // Direct web fallback
-          tursoWebSyncPush({ transactions: [payload] });
+          tursoWebSyncPush(requestPayload);
         }
       }).catch(() => {
-        tursoWebSyncPush({ transactions: [payload] });
+        tursoWebSyncPush(requestPayload);
       });
     } catch {
       // ignore
@@ -1068,19 +1103,25 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       createdDate: new Date().toISOString(),
     };
 
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'CREATE',
+      entityType: 'OUTWARD',
+      entityId: newTx.transactionNo,
+      details: `Created Outward Remittance ${newTx.transactionNo} (MTCN: ${newTx.mtcn}) for ${newTx.senderName} -> ${newTx.receiverName} (${newTx.sendAmount} ${newTx.sourceCurrency})`
+    };
+
     setDb(prev => ({
       ...prev,
-      transactions: [newTx, ...prev.transactions]
+      transactions: [newTx, ...prev.transactions],
+      auditLogs: [auditRecord, ...prev.auditLogs]
     }));
 
-    logActionDirect(
-      'CREATE',
-      'OUTWARD',
-      newTx.transactionNo,
-      `Created Outward Remittance ${newTx.transactionNo} (MTCN: ${newTx.mtcn}) for ${newTx.senderName} -> ${newTx.receiverName} (${newTx.sendAmount} ${newTx.sourceCurrency})`
-    );
-
-    syncLiveTransactionToCloud(newTx);
+    syncLiveTransactionToCloud(newTx, auditRecord);
 
     return newTx;
   };
@@ -1118,6 +1159,18 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       senderName: txData.senderName || '',
       senderNameMm: txData.senderNameMm || '',
       senderNrc: txData.senderNrc || '',
+      senderNrcAttachment: txData.senderNrcAttachment || txData.senderNrcFrontAttachment || '',
+      senderNrcAttachmentName: txData.senderNrcAttachmentName || txData.senderNrcFrontAttachmentName || '',
+      senderNrcAttachmentType: txData.senderNrcAttachmentType || txData.senderNrcFrontAttachmentType || '',
+      senderNrcAttachmentSize: txData.senderNrcAttachmentSize || txData.senderNrcFrontAttachmentSize || '',
+      senderNrcFrontAttachment: txData.senderNrcFrontAttachment || txData.senderNrcAttachment || '',
+      senderNrcFrontAttachmentName: txData.senderNrcFrontAttachmentName || txData.senderNrcAttachmentName || '',
+      senderNrcFrontAttachmentType: txData.senderNrcFrontAttachmentType || txData.senderNrcAttachmentType || '',
+      senderNrcFrontAttachmentSize: txData.senderNrcFrontAttachmentSize || txData.senderNrcAttachmentSize || '',
+      senderNrcBackAttachment: txData.senderNrcBackAttachment || '',
+      senderNrcBackAttachmentName: txData.senderNrcBackAttachmentName || '',
+      senderNrcBackAttachmentType: txData.senderNrcBackAttachmentType || '',
+      senderNrcBackAttachmentSize: txData.senderNrcBackAttachmentSize || '',
       senderPassport: senderPassportVal,
       senderPassbook: senderPassportVal,
       senderPassportAttachment: senderPassportAttach,
@@ -1173,19 +1226,25 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       createdDate: new Date().toISOString(),
     };
 
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'CREATE',
+      entityType: 'INWARD',
+      entityId: newTx.transactionNo,
+      details: `Created Inward Remittance Claim ${newTx.transactionNo} (MTCN: ${newTx.mtcn}) for ${newTx.receiverName} (${newTx.receiveAmount} MMK payout)`
+    };
+
     setDb(prev => ({
       ...prev,
-      transactions: [newTx, ...prev.transactions]
+      transactions: [newTx, ...prev.transactions],
+      auditLogs: [auditRecord, ...prev.auditLogs]
     }));
 
-    logActionDirect(
-      'CREATE',
-      'INWARD',
-      newTx.transactionNo,
-      `Created Inward Remittance Claim ${newTx.transactionNo} (MTCN: ${newTx.mtcn}) for ${newTx.receiverName} (${newTx.receiveAmount} MMK payout)`
-    );
-
-    syncLiveTransactionToCloud(newTx);
+    syncLiveTransactionToCloud(newTx, auditRecord);
 
     return newTx;
   };
@@ -1204,19 +1263,25 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       approvedDate: new Date().toISOString(),
     };
 
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'APPROVE',
+      entityType: tx.type === 'OUTWARD' ? 'OUTWARD' : 'INWARD',
+      entityId: tx.transactionNo,
+      details: `Checker ${currentUser.fullName} approved transaction ${tx.transactionNo} (MTCN: ${tx.mtcn}). Note: ${note || 'None'}`
+    };
+
     setDb(prev => ({
       ...prev,
-      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t)
+      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t),
+      auditLogs: [auditRecord, ...prev.auditLogs]
     }));
 
-    logActionDirect(
-      'APPROVE',
-      tx.type === 'OUTWARD' ? 'OUTWARD' : 'INWARD',
-      tx.transactionNo,
-      `Checker ${currentUser.fullName} approved transaction ${tx.transactionNo} (MTCN: ${tx.mtcn}). Note: ${note || 'None'}`
-    );
-
-    syncLiveTransactionToCloud(updatedTx);
+    syncLiveTransactionToCloud(updatedTx, auditRecord);
 
     return true;
   };
@@ -1235,19 +1300,25 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       approvedDate: new Date().toISOString(),
     };
 
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'REJECT',
+      entityType: tx.type === 'OUTWARD' ? 'OUTWARD' : 'INWARD',
+      entityId: tx.transactionNo,
+      details: `Checker ${currentUser.fullName} rejected transaction ${tx.transactionNo}. Reason: ${reason}`
+    };
+
     setDb(prev => ({
       ...prev,
-      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t)
+      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t),
+      auditLogs: [auditRecord, ...prev.auditLogs]
     }));
 
-    logActionDirect(
-      'REJECT',
-      tx.type === 'OUTWARD' ? 'OUTWARD' : 'INWARD',
-      tx.transactionNo,
-      `Checker ${currentUser.fullName} rejected transaction ${tx.transactionNo}. Reason: ${reason}`
-    );
-
-    syncLiveTransactionToCloud(updatedTx);
+    syncLiveTransactionToCloud(updatedTx, auditRecord);
 
     return true;
   };
@@ -1265,19 +1336,25 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       approvalNote: note,
     };
 
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'HOLD',
+      entityType: tx.type === 'OUTWARD' ? 'OUTWARD' : 'INWARD',
+      entityId: tx.transactionNo,
+      details: `Transaction ${tx.transactionNo} placed ON HOLD by ${currentUser.fullName}. Note: ${note}`
+    };
+
     setDb(prev => ({
       ...prev,
-      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t)
+      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t),
+      auditLogs: [auditRecord, ...prev.auditLogs]
     }));
 
-    logActionDirect(
-      'HOLD',
-      tx.type === 'OUTWARD' ? 'OUTWARD' : 'INWARD',
-      tx.transactionNo,
-      `Transaction ${tx.transactionNo} placed ON HOLD by ${currentUser.fullName}. Note: ${note}`
-    );
-
-    syncLiveTransactionToCloud(updatedTx);
+    syncLiveTransactionToCloud(updatedTx, auditRecord);
 
     return true;
   };
@@ -1296,38 +1373,50 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       paidOutDate: new Date().toISOString(),
     };
 
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'PAYOUT',
+      entityType: 'INWARD',
+      entityId: tx.transactionNo,
+      details: `Payout disbursed for MTCN ${tx.mtcn} to beneficiary ${tx.receiverName} (${tx.receiveAmount} MMK) by ${currentUser.fullName}`
+    };
+
     setDb(prev => ({
       ...prev,
-      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t)
+      transactions: prev.transactions.map(t => t.id === id ? updatedTx : t),
+      auditLogs: [auditRecord, ...prev.auditLogs]
     }));
 
-    logActionDirect(
-      'PAYOUT',
-      'INWARD',
-      tx.transactionNo,
-      `Payout disbursed for MTCN ${tx.mtcn} to beneficiary ${tx.receiverName} (${tx.receiveAmount} MMK) by ${currentUser.fullName}`
-    );
-
-    syncLiveTransactionToCloud(updatedTx);
+    syncLiveTransactionToCloud(updatedTx, auditRecord);
 
     return true;
   };
 
   // 7. Update Transaction (e.g. Inward revision by Checker/Maker)
   const updateTransaction = async (updatedTx: RemittanceTransaction, editReason?: string): Promise<boolean> => {
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'UPDATE',
+      entityType: updatedTx.type === 'INWARD' ? 'INWARD' : 'OUTWARD',
+      entityId: updatedTx.transactionNo,
+      details: `Transaction ${updatedTx.transactionNo} (MTCN: ${updatedTx.mtcn}) edited by ${currentUser.fullName}${editReason ? `. Reason: ${editReason}` : ''}`
+    };
+
     setDb(prev => ({
       ...prev,
-      transactions: prev.transactions.map(t => t.id === updatedTx.id ? updatedTx : t)
+      transactions: prev.transactions.map(t => t.id === updatedTx.id ? updatedTx : t),
+      auditLogs: [auditRecord, ...prev.auditLogs]
     }));
 
-    logActionDirect(
-      'UPDATE',
-      updatedTx.type === 'INWARD' ? 'INWARD' : 'OUTWARD',
-      updatedTx.transactionNo,
-      `Transaction ${updatedTx.transactionNo} (MTCN: ${updatedTx.mtcn}) edited by ${currentUser.fullName}${editReason ? `. Reason: ${editReason}` : ''}`
-    );
-
-    syncLiveTransactionToCloud(updatedTx);
+    syncLiveTransactionToCloud(updatedTx, auditRecord);
 
     return true;
   };
