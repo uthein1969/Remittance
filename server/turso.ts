@@ -537,13 +537,20 @@ export async function syncPushToTurso(data: {
     for (const log of data.auditLogs) {
       if (!log.id) continue;
       await client.execute({
-        sql: `INSERT OR IGNORE INTO audit_logs (
+        sql: `INSERT INTO audit_logs (
           id, timestamp, user_id, user_name, action, entity_type, entity_id, details
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          details=excluded.details;`,
         args: [
-          log.id, log.timestamp || new Date().toISOString(), log.userId || '', log.userName || '',
-          log.action || '', log.entityType || '', log.entityId || '',
-          typeof log.details === 'object' ? JSON.stringify(log.details) : (log.details || '')
+          log.id,
+          log.timestamp || new Date().toISOString(),
+          log.userId || log.user_id || '',
+          log.userName || log.user_name || '',
+          log.action || '',
+          log.entityType || log.entity_type || '',
+          log.entityId || log.entity_id || '',
+          typeof log.details === 'object' ? JSON.stringify(log.details) : String(log.details || '')
         ]
       });
       logsSaved++;

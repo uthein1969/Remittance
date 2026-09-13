@@ -223,10 +223,35 @@ export async function tursoWebSyncPush(data: {
       }
     }
 
+    if (data.auditLogs && Array.isArray(data.auditLogs)) {
+      for (const log of data.auditLogs) {
+        try {
+          if (!log.id) continue;
+          await client.execute({
+            sql: `INSERT OR IGNORE INTO audit_logs (
+              id, timestamp, user_id, user_name, action, entity_type, entity_id, details
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+            args: [
+              log.id,
+              log.timestamp || new Date().toISOString(),
+              log.userId || log.user_id || '',
+              log.userName || log.user_name || '',
+              log.action || '',
+              log.entityType || log.entity_type || '',
+              log.entityId || log.entity_id || '',
+              typeof log.details === 'object' ? JSON.stringify(log.details) : String(log.details || '')
+            ]
+          });
+        } catch (e) {
+          console.warn('[Turso Web Sync] Error saving audit log:', log.id, e);
+        }
+      }
+    }
+
     return {
       success: true,
       count: txCount,
-      message: `Successfully synced ${txCount} transactions directly to Turso Cloud.`
+      message: `Successfully synced ${txCount} transactions and audit logs directly to Turso Cloud.`
     };
   } catch (err: any) {
     return {
@@ -237,10 +262,13 @@ export async function tursoWebSyncPush(data: {
   }
 }
 
-export async function tursoWebSyncPull(): Promise<{ success: boolean; data?: { transactions: any[] }; message: string }> {
+export async function tursoWebSyncPull(): Promise<{ success: boolean; data?: { transactions: any[]; auditLogs?: any[] }; message: string }> {
   try {
     const client = getTursoWebClient();
-    const res = await client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC LIMIT 500;');
+    const [res, logRes] = await Promise.all([
+      client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC LIMIT 500;'),
+      client.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200;').catch(() => ({ rows: [] }))
+    ]);
     const transactions = res.rows.map((r: any) => ({
       id: String(r.id),
       transactionNo: String(r.transaction_no),
@@ -292,10 +320,21 @@ export async function tursoWebSyncPull(): Promise<{ success: boolean; data?: { t
       senderDateOfBirth: String(r.sender_date_of_birth || '')
     }));
 
+    const auditLogs = (logRes.rows || []).map((r: any) => ({
+      id: String(r.id),
+      timestamp: String(r.timestamp || new Date().toISOString()),
+      userId: String(r.user_id || ''),
+      userName: String(r.user_name || ''),
+      action: String(r.action || ''),
+      entityType: String(r.entity_type || ''),
+      entityId: String(r.entity_id || ''),
+      details: typeof r.details === 'string' ? r.details : JSON.stringify(r.details || '')
+    }));
+
     return {
       success: true,
-      data: { transactions },
-      message: `Retrieved ${transactions.length} transactions from Turso Cloud.`
+      data: { transactions, auditLogs },
+      message: `Retrieved ${transactions.length} transactions and ${auditLogs.length} audit logs from Turso Cloud.`
     };
   } catch (err: any) {
     return {

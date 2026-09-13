@@ -453,11 +453,72 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             return dateB - dateA;
           });
 
+          // Merge audit logs if present
+          let updatedAuditLogs = prev.auditLogs;
+          if (extraData?.auditLogs && Array.isArray(extraData.auditLogs) && extraData.auditLogs.length > 0) {
+            const auditMap = new Map<string, AuditRecord>();
+            for (const l of prev.auditLogs) {
+              if (l.id) auditMap.set(l.id, l);
+            }
+            for (const r of extraData.auditLogs) {
+              if (r.id) {
+                auditMap.set(r.id, {
+                  id: r.id,
+                  timestamp: r.timestamp || new Date().toISOString(),
+                  userId: r.userId || r.user_id || 'system',
+                  userName: r.userName || r.user_name || 'System',
+                  userRole: (r.userRole || r.user_role || 'ADMIN') as UserRole,
+                  action: r.action,
+                  entityType: r.entityType || r.entity_type,
+                  entityId: r.entityId || r.entity_id,
+                  details: typeof r.details === 'string' ? r.details : JSON.stringify(r.details || ''),
+                  previousValue: r.previousValue || r.previous_value,
+                  newValue: r.newValue || r.new_value,
+                });
+              }
+            }
+            updatedAuditLogs = Array.from(auditMap.values()).sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+          }
+
           return {
             ...prev,
             transactions: uniqueList,
             ...(extraData?.exchangeRates?.length ? { exchangeRates: extraData.exchangeRates } : {}),
             ...(extraData?.customers?.length ? { customers: extraData.customers } : {}),
+            auditLogs: updatedAuditLogs,
+          };
+        });
+      } else if (extraData?.auditLogs && Array.isArray(extraData.auditLogs) && extraData.auditLogs.length > 0) {
+        setDb(prev => {
+          const auditMap = new Map<string, AuditRecord>();
+          for (const l of prev.auditLogs) {
+            if (l.id) auditMap.set(l.id, l);
+          }
+          for (const r of extraData.auditLogs) {
+            if (r.id) {
+              auditMap.set(r.id, {
+                id: r.id,
+                timestamp: r.timestamp || new Date().toISOString(),
+                userId: r.userId || r.user_id || 'system',
+                userName: r.userName || r.user_name || 'System',
+                userRole: (r.userRole || r.user_role || 'ADMIN') as UserRole,
+                action: r.action,
+                entityType: r.entityType || r.entity_type,
+                entityId: r.entityId || r.entity_id,
+                details: typeof r.details === 'string' ? r.details : JSON.stringify(r.details || ''),
+                previousValue: r.previousValue || r.previous_value,
+                newValue: r.newValue || r.new_value,
+              });
+            }
+          }
+          const updatedAuditLogs = Array.from(auditMap.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+          return {
+            ...prev,
+            auditLogs: updatedAuditLogs,
           };
         });
       }
@@ -492,17 +553,26 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // 1. Pull latest from Turso Cloud first (so any changes on Vercel appear here immediately)
       const pullRes = await fetchDataFromTurso();
 
-      // 2. Push any local transactions to Turso Cloud
-      if (db.transactions && db.transactions.length > 0) {
-        const txPayload = db.transactions.map(mapTransactionToTursoPayload);
-        const { ok } = await safeFetchJson('/api/turso/sync-push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transactions: txPayload })
-        });
-        if (!ok) {
-          await tursoWebSyncPush({ transactions: txPayload });
-        }
+      // 2. Push any local transactions & audit logs to Turso Cloud
+      const txPayload = (db.transactions || []).map(mapTransactionToTursoPayload);
+      const auditPayload = (db.auditLogs || []).slice(0, 100).map(l => ({
+        id: l.id,
+        timestamp: l.timestamp,
+        userId: l.userId,
+        userName: l.userName,
+        action: l.action,
+        entityType: l.entityType,
+        entityId: l.entityId,
+        details: l.details,
+      }));
+
+      const { ok } = await safeFetchJson('/api/turso/sync-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactions: txPayload, auditLogs: auditPayload })
+      });
+      if (!ok) {
+        await tursoWebSyncPush({ transactions: txPayload, auditLogs: auditPayload });
       }
 
       setIsSyncingTurso(false);
@@ -517,7 +587,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setIsSyncingTurso(false);
       return { success: false, message: err?.message || 'Sync failed' };
     }
-  }, [db.activeLanguage, db.transactions, fetchDataFromTurso]);
+  }, [db.activeLanguage, db.transactions, db.auditLogs, fetchDataFromTurso]);
 
   // Continuous Bidirectional Synchronization with Turso Cloud
   // (Mount sync, 20s interval polling, and window focus re-sync)
@@ -530,17 +600,26 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (isConnected && isMounted) {
           await fetchDataFromTurso();
 
-          // Push any unsynced local records if present
-          if (db.transactions && db.transactions.length > 0) {
-            const txPayload = db.transactions.map(mapTransactionToTursoPayload);
-            const { ok } = await safeFetchJson('/api/turso/sync-push', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ transactions: txPayload })
-            });
-            if (!ok) {
-              await tursoWebSyncPush({ transactions: txPayload });
-            }
+          // Push any unsynced local records & audit logs if present
+          const txPayload = (db.transactions || []).map(mapTransactionToTursoPayload);
+          const auditPayload = (db.auditLogs || []).slice(0, 100).map(l => ({
+            id: l.id,
+            timestamp: l.timestamp,
+            userId: l.userId,
+            userName: l.userName,
+            action: l.action,
+            entityType: l.entityType,
+            entityId: l.entityId,
+            details: l.details,
+          }));
+
+          const { ok } = await safeFetchJson('/api/turso/sync-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transactions: txPayload, auditLogs: auditPayload })
+          });
+          if (!ok) {
+            await tursoWebSyncPush({ transactions: txPayload, auditLogs: auditPayload });
           }
         }
       } catch (err) {
@@ -591,6 +670,61 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
+  // Real-time audit log sync to Turso Cloud & Supabase
+  const syncLiveAuditLogToCloud = (record: AuditRecord) => {
+    // 1. Turso live push (with direct Web fallback for Vercel)
+    try {
+      const payload = {
+        id: record.id,
+        timestamp: record.timestamp,
+        userId: record.userId,
+        userName: record.userName,
+        action: record.action,
+        entityType: record.entityType,
+        entityId: record.entityId,
+        details: record.details,
+      };
+
+      safeFetchJson('/api/turso/sync-push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ auditLogs: [payload] })
+      }).then(({ ok, data }) => {
+        if (!ok || !data?.success) {
+          tursoWebSyncPush({ auditLogs: [payload] }).catch(() => {});
+        }
+      }).catch(() => {
+        tursoWebSyncPush({ auditLogs: [payload] }).catch(() => {});
+      });
+    } catch {
+      tursoWebSyncPush({ auditLogs: [record] }).catch(() => {});
+    }
+
+    // 2. Supabase live upsert (if connected)
+    try {
+      const client = getSupabaseClient(db.supabaseConfig);
+      if (client) {
+        client.from('audit_logs').upsert([{
+          id: record.id,
+          timestamp: record.timestamp,
+          user_id: record.userId,
+          user_name: record.userName,
+          user_role: record.userRole,
+          action: record.action,
+          entity_type: record.entityType,
+          entity_id: record.entityId,
+          details: record.details,
+          previous_value: record.previousValue || null,
+          new_value: record.newValue || null,
+        }], { onConflict: 'id' }).then(({ error }: any) => {
+          if (error) console.warn('Supabase live audit log sync warning:', error.message);
+        }, () => {});
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   // Helper direct audit logger to avoid stale closures
   const logActionDirect = (
     action: AuditRecord['action'],
@@ -617,6 +751,9 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       ...prev,
       auditLogs: [newRecord, ...prev.auditLogs]
     }));
+
+    // Real-time Cloud Push to Turso & Supabase
+    syncLiveAuditLogToCloud(newRecord);
   };
 
   const logAction = useCallback((
@@ -2496,10 +2633,22 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
 
       // Fallback to direct Web sync (for Vercel)
+      const auditPayload = db.auditLogs.slice(0, 100).map(l => ({
+        id: l.id,
+        timestamp: l.timestamp,
+        userId: l.userId,
+        userName: l.userName,
+        action: l.action,
+        entityType: l.entityType,
+        entityId: l.entityId,
+        details: l.details,
+      }));
+
       const webRes = await tursoWebSyncPush({
         transactions: txPayload,
         exchangeRates: ratesPayload,
-        customers: customersPayload
+        customers: customersPayload,
+        auditLogs: auditPayload
       });
 
       if (webRes.success) {
