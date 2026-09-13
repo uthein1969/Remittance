@@ -37,20 +37,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
 
+  // Safe number formatter
+  const formatAmount = (val: any): string => {
+    if (val === undefined || val === null || val === '') return '0';
+    const num = Number(val);
+    return isNaN(num) ? '0' : num.toLocaleString();
+  };
+
+  // Safe date time formatter
+  const formatTime = (dateVal: any): string => {
+    if (!dateVal) return '';
+    try {
+      const d = new Date(dateVal);
+      return isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
   // Calculations
-  const outwardTxs = db.transactions.filter(t => t.type === 'OUTWARD');
-  const inwardTxs = db.transactions.filter(t => t.type === 'INWARD');
+  const outwardTxs = (db?.transactions || []).filter(t => t?.type === 'OUTWARD');
+  const inwardTxs = (db?.transactions || []).filter(t => t?.type === 'INWARD');
   
   const totalOutwardMMK = outwardTxs.reduce((sum, tx) => {
-    return sum + (tx.sourceCurrency === 'MMK' ? tx.sendAmount : tx.totalPayableAmount);
+    const amt = Number(tx.sourceCurrency === 'MMK' ? tx.sendAmount : tx.totalPayableAmount);
+    return sum + (isNaN(amt) ? 0 : amt);
   }, 0);
 
   const totalInwardMMK = inwardTxs.reduce((sum, tx) => {
-    return sum + (tx.targetCurrency === 'MMK' ? tx.receiveAmount : tx.sendAmount);
+    const amt = Number(tx.targetCurrency === 'MMK' ? tx.receiveAmount : tx.sendAmount);
+    return sum + (isNaN(amt) ? 0 : amt);
   }, 0);
 
-  const pendingTxs = db.transactions.filter(t => t.status === 'PENDING_APPROVAL');
-  const activeBlacklistCount = db.blacklist.filter(b => b.active).length;
+  const pendingTxs = (db?.transactions || []).filter(t => t?.status === 'PENDING_APPROVAL');
+  const activeBlacklistCount = (db?.blacklist || []).filter(b => b?.active).length;
 
   const quickApprove = async (txId: string) => {
     setApprovingId(txId);
@@ -190,7 +210,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           </div>
           <div className="mt-2">
             <span className="text-2xl font-bold text-slate-900 font-mono tracking-tight">
-              {totalOutwardMMK.toLocaleString()}
+              {formatAmount(totalOutwardMMK)}
             </span>
             <span className="text-xs text-blue-600 ml-1 font-bold">MMK</span>
           </div>
@@ -218,7 +238,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           </div>
           <div className="mt-2">
             <span className="text-2xl font-bold text-slate-900 font-mono tracking-tight">
-              {totalInwardMMK.toLocaleString()}
+              {formatAmount(totalInwardMMK)}
             </span>
             <span className="text-xs text-emerald-600 ml-1 font-bold">MMK</span>
           </div>
@@ -331,12 +351,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                   <div className="flex justify-between items-baseline">
                     <span className="text-[10px] text-slate-500">{language === 'my' ? 'ငွေလွှဲ:' : 'Remit:'}</span>
                     <strong className="text-blue-600 font-mono font-bold text-xs">
-                      {rate.transferRate.toLocaleString()}
+                      {formatAmount(rate.transferRate)}
                     </strong>
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-500">
                     <span>{language === 'my' ? 'ဝယ်/ရောင်း:' : 'B/S:'}</span>
-                    <span className="font-mono">{rate.buyRate}/{rate.sellRate}</span>
+                    <span className="font-mono">{formatAmount(rate.buyRate)}/{formatAmount(rate.sellRate)}</span>
                   </div>
                 </div>
               </div>
@@ -355,7 +375,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             </h3>
           </div>
           <button
-            onClick={() => onNavigate('admin_setup', 'branches')}
+            onClick={() => onNavigate('admin_setup', 'branch')}
             className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
           >
             <span>{language === 'my' ? 'ဘဏ်ခွဲများ စီမံခန့်ခွဲရန်' : 'Manage Branches'}</span>
@@ -466,10 +486,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                     <div className="flex items-center justify-between sm:justify-end space-x-3">
                       <div className="text-right">
                         <div className="text-xs font-bold font-mono text-blue-600">
-                          {tx.sendAmount.toLocaleString()} {tx.sourceCurrency}
+                          {formatAmount(tx.sendAmount)} {tx.sourceCurrency}
                         </div>
                         <div className="text-[10px] text-slate-500 font-mono">
-                          ➔ {tx.receiveAmount.toLocaleString()} {tx.targetCurrency}
+                          ➔ {formatAmount(tx.receiveAmount)} {tx.targetCurrency}
                         </div>
                       </div>
 
@@ -533,10 +553,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                   <div className="flex items-center space-x-2">
                     <div className="text-right">
                       <div className="text-xs font-bold font-mono text-slate-900">
-                        {tx.receiveAmount.toLocaleString()} {tx.targetCurrency}
+                        {formatAmount(tx.receiveAmount)} {tx.targetCurrency}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
-                        {new Date(tx.createdDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatTime(tx.createdDate)}
                       </div>
                     </div>
                     <button
@@ -573,7 +593,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
               {db.blacklist.slice(0, 2).map((item) => (
                 <div key={item.id} className="bg-white border border-rose-200 rounded p-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-[11px]">{item.nameEn} ({item.nameMm})</span>
+                    <span className="font-bold text-slate-900 text-[11px]">{item.fullNameEn || (item as any).nameEn} ({item.fullNameMm || (item as any).nameMm})</span>
                     <span className="text-[9px] font-bold px-1.5 py-0.2 bg-rose-100 text-rose-800 rounded">
                       {item.riskLevel}
                     </span>

@@ -48,6 +48,7 @@ const DB_STORAGE_KEY = 'REMITTANCE_APP_DB_V1';
 
 interface RemittanceContextType {
   db: AppDatabase;
+  setDb: React.Dispatch<React.SetStateAction<AppDatabase>>;
   language: Language;
   t: typeof translations.en;
   setLanguage: (lang: Language) => void;
@@ -140,7 +141,7 @@ interface RemittanceContextType {
   isTursoConnected: boolean;
   isSyncingTurso: boolean;
   lastTursoSyncTime: string | null;
-  tursoStats: { connected: boolean; url: string; counts?: any } | null;
+  tursoStats: { connected: boolean; url: string; counts?: any; [key: string]: any } | null;
   checkTursoStatus: () => Promise<boolean>;
   syncTursoBidirectional: () => Promise<{ success: boolean; message: string; count?: number }>;
   loginWithTurso: (
@@ -299,7 +300,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Turso Cloud connection status & statistics
   const [isTursoConnected, setIsTursoConnected] = useState<boolean>(true);
-  const [tursoStats, setTursoStats] = useState<{ connected: boolean; url: string; counts?: any } | null>(null);
+  const [tursoStats, setTursoStats] = useState<{ connected: boolean; url: string; counts?: any; [key: string]: any } | null>(null);
 
   // Helper to map a transaction to the Turso schema payload
   const mapTransactionToTursoPayload = (tx: RemittanceTransaction) => {
@@ -1678,7 +1679,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           name_mm: p.nameMm,
           category: p.category,
           requires_doc_proof: p.requiresDocProof,
-          max_daily_limit_mmk: p.maxDailyLimitMmk,
+          max_daily_limit_mmk: p.maxDailyLimitMMK,
         }));
         const { error: pErr } = await client.from('purposes').upsert(pPayload, { onConflict: 'id' });
         if (pErr) throw pErr;
@@ -1702,7 +1703,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           customer_type: c.customerType,
           risk_rating: c.riskRating,
           total_transactions: c.totalTransactions,
-          total_volume_mmk: c.totalVolumeMmk,
+          total_volume_mmk: c.totalVolumeMMK,
           notes: c.notes,
           created_at: c.createdAt,
         }));
@@ -2440,9 +2441,9 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         toCurrency: r.toCurrency,
         buyRate: r.buyRate,
         sellRate: r.sellRate,
-        centralBankRate: r.centralBankRate,
+        centralBankRate: (r as any).centralBankRate || r.transferRate,
         effectiveDate: r.effectiveDate,
-        updatedAt: r.updatedAt,
+        updatedAt: (r as any).updatedAt || r.effectiveDate,
       }));
       const customersPayload = db.customers.map(c => ({
         id: c.id,
@@ -2530,6 +2531,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     <RemittanceContext.Provider
       value={{
         db,
+        setDb,
         language,
         t,
         setLanguage,

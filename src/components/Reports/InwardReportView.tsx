@@ -245,7 +245,7 @@ export const InwardReportView: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-emerald-400 text-sm">
-                      {tx.receiveAmount.toLocaleString()} MMK
+                      {Number(tx.receiveAmount || 0).toLocaleString()} MMK
                     </td>
                     <td className="px-4 py-3 text-slate-400">
                       {tx.payoutMethod === 'CASH_PICKUP' ? 'Counter Cash' : 'Bank Deposit'}

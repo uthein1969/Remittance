@@ -189,10 +189,10 @@ export const InwardApproveView: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-mono font-bold text-base text-emerald-400">
-                        {tx.receiveAmount.toLocaleString()} MMK
+                        {Number(tx.receiveAmount || 0).toLocaleString()} MMK
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">
-                        ({tx.sendAmount.toLocaleString()} {tx.sourceCurrency} @ {tx.exchangeRate})
+                        ({Number(tx.sendAmount || 0).toLocaleString()} {tx.sourceCurrency} @ {Number(tx.exchangeRate || 0).toLocaleString()})
                       </div>
                     </td>
                     <td className="px-4 py-3">

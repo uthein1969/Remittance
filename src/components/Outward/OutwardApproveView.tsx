@@ -567,10 +567,10 @@ export const OutwardApproveView: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-mono font-bold text-emerald-400">
-                        {tx.sendAmount.toLocaleString()} {tx.sourceCurrency}
+                        {Number(tx.sendAmount || 0).toLocaleString()} {tx.sourceCurrency}
                       </div>
                       <div className="text-[11px] text-slate-400 font-mono">
-                        ➔ {tx.receiveAmount.toLocaleString()} {tx.targetCurrency}
+                        ➔ {Number(tx.receiveAmount || 0).toLocaleString()} {tx.targetCurrency}
                       </div>
                     </td>
                     <td className="px-4 py-3">
@@ -678,14 +678,14 @@ export const OutwardApproveView: React.FC = () => {
               <div className="border-t border-slate-800 pt-2">
                 <span className="text-slate-400 block font-medium">{t.sendAmount}:</span>
                 <strong className="text-emerald-400 text-sm font-mono">
-                  {selectedTx.sendAmount.toLocaleString()} {selectedTx.sourceCurrency}
+                  {Number(selectedTx.sendAmount || 0).toLocaleString()} {selectedTx.sourceCurrency}
                 </strong>
               </div>
 
               <div className="border-t border-slate-800 pt-2">
                 <span className="text-slate-400 block font-medium">{t.receiveAmount}:</span>
                 <strong className="text-emerald-400 text-sm font-mono">
-                  {selectedTx.receiveAmount.toLocaleString()} {selectedTx.targetCurrency}
+                  {Number(selectedTx.receiveAmount || 0).toLocaleString()} {selectedTx.targetCurrency}
                 </strong>
               </div>
             </div>

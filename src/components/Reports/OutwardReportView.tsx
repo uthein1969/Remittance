@@ -243,10 +243,10 @@ export const OutwardReportView: React.FC = () => {
                       <div className="text-[10px] text-slate-500">{tx.receiverCountryCode}</div>
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-slate-200">
-                      {tx.sendAmount.toLocaleString()} {tx.sourceCurrency}
+                      {Number(tx.sendAmount || 0).toLocaleString()} {tx.sourceCurrency}
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-emerald-400">
-                      {tx.receiveAmount.toLocaleString()} {tx.targetCurrency}
+                      {Number(tx.receiveAmount || 0).toLocaleString()} {tx.targetCurrency}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${

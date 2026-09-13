@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { Component, useState } from 'react';
 import { RemittanceProvider, useRemittance } from './lib/store';
 import { LoginView } from './components/Auth/LoginView';
 import { Header } from './components/Header';
@@ -117,10 +117,11 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  override state: ErrorBoundaryState = { hasError: false, error: null };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -139,6 +140,15 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
     window.location.reload();
   };
 
+  handleResetToLogin = () => {
+    try {
+      sessionStorage.setItem('REMITTANCE_EXPLICIT_LOGOUT', 'true');
+      sessionStorage.removeItem('REMITTANCE_AUTH_SESSION');
+      localStorage.removeItem('REMITTANCE_AUTH_SESSION');
+    } catch {}
+    window.location.reload();
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -152,12 +162,18 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           <p className="text-sm text-slate-400 max-w-md mb-6">
             Local browser cache ကြောင့် UI ခေတ္တမပေါ်ပါက အောက်ပါခလုတ်ကိုနှိပ်၍ ပြန်လည်စတင်နိုင်ပါသည်။
           </p>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 justify-center">
             <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl shadow-md transition-colors cursor-pointer"
             >
               ပြန်လည် Refresh လုပ်မည်
+            </button>
+            <button
+              onClick={this.handleResetToLogin}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold rounded-xl shadow-md transition-colors cursor-pointer"
+            >
+              Login Form သို့ သွားမည်
             </button>
             <button
               onClick={this.handleReset}

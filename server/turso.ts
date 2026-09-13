@@ -406,7 +406,6 @@ export async function syncPushToTurso(data: {
             ?, ?, ?,
             ?, ?, ?,
             ?, ?, ?,
-            ?, ?, ?,
             ?, ?, ?, ?
           )
           ON CONFLICT(id) DO UPDATE SET

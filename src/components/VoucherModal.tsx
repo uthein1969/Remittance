@@ -460,33 +460,33 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
               <div className="px-4 py-2 flex justify-between">
                 <span className="text-slate-600">{language === 'my' ? 'လွှဲပို့ငွေ မူလပမာဏ' : 'Send Principal Amount'}:</span>
                 <span className="font-mono font-bold text-slate-900">
-                  {transaction.sendAmount.toLocaleString()} {transaction.sourceCurrency}
+                  {Number(transaction.sendAmount || 0).toLocaleString()} {transaction.sourceCurrency}
                 </span>
               </div>
               <div className="px-4 py-2 flex justify-between bg-slate-50/50">
                 <span className="text-slate-600">{language === 'my' ? 'တွက်ချက်ထားသော ငွေလဲနှုန်း' : 'Applied Exchange Rate'}:</span>
                 <span className="font-mono font-bold text-slate-900">
-                  1 {transaction.sourceCurrency === 'MMK' ? transaction.targetCurrency : transaction.sourceCurrency} = {transaction.exchangeRate.toLocaleString()} MMK
+                  1 {transaction.sourceCurrency === 'MMK' ? transaction.targetCurrency : transaction.sourceCurrency} = {Number(transaction.exchangeRate || 0).toLocaleString()} MMK
                 </span>
               </div>
               <div className="px-4 py-2 flex justify-between">
                 <span className="text-slate-600">{language === 'my' ? 'ငွေလွှဲ ဝန်ဆောင်ခ' : 'Remittance Service Fee'}:</span>
                 <span className="font-mono text-slate-800">
-                  {transaction.serviceFee.toLocaleString()} MMK
+                  {Number(transaction.serviceFee || 0).toLocaleString()} MMK
                 </span>
               </div>
-              {transaction.commissionFee > 0 && (
+              {Number(transaction.commissionFee || 0) > 0 && (
                 <div className="px-4 py-2 flex justify-between bg-slate-50/50">
                   <span className="text-slate-600">{language === 'my' ? 'မိတ်ဖက် ကော်မရှင်ခ' : 'Partner Commission'}:</span>
                   <span className="font-mono text-slate-800">
-                    {transaction.commissionFee.toLocaleString()} MMK
+                    {Number(transaction.commissionFee || 0).toLocaleString()} MMK
                   </span>
                 </div>
               )}
               <div className="px-4 py-3 flex justify-between bg-emerald-50 text-emerald-950 font-bold text-sm">
                 <span>{language === 'my' ? 'လက်ခံရရှိငွေ စုစုပေါင်း' : 'Total Payout / Receive Amount'}:</span>
                 <span className="font-mono text-base font-black text-emerald-800">
-                  {transaction.receiveAmount.toLocaleString()} {transaction.targetCurrency}
+                  {Number(transaction.receiveAmount || 0).toLocaleString()} {transaction.targetCurrency}
                 </span>
               </div>
             </div>

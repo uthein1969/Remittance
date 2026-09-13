@@ -884,9 +884,9 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                 {filteredExchangeRates.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50/80">
                     <td className="px-4 py-3 font-mono font-bold text-slate-900">{r.fromCurrency} / {r.toCurrency}</td>
-                    <td className="px-4 py-3 font-mono font-extrabold text-blue-600 text-sm">{r.transferRate.toLocaleString()}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{r.buyRate.toLocaleString()}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{r.sellRate.toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono font-extrabold text-blue-600 text-sm">{Number(r.transferRate || 0).toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono text-slate-600">{Number(r.buyRate || 0).toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono text-slate-600">{Number(r.sellRate || 0).toLocaleString()}</td>
                     <td className="px-4 py-3 text-slate-500 text-[11px]">{r.effectiveDate}</td>
                     <td className="px-4 py-3 text-right space-x-1.5">
                       <button onClick={() => handleOpenEdit('exchange_rate', r)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
