@@ -266,13 +266,14 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [db]);
 
-  // Authentication state - Default to authenticated in AI Studio preview so UI renders immediately
+  // Authentication state - Default to false so Login Form is shown on initial open
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
+      const isExplicitLogin = sessionStorage.getItem('REMITTANCE_LOGGED_IN') === 'true';
       const isLoggedOut = sessionStorage.getItem('REMITTANCE_EXPLICIT_LOGOUT') === 'true';
-      if (isLoggedOut) return false;
+      if (isLoggedOut || !isExplicitLogin) return false;
 
-      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION') || localStorage.getItem('REMITTANCE_AUTH_SESSION');
+      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION');
       if (sessionStr) {
         const session = JSON.parse(sessionStr);
         if (session && session.userId) {
@@ -282,8 +283,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } catch (e) {
       console.error('Failed to load auth session:', e);
     }
-    // Default to true so user immediately sees the Remittance UI in AI Studio preview
-    return true;
+    // Default to false so the user is greeted with the Login Form first
+    return false;
   });
 
   // Database Provider Selection (Default: TURSO Cloud)
@@ -2161,6 +2162,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // Save session in sessionStorage and localStorage
       try {
         sessionStorage.removeItem('REMITTANCE_EXPLICIT_LOGOUT');
+        sessionStorage.setItem('REMITTANCE_LOGGED_IN', 'true');
         const sessionPayload = JSON.stringify({
           userId: authenticatedUser.id,
           username: authenticatedUser.username,
@@ -2202,6 +2204,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       sessionStorage.removeItem('REMITTANCE_AUTH_SESSION');
       localStorage.removeItem('REMITTANCE_AUTH_SESSION');
+      sessionStorage.removeItem('REMITTANCE_LOGGED_IN');
       sessionStorage.setItem('REMITTANCE_EXPLICIT_LOGOUT', 'true');
     } catch (e) {}
     setIsAuthenticated(false);
@@ -2352,6 +2355,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // Save session in sessionStorage and localStorage
       try {
         sessionStorage.removeItem('REMITTANCE_EXPLICIT_LOGOUT');
+        sessionStorage.setItem('REMITTANCE_LOGGED_IN', 'true');
         const sessionPayload = JSON.stringify({
           userId: authenticatedUser.id,
           username: authenticatedUser.username,
