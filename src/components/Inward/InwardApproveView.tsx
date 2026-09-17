@@ -27,10 +27,14 @@ export const InwardApproveView: React.FC = () => {
     payoutInwardTransaction, 
     rejectTransaction,
     isSyncingTurso,
-    syncTursoBidirectional
+    syncTursoBidirectional,
+    activeBranchId,
+    activeCountryCode
   } = useRemittance();
 
   const [filterStatus, setFilterStatus] = useState('PENDING_APPROVAL');
+  const [selectedCountry, setSelectedCountry] = useState(activeCountryCode || 'ALL');
+  const [selectedBranch, setSelectedBranch] = useState(activeBranchId || 'ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState<RemittanceTransaction | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -48,13 +52,29 @@ export const InwardApproveView: React.FC = () => {
 
   const filteredTxs = inwardTxs.filter(tx => {
     if (filterStatus !== 'ALL' && tx.status !== filterStatus) return false;
+    
+    // Country Filter
+    if (selectedCountry !== 'ALL') {
+      const branch = db.branches.find(b => b.id === (tx.payoutBranchId || tx.branchId));
+      const match = branch?.countryCode === selectedCountry || 
+        tx.senderCountryCode === selectedCountry || 
+        tx.receiverCountryCode === selectedCountry;
+      if (!match) return false;
+    }
+
+    // Branch Filter
+    if (selectedBranch !== 'ALL' && tx.payoutBranchId !== selectedBranch && tx.branchId !== selectedBranch) {
+      return false;
+    }
+
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
         tx.transactionNo.toLowerCase().includes(q) ||
         tx.mtcn.toLowerCase().includes(q) ||
         tx.receiverName.toLowerCase().includes(q) ||
-        tx.receiverNrc.toLowerCase().includes(q)
+        tx.receiverNrc.toLowerCase().includes(q) ||
+        tx.senderName.toLowerCase().includes(q)
       );
     }
     return true;
@@ -131,20 +151,89 @@ export const InwardApproveView: React.FC = () => {
         </div>
       </div>
 
-      {/* Search Filter Bar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={language === 'my' ? 'MTCN သို့မဟုတ် လက်ခံသူ မှတ်ပုံတင်ဖြင့် ရှာရန်...' : 'Search by MTCN or Beneficiary NRC...'}
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
-          />
+      {/* Search & Location Filter Bar */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 flex-1">
+          {/* Search box */}
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={language === 'my' ? 'MTCN သို့မဟုတ် လက်ခံသူ မှတ်ပုံတင်ဖြင့် ရှာရန်...' : 'Search by MTCN or Beneficiary NRC...'}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
+            />
+          </div>
+
+          {/* Country Filter */}
+          <div className="flex items-center space-x-1.5 bg-slate-800/90 border border-slate-700 rounded-lg px-2 py-1">
+            <span className="text-[11px] text-slate-400 font-medium">
+              {language === 'my' ? 'နိုင်ငံ:' : 'Country:'}
+            </span>
+            <select
+              value={selectedCountry}
+              onChange={(e) => {
+                const c = e.target.value;
+                setSelectedCountry(c);
+                if (c !== 'ALL') {
+                  const b = db.branches.find(br => br.countryCode === c);
+                  if (b) setSelectedBranch(b.id);
+                  else setSelectedBranch('ALL');
+                } else {
+                  setSelectedBranch('ALL');
+                }
+              }}
+              className="bg-transparent text-xs text-white font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="ALL" className="bg-slate-900 text-white">🌐 {language === 'my' ? 'နိုင်ငံအားလုံး' : 'All Countries'}</option>
+              {db.countries.map(c => (
+                <option key={c.id} value={c.code} className="bg-slate-900 text-white">
+                  {c.flagEmoji} {c.nameEn} ({c.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Branch Filter */}
+          <div className="flex items-center space-x-1.5 bg-slate-800/90 border border-slate-700 rounded-lg px-2 py-1">
+            <Building2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+            <span className="text-[11px] text-slate-400 font-medium">
+              {language === 'my' ? 'ဘဏ်ခွဲ:' : 'Branch:'}
+            </span>
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              className="bg-transparent text-xs text-white font-medium focus:outline-none cursor-pointer max-w-[180px] truncate"
+            >
+              <option value="ALL" className="bg-slate-900 text-white">{language === 'my' ? 'ဘဏ်ခွဲအားလုံး' : 'All Branches'}</option>
+              {db.branches
+                .filter(b => selectedCountry === 'ALL' || b.countryCode === selectedCountry)
+                .map(b => (
+                  <option key={b.id} value={b.id} className="bg-slate-900 text-white">
+                    {b.code} - {b.nameEn}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          {(selectedCountry !== 'ALL' || selectedBranch !== 'ALL' || searchQuery) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCountry('ALL');
+                setSelectedBranch('ALL');
+                setSearchQuery('');
+              }}
+              className="text-[11px] text-teal-400 hover:text-teal-300 underline font-medium px-1 cursor-pointer"
+            >
+              {language === 'my' ? 'အားလုံးပြမည် (Reset)' : 'Reset All'}
+            </button>
+          )}
         </div>
-        <div className="text-xs text-slate-400">
-          {filteredTxs.length} {language === 'my' ? 'ခု' : 'records'}
+
+        <div className="text-xs text-slate-400 self-end md:self-center font-mono shrink-0">
+          <span className="text-teal-400 font-bold">{filteredTxs.length}</span> {language === 'my' ? 'ခု ရှာတွေ့သည်' : 'records found'}
         </div>
       </div>
 

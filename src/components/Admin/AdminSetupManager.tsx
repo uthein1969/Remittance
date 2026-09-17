@@ -735,33 +735,47 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                     <th className="px-4 py-3">{t.username}</th>
                     <th className="px-4 py-3">{t.fullName}</th>
                     <th className="px-4 py-3">{t.role}</th>
+                    <th className="px-4 py-3">{t.country}</th>
                     <th className="px-4 py-3">{t.branch}</th>
                     <th className="px-4 py-3">{t.phone}</th>
                     <th className="px-4 py-3 text-right">{t.actions}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {filteredUsers.map(u => (
-                    <tr key={u.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3 font-mono font-bold text-blue-600">@{u.username}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{u.fullName}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
-                          u.role === 'CHECKER' ? 'bg-amber-100 text-amber-800' :
-                          'bg-blue-100 text-blue-800'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{db.branches.find(b => b.id === u.branchId)?.nameEn || u.branchId}</td>
-                      <td className="px-4 py-3 font-mono text-slate-600">{u.phone}</td>
-                      <td className="px-4 py-3 text-right space-x-1.5">
-                        <button onClick={() => handleOpenEdit('user', u)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
-                        <button onClick={() => setDeleteConfirmId(u.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5 inline" /></button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredUsers.map(u => {
+                    const branch = db.branches.find(b => b.id === u.branchId);
+                    const userCountryCode = u.countryCode || branch?.countryCode || 'MM';
+                    const country = db.countries.find(c => c.code === userCountryCode);
+                    return (
+                      <tr key={u.id} className="hover:bg-slate-50/80">
+                        <td className="px-4 py-3 font-mono font-bold text-blue-600">@{u.username}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{u.fullName}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            u.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' :
+                            u.role === 'CHECKER' ? 'bg-amber-100 text-amber-800' :
+                            'bg-blue-100 text-blue-800'
+                          }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 font-semibold text-[11px]">
+                            <span>{country?.flagEmoji || '🌐'}</span>
+                            <span>{country?.nameEn || userCountryCode}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-700 font-medium">
+                          {branch?.nameEn || u.branchId}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-600">{u.phone}</td>
+                        <td className="px-4 py-3 text-right space-x-1.5">
+                          <button onClick={() => handleOpenEdit('user', u)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
+                          <button onClick={() => setDeleteConfirmId(u.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5 inline" /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1286,26 +1300,58 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Branch *</label>
+                      <label className="block text-slate-700 font-semibold mb-1">{t.country} *</label>
                       <select
-                        value={editingItem.branchId || db.branches[0]?.id}
-                        onChange={(e) => setEditingItem({ ...editingItem, branchId: e.target.value })}
+                        value={editingItem.countryCode || (db.branches.find(b => b.id === editingItem.branchId)?.countryCode) || 'MM'}
+                        onChange={(e) => {
+                          const newCountry = e.target.value;
+                          const matchingBranch = db.branches.find(b => b.countryCode === newCountry);
+                          setEditingItem({
+                            ...editingItem,
+                            countryCode: newCountry,
+                            branchId: matchingBranch ? matchingBranch.id : editingItem.branchId
+                          });
+                        }}
                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-medium"
                       >
-                        {db.branches.map(b => (
-                          <option key={b.id} value={b.id}>{b.nameEn} ({b.city})</option>
+                        {db.countries.map(c => (
+                          <option key={c.code} value={c.code}>
+                            {c.flagEmoji} {c.nameEn} ({c.code})
+                          </option>
                         ))}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-slate-700 font-semibold mb-1">Phone</label>
-                      <input
-                        type="text"
-                        value={editingItem.phone || ''}
-                        onChange={(e) => setEditingItem({ ...editingItem, phone: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
-                      />
+                      <label className="block text-slate-700 font-semibold mb-1">{t.branch} *</label>
+                      <select
+                        value={editingItem.branchId || db.branches[0]?.id}
+                        onChange={(e) => {
+                          const bId = e.target.value;
+                          const selectedBranch = db.branches.find(b => b.id === bId);
+                          setEditingItem({ 
+                            ...editingItem, 
+                            branchId: bId,
+                            countryCode: selectedBranch?.countryCode || editingItem.countryCode || 'MM'
+                          });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-medium"
+                      >
+                        {db.branches.map(b => (
+                          <option key={b.id} value={b.id}>
+                            [{b.countryCode}] {b.nameEn} ({b.city})
+                          </option>
+                        ))}
+                      </select>
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Phone</label>
+                    <input
+                      type="text"
+                      value={editingItem.phone || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, phone: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>

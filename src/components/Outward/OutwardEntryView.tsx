@@ -42,7 +42,17 @@ import {
 import { extractNrcInfoFromUpload, scanNrcWithAi, ExtractedNrcInfo } from '../../lib/nrcOcrParser';
 
 export const OutwardEntryView: React.FC = () => {
-  const { db, language, t, checkBlacklist, getExchangeRate, createOutwardRemittance, currentUser } = useRemittance();
+  const { 
+    db, 
+    language, 
+    t, 
+    checkBlacklist, 
+    getExchangeRate, 
+    createOutwardRemittance, 
+    currentUser,
+    activeBranchId,
+    activeCountryCode
+  } = useRemittance();
 
   // Form State
   const [scope, setScope] = useState<RemittanceScope>('INTERNATIONAL');
@@ -55,7 +65,7 @@ export const OutwardEntryView: React.FC = () => {
   const [senderPassport, setSenderPassport] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [senderAddress, setSenderAddress] = useState('');
-  const [senderCountryCode, setSenderCountryCode] = useState('MM');
+  const [senderCountryCode, setSenderCountryCode] = useState(activeCountryCode || 'MM');
   const [senderFatherName, setSenderFatherName] = useState('U Tin Aung');
   const [senderDateOfBirth, setSenderDateOfBirth] = useState('14/07/1988');
   const [senderOccupation, setSenderOccupation] = useState('Company Staff');
@@ -78,7 +88,7 @@ export const OutwardEntryView: React.FC = () => {
   // Financials
   const [sourceCurrency, setSourceCurrency] = useState('MMK');
   const [targetCurrency, setTargetCurrency] = useState('THB');
-  const [sendAmount, setSendAmount] = useState<number>(5000000);
+  const [sendAmount, setSendAmount] = useState<number>(0);
   const [exchangeRate, setExchangeRate] = useState<number>(134.50);
   const [serviceFee, setServiceFee] = useState<number>(15000);
   const [commissionFee, setCommissionFee] = useState<number>(5000);
@@ -89,11 +99,17 @@ export const OutwardEntryView: React.FC = () => {
   const [payoutAccountNumber, setPayoutAccountNumber] = useState('');
   const [purposeId, setPurposeId] = useState('PUR-001');
   const [partnerCompanyId, setPartnerCompanyId] = useState('CMP-005');
-  const [sendingBranchId, setSendingBranchId] = useState(currentUser.branchId || 'BR-001');
+  const [sendingBranchId, setSendingBranchId] = useState(activeBranchId || currentUser.branchId || 'BR-001');
+
+  useEffect(() => {
+    if (activeBranchId) {
+      setSendingBranchId(activeBranchId);
+    }
+  }, [activeBranchId]);
   const [senderNote, setSenderNote] = useState('');
   
   // Purpose & Routing Details: Proof Attachment Category & Documents
-  const [proofCategory, setProofCategory] = useState<'NRC' | 'DEPOSIT_RECEIPT' | 'CUSTOM'>('NRC');
+  const [proofCategory, setProofCategory] = useState<'DEPOSIT_RECEIPT' | 'CUSTOM'>('DEPOSIT_RECEIPT');
   const [proofDocumentName, setProofDocumentName] = useState('');
   const [depositReceiptDoc, setDepositReceiptDoc] = useState<{ url?: string; name?: string; type?: string; size?: string } | null>(null);
   const [customProofDoc, setCustomProofDoc] = useState<{ url?: string; name?: string; type?: string; size?: string } | null>(null);
@@ -205,8 +221,6 @@ export const OutwardEntryView: React.FC = () => {
     const name = `NRC_Front_${nameEnVal.replace(/\s+/g, '_')}_${nrcVal.replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
     const doc = { url, name, type: 'image/svg+xml', size: '18.4 KB' };
     setSenderNrcFrontDoc(doc);
-    setProofCategory('NRC');
-    setProofDocumentName(name);
 
     if (!senderName) setSenderName(nameEnVal);
     if (!senderNameMm) setSenderNameMm(nameMmVal);
@@ -267,9 +281,6 @@ export const OutwardEntryView: React.FC = () => {
     const backUrl = createSampleMyanmarNrcBackSvg(occupationVal, addressVal);
     const backName = `NRC_Back_${nameEnVal.replace(/\s+/g, '_')}_${nrcVal.replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
     setSenderNrcBackDoc({ url: backUrl, name: backName, type: 'image/svg+xml', size: '16.2 KB' });
-
-    setProofCategory('NRC');
-    setProofDocumentName(frontName);
 
     setSenderName(nameEnVal);
     setSenderNameMm(nameMmVal);
@@ -374,11 +385,8 @@ export const OutwardEntryView: React.FC = () => {
           if (target === 'nrc-both') {
             setSenderNrcBackDoc(doc);
           }
-          setProofCategory('NRC');
-          setProofDocumentName(file.name);
         } else if (target === 'nrc-back') {
           setSenderNrcBackDoc(doc);
-          if (!proofDocumentName) setProofDocumentName(file.name);
         }
 
         if (target === 'nrc-back') {
@@ -552,12 +560,7 @@ export const OutwardEntryView: React.FC = () => {
     let resolvedProofType = 'image/svg+xml';
     let resolvedProofSize: string | undefined = undefined;
 
-    if (proofCategory === 'NRC') {
-      resolvedProofUrl = senderNrcFrontDoc?.url;
-      resolvedProofName = senderNrcFrontDoc?.name || (senderNrc ? `NRC_Proof_${senderNrc}.svg` : 'NRC_Proof.svg');
-      resolvedProofType = senderNrcFrontDoc?.type || 'image/svg+xml';
-      resolvedProofSize = senderNrcFrontDoc?.size;
-    } else if (proofCategory === 'DEPOSIT_RECEIPT') {
+    if (proofCategory === 'DEPOSIT_RECEIPT') {
       resolvedProofUrl = depositReceiptDoc?.url;
       resolvedProofName = depositReceiptDoc?.name || (proofDocumentName || 'Deposit_Receipt.svg');
       resolvedProofType = depositReceiptDoc?.type || 'image/svg+xml';
@@ -646,7 +649,7 @@ export const OutwardEntryView: React.FC = () => {
       setCreatedTx(newTx);
 
       // Reset form amounts
-      setSendAmount(5000000);
+      setSendAmount(0);
       setSenderNote('');
     } catch (err: any) {
       setErrorMessage(err?.message || 'Failed to submit remittance transaction');
@@ -1583,10 +1586,11 @@ export const OutwardEntryView: React.FC = () => {
                 <input
                   type="number"
                   required
-                  min="1"
+                  min="0"
                   step="any"
                   value={sendAmount}
                   onChange={(e) => setSendAmount(Number(e.target.value))}
+                  onFocus={(e) => e.target.select()}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono font-bold text-sm focus:border-sky-500 focus:outline-none"
                 />
                 <span className="absolute right-3 top-2.5 text-slate-400 font-bold">{sourceCurrency}</span>
@@ -1609,6 +1613,73 @@ export const OutwardEntryView: React.FC = () => {
             </div>
           </div>
 
+          {/* Fee Settings Row: Service Fee & Commission Fee */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs pt-1 border-t border-slate-800/80">
+            {/* Service Fee */}
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">
+                {language === 'my' ? 'ဝန်ဆောင်ခ (Service Fee)' : 'Service Fee'}
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={serviceFee}
+                  onChange={(e) => setServiceFee(Number(e.target.value) || 0)}
+                  onFocus={(e) => e.target.select()}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono font-bold text-sm focus:border-sky-500 focus:outline-none"
+                />
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">MMK</span>
+              </div>
+            </div>
+
+            {/* Commission Fee */}
+            <div>
+              <label className="block text-slate-400 mb-1 font-medium">
+                {language === 'my' ? 'ကော်မရှင်ကြေး (Commission Fee)' : 'Commission Fee'}
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={commissionFee}
+                  onChange={(e) => setCommissionFee(Number(e.target.value) || 0)}
+                  onFocus={(e) => e.target.select()}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono font-bold text-sm focus:border-sky-500 focus:outline-none"
+                />
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">MMK</span>
+              </div>
+            </div>
+
+            {/* Quick Presets / Information */}
+            <div className="sm:col-span-2 flex items-center gap-2 pt-5">
+              <span className="text-[11px] text-slate-400">{language === 'my' ? 'အမြန်ပြင်ဆင်ရန်:' : 'Presets:'}</span>
+              <button
+                type="button"
+                onClick={() => { setServiceFee(0); setCommissionFee(0); }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                0 MMK (အခမဲ့)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setServiceFee(15000); setCommissionFee(5000); }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                15,000 / 5,000 MMK
+              </button>
+              <button
+                type="button"
+                onClick={() => { setServiceFee(10000); setCommissionFee(0); }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                10,000 MMK
+              </button>
+            </div>
+          </div>
+
           {/* Real-time calculated Result Box */}
           <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="border-r border-slate-800 pr-4">
@@ -1621,11 +1692,15 @@ export const OutwardEntryView: React.FC = () => {
             <div className="border-r border-slate-800 pr-4">
               <div className="flex justify-between items-center text-xs text-slate-400">
                 <span>{t.serviceFee}:</span>
-                <span className="font-mono text-white">{serviceFee.toLocaleString()} MMK</span>
+                <span className="font-mono text-white font-semibold">{serviceFee.toLocaleString()} MMK</span>
               </div>
               <div className="flex justify-between items-center text-xs text-slate-400 mt-1">
                 <span>{t.commissionFee}:</span>
-                <span className="font-mono text-white">{commissionFee.toLocaleString()} MMK</span>
+                <span className="font-mono text-white font-semibold">{commissionFee.toLocaleString()} MMK</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800">
+                <span>{language === 'my' ? 'အခကြေးငွေ စုစုပေါင်း' : 'Total Fees'}:</span>
+                <span className="font-mono text-sky-400 font-bold">{(serviceFee + commissionFee).toLocaleString()} MMK</span>
               </div>
             </div>
 
@@ -1721,17 +1796,17 @@ export const OutwardEntryView: React.FC = () => {
               />
             </div>
 
-            {/* Attach Deposit / NRC Proof - High-grade Interactive Section */}
+            {/* Attach Deposit Proof Section */}
             <div className="sm:col-span-3 bg-slate-950/80 border border-slate-700/80 rounded-2xl p-4.5 space-y-4 shadow-md">
               {/* Header & Category Switcher */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
                 <div className="space-y-0.5">
                   <div className="flex items-center space-x-2">
-                    <span className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                      <Paperclip className="w-4 h-4" />
+                    <span className="w-7 h-7 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                      <Receipt className="w-4 h-4" />
                     </span>
                     <h4 className="text-sm font-bold text-white tracking-wide">
-                      {language === 'my' ? 'ငွေသွင်းပြေစာ / မှတ်ပုံတင် ပူးတွဲဖိုင် (Attach Deposit / NRC Proof)' : 'Attach Deposit / NRC Proof'}
+                      {language === 'my' ? 'ငွေသွင်းပြေစာ ပူးတွဲဖိုင် (Attach Deposit Proof)' : 'Attach Deposit Proof'}
                     </h4>
                     {scope === 'DOMESTIC' && (
                       <span className="px-2 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-800 text-[10px] font-bold">
@@ -1741,28 +1816,13 @@ export const OutwardEntryView: React.FC = () => {
                   </div>
                   <p className="text-[11px] text-slate-400">
                     {language === 'my'
-                      ? 'ပြည်တွင်းငွေလွှဲအတွက် ငွေသွင်း/လွှဲသူ၏ မှတ်ပုံတင် (ရှေ့/နောက်) သို့မဟုတ် ဘဏ်ငွေသွင်းပြေစာကို အောက်တွင် ပူးတွဲထည့်သွင်းနိုင်ပါသည်'
-                      : 'Attach depositor/sender NRC (Front & Back) or Bank Cash Deposit Receipt for compliance & verification'}
+                      ? 'ငွေလွှဲဆောင်ရွက်မှုအတွက် ဘဏ်ငွေသွင်းပြေစာ (Deposit Slip) သို့မဟုတ် အထောက်အထားစာရွက်စာတမ်း ပူးတွဲထည့်သွင်းနိုင်ပါသည်'
+                      : 'Attach Bank Cash Deposit Receipt or other supporting voucher for compliance & verification'}
                   </p>
                 </div>
 
                 {/* Category Tabs */}
                 <div className="inline-flex bg-slate-900 p-1 rounded-xl border border-slate-700 text-xs shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProofCategory('NRC');
-                      if (senderNrcFrontDoc?.name) setProofDocumentName(senderNrcFrontDoc.name);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
-                      proofCategory === 'NRC'
-                        ? 'bg-emerald-600 text-white shadow'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>{language === 'my' ? 'မှတ်ပုံတင် (NRC Proof)' : 'NRC Proof'}</span>
-                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -1792,269 +1852,6 @@ export const OutwardEntryView: React.FC = () => {
                   </button>
                 </div>
               </div>
-
-              {/* CATEGORY 1: NRC PROOF (FRONT & BACK) */}
-              {proofCategory === 'NRC' && (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-900/60">
-                    <div className="text-xs text-emerald-200 flex items-center space-x-2">
-                      <FileCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>
-                        {language === 'my'
-                          ? 'မှတ်ပုံတင် (ရှေ့ခြမ်း နှင့် နောက်ခြမ်း) အထောက်အထား ပူးတွဲစနစ်'
-                          : 'Sender NRC Proof Attachment (Front & Back Side Verification)'}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleAttachBothNrc}
-                        className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>{language === 'my' ? 'မှတ်ပုံတင် (ရှေ့/နောက်) ပူးတွဲမည်' : 'Attach NRC (Both Sides)'}</span>
-                      </button>
-
-                      <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer">
-                        <Upload className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload NRC File'}</span>
-                        <input
-                          type="file"
-                          accept="image/*,.pdf,.svg"
-                          className="hidden"
-                          onChange={(e) => handleUploadFile(e, 'nrc-both')}
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* 2-Column Grid for Front & Back NRC */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* NRC Front Box */}
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
-                          <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (NRC Front)' : 'NRC Card - Front Side'}</span>
-                        </span>
-                        {senderNrcFrontDoc ? (
-                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full">
-                            ✓ {language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">
-                            {language === 'my' ? 'မတွဲရသေးပါ' : 'Not Attached'}
-                          </span>
-                        )}
-                      </div>
-
-                      {senderNrcFrontDoc?.url ? (
-                        <div className="space-y-2">
-                          <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/10] flex items-center justify-center">
-                            <img src={senderNrcFrontDoc.url} alt="NRC Front Proof" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                              <button
-                                type="button"
-                                onClick={() => openLightbox({
-                                  title: language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (Front)' : "Sender's NRC Card (Front)",
-                                  url: senderNrcFrontDoc.url,
-                                  name: senderNrcFrontDoc.name,
-                                  size: senderNrcFrontDoc.size,
-                                  idNumber: senderNrc
-                                })}
-                                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
-                                title="Enlarge"
-                              >
-                                <Maximize2 className="w-4 h-4 text-emerald-400" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between text-xs text-slate-400">
-                            <span className="truncate max-w-[180px] font-mono">{senderNrcFrontDoc.name}</span>
-                            <span className="text-emerald-400 font-mono font-semibold">{senderNrcFrontDoc.size}</span>
-                          </div>
-
-                          {/* Action buttons: View, Replace Picture, Remove */}
-                          <div className="flex items-center space-x-2 pt-1 border-t border-slate-800">
-                            <button
-                              type="button"
-                              onClick={() => openLightbox({
-                                title: language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (Front)' : "Sender's NRC Card (Front)",
-                                url: senderNrcFrontDoc.url,
-                                name: senderNrcFrontDoc.name,
-                                size: senderNrcFrontDoc.size,
-                                idNumber: senderNrc
-                              })}
-                              className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ကြည့်ရှုမည်' : 'View'}</span>
-                            </button>
-
-                            <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-sm">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ပုံအသစ် အစားထိုး' : 'Replace Picture'}</span>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf,.svg"
-                                className="hidden"
-                                onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                              />
-                            </label>
-
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveDoc('nrc-front')}
-                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 cursor-pointer transition-colors"
-                              title="Remove"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="border border-dashed border-slate-700 hover:border-emerald-500/50 rounded-xl p-4 text-center space-y-2.5 transition-colors">
-                          <p className="text-xs text-slate-400">
-                            {language === 'my' ? 'အရှေ့ခြမ်း ဓာတ်ပုံ သို့မဟုတ် ဖိုင် မတွဲရသေးပါ' : 'Front NRC document has not been attached yet'}
-                          </p>
-                          <div className="flex flex-wrap items-center justify-center gap-2">
-                            <button
-                              type="button"
-                              onClick={handleAttachSampleNrcFront}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors cursor-pointer"
-                            >
-                              + {language === 'my' ? 'နမူနာ အရှေ့ခြမ်းတွဲ' : 'Attach Sample Front'}
-                            </button>
-                            <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload File'}</span>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf,.svg"
-                                className="hidden"
-                                onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* NRC Back Box */}
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
-                          <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (NRC Back)' : 'NRC Card - Back Side'}</span>
-                        </span>
-                        {senderNrcBackDoc ? (
-                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full">
-                            ✓ {language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">
-                            {language === 'my' ? 'မတွဲရသေးပါ' : 'Not Attached'}
-                          </span>
-                        )}
-                      </div>
-
-                      {senderNrcBackDoc?.url ? (
-                        <div className="space-y-2">
-                          <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/10] flex items-center justify-center">
-                            <img src={senderNrcBackDoc.url} alt="NRC Back Proof" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                              <button
-                                type="button"
-                                onClick={() => openLightbox({
-                                  title: language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (Back)' : "Sender's NRC Card (Back)",
-                                  url: senderNrcBackDoc.url,
-                                  name: senderNrcBackDoc.name,
-                                  size: senderNrcBackDoc.size,
-                                  idNumber: senderNrc
-                                })}
-                                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
-                                title="Enlarge"
-                              >
-                                <Maximize2 className="w-4 h-4 text-emerald-400" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between text-xs text-slate-400">
-                            <span className="truncate max-w-[180px] font-mono">{senderNrcBackDoc.name}</span>
-                            <span className="text-emerald-400 font-mono font-semibold">{senderNrcBackDoc.size}</span>
-                          </div>
-
-                          {/* Action buttons: View, Replace Picture, Remove */}
-                          <div className="flex items-center space-x-2 pt-1 border-t border-slate-800">
-                            <button
-                              type="button"
-                              onClick={() => openLightbox({
-                                title: language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (Back)' : "Sender's NRC Card (Back)",
-                                url: senderNrcBackDoc.url,
-                                name: senderNrcBackDoc.name,
-                                size: senderNrcBackDoc.size,
-                                idNumber: senderNrc
-                              })}
-                              className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ကြည့်ရှုမည်' : 'View'}</span>
-                            </button>
-
-                            <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-sm">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ပုံအသစ် အစားထိုး' : 'Replace Picture'}</span>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf,.svg"
-                                className="hidden"
-                                onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                              />
-                            </label>
-
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveDoc('nrc-back')}
-                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 cursor-pointer transition-colors"
-                              title="Remove"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="border border-dashed border-slate-700 hover:border-emerald-500/50 rounded-xl p-4 text-center space-y-2.5 transition-colors">
-                          <p className="text-xs text-slate-400">
-                            {language === 'my' ? 'အနောက်ခြမ်း ဓာတ်ပုံ သို့မဟုတ် ဖိုင် မတွဲရသေးပါ' : 'Back NRC document has not been attached yet'}
-                          </p>
-                          <div className="flex flex-wrap items-center justify-center gap-2">
-                            <button
-                              type="button"
-                              onClick={handleAttachSampleNrcBack}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors cursor-pointer"
-                            >
-                              + {language === 'my' ? 'နမူနာ အနောက်ခြမ်းတွဲ' : 'Attach Sample Back'}
-                            </button>
-                            <label className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload File'}</span>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf,.svg"
-                                className="hidden"
-                                onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* CATEGORY 2: BANK DEPOSIT SLIP VOUCHER */}
               {proofCategory === 'DEPOSIT_RECEIPT' && (

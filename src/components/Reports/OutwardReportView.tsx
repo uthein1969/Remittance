@@ -16,12 +16,13 @@ import { RemittanceTransaction } from '../../types';
 import { VoucherModal } from '../VoucherModal';
 
 export const OutwardReportView: React.FC = () => {
-  const { db, language, t } = useRemittance();
+  const { db, language, t, activeBranchId, activeCountryCode } = useRemittance();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCountry, setSelectedCountry] = useState(activeCountryCode || 'ALL');
+  const [selectedBranch, setSelectedBranch] = useState(activeBranchId || 'ALL');
   const [selectedCurrency, setSelectedCurrency] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
-  const [selectedBranch, setSelectedBranch] = useState('ALL');
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<RemittanceTransaction | null>(null);
 
   const outwardTxs = db.transactions.filter(t => t.type === 'OUTWARD');
@@ -29,7 +30,21 @@ export const OutwardReportView: React.FC = () => {
   const filteredTxs = outwardTxs.filter(tx => {
     if (selectedCurrency !== 'ALL' && tx.targetCurrency !== selectedCurrency && tx.sourceCurrency !== selectedCurrency) return false;
     if (selectedStatus !== 'ALL' && tx.status !== selectedStatus) return false;
-    if (selectedBranch !== 'ALL' && tx.sendingBranchId !== selectedBranch) return false;
+    
+    // Country Filter
+    if (selectedCountry !== 'ALL') {
+      const branch = db.branches.find(b => b.id === (tx.sendingBranchId || tx.branchId));
+      const match = branch?.countryCode === selectedCountry || 
+        tx.senderCountryCode === selectedCountry || 
+        tx.receiverCountryCode === selectedCountry;
+      if (!match) return false;
+    }
+
+    // Branch Filter
+    if (selectedBranch !== 'ALL' && tx.sendingBranchId !== selectedBranch && tx.branchId !== selectedBranch) {
+      return false;
+    }
+
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return (
@@ -49,13 +64,15 @@ export const OutwardReportView: React.FC = () => {
 
   // CSV Export
   const exportCsv = () => {
-    const headers = ['Transaction No', 'MTCN', 'Date', 'Branch', 'Sender Name', 'Sender NRC', 'Receiver Name', 'Destination', 'Send Amount', 'Currency', 'Exchange Rate', 'Receive Amount', 'Target Currency', 'Service Fee', 'Status'];
+    const headers = ['Transaction No', 'MTCN', 'Date', 'Country', 'Branch', 'Sender Name', 'Sender NRC', 'Receiver Name', 'Destination', 'Send Amount', 'Currency', 'Exchange Rate', 'Receive Amount', 'Target Currency', 'Service Fee', 'Status'];
     const rows = filteredTxs.map(tx => {
       const branch = db.branches.find(b => b.id === tx.sendingBranchId);
+      const country = db.countries.find(c => c.code === (branch?.countryCode || tx.senderCountryCode || 'MM'));
       return [
         tx.transactionNo,
         tx.mtcn,
         new Date(tx.createdDate).toISOString().split('T')[0],
+        `"${country?.nameEn || tx.senderCountryCode || 'Myanmar'}"`,
         `"${branch ? `${branch.code} - ${branch.nameEn}` : (tx.sendingBranchId || 'BR-001')}"`,
         `"${tx.senderName}"`,
         `"${tx.senderNrc}"`,
@@ -138,16 +155,58 @@ export const OutwardReportView: React.FC = () => {
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-xs">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={language === 'my' ? 'ရှာဖွေရန်...' : 'Search MTCN, Sender, Tx...'}
+            placeholder={language === 'my' ? 'MTCN၊ ပို့သူ၊ အမှတ်စဉ်ဖြင့် ရှာရန်...' : 'Search MTCN, Sender, Tx...'}
             className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
           />
+        </div>
+
+        {/* Country Filter */}
+        <div>
+          <select
+            value={selectedCountry}
+            onChange={(e) => {
+              const c = e.target.value;
+              setSelectedCountry(c);
+              if (c !== 'ALL') {
+                const b = db.branches.find(br => br.countryCode === c);
+                if (b) setSelectedBranch(b.id);
+                else setSelectedBranch('ALL');
+              } else {
+                setSelectedBranch('ALL');
+              }
+            }}
+            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
+          >
+            <option value="ALL">🌐 {language === 'my' ? 'နိုင်ငံအားလုံး' : 'All Countries'}</option>
+            {db.countries.map(c => (
+              <option key={c.id} value={c.code}>
+                {c.flagEmoji} {c.nameEn} ({c.code})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Branch Filter */}
+        <div>
+          <select
+            value={selectedBranch}
+            onChange={(e) => setSelectedBranch(e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
+          >
+            <option value="ALL">{language === 'my' ? 'ဘဏ်ခွဲ အားလုံး' : 'All Branches'}</option>
+            {db.branches
+              .filter(b => selectedCountry === 'ALL' || b.countryCode === selectedCountry)
+              .map(b => (
+                <option key={b.id} value={b.id}>{b.code} - {b.nameEn}</option>
+              ))}
+          </select>
         </div>
 
         <div>
@@ -156,7 +215,7 @@ export const OutwardReportView: React.FC = () => {
             onChange={(e) => setSelectedCurrency(e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
           >
-            <option value="ALL">All Currencies (အားလုံး)</option>
+            <option value="ALL">All Currencies (ငွေကြေးအားလုံး)</option>
             {db.currencies.map(c => (
               <option key={c.id} value={c.code}>{c.code} ({c.nameEn})</option>
             ))}
@@ -175,19 +234,6 @@ export const OutwardReportView: React.FC = () => {
             <option value="PAID_OUT">PAID OUT (ထုတ်ယူပြီး)</option>
             <option value="REJECTED">REJECTED (ငြင်းပယ်ထား)</option>
             <option value="ON_HOLD">ON HOLD (ဆိုင်းငံ့)</option>
-          </select>
-        </div>
-
-        <div>
-          <select
-            value={selectedBranch}
-            onChange={(e) => setSelectedBranch(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-sky-500"
-          >
-            <option value="ALL">All Branches (ဘဏ်ခွဲ အားလုံး)</option>
-            {db.branches.map(b => (
-              <option key={b.id} value={b.id}>{b.code} - {b.nameEn}</option>
-            ))}
           </select>
         </div>
       </div>

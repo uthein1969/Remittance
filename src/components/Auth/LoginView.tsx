@@ -22,7 +22,10 @@ import {
   Zap,
   Cloud,
   Layers,
-  UploadCloud
+  UploadCloud,
+  Globe,
+  Building2,
+  MapPin
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { User, UserRole } from '../../types';
@@ -55,6 +58,28 @@ export const LoginView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Mandatory Branch and Country Selection for Logon
+  const [selectedCountryCode, setSelectedCountryCode] = useState<string>('MM');
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('BR-001');
+
+  const handleCountryChange = (countryCode: string) => {
+    setSelectedCountryCode(countryCode);
+    const branchesForCountry = (db?.branches || []).filter(b => b.countryCode === countryCode);
+    if (branchesForCountry.length > 0) {
+      if (!branchesForCountry.some(b => b.id === selectedBranchId)) {
+        setSelectedBranchId(branchesForCountry[0].id);
+      }
+    }
+  };
+
+  const handleBranchChange = (branchId: string) => {
+    setSelectedBranchId(branchId);
+    const branch = db?.branches?.find(b => b.id === branchId);
+    if (branch && branch.countryCode) {
+      setSelectedCountryCode(branch.countryCode);
+    }
+  };
 
   // Turso state
   const [tursoUsers, setTursoUsers] = useState<User[]>([]);
@@ -122,7 +147,7 @@ export const LoginView: React.FC = () => {
     setLoading(true);
 
     if (selectedProvider === 'TURSO') {
-      const result = await loginWithTurso(usernameOrEmail, password);
+      const result = await loginWithTurso(usernameOrEmail, password, selectedBranchId, selectedCountryCode);
       setLoading(false);
       if (!result.success) {
         setErrorMessage(result.message);
@@ -130,7 +155,7 @@ export const LoginView: React.FC = () => {
         setSuccessMessage(result.message);
       }
     } else {
-      const result = await loginWithSupabase(usernameOrEmail, password);
+      const result = await loginWithSupabase(usernameOrEmail, password, selectedBranchId, selectedCountryCode);
       setLoading(false);
       if (!result.success) {
         setErrorMessage(result.message);
@@ -145,7 +170,11 @@ export const LoginView: React.FC = () => {
 
   const handleQuickSelectUser = (u: User) => {
     setUsernameOrEmail(u.username);
-    setPassword('password123');
+    setPassword(u.password || 'password123');
+    const branch = db?.branches?.find(b => b.id === u.branchId);
+    const country = u.countryCode || branch?.countryCode || 'MM';
+    setSelectedBranchId(u.branchId || 'BR-001');
+    setSelectedCountryCode(country);
     setErrorMessage(null);
   };
 
@@ -408,6 +437,67 @@ export const LoginView: React.FC = () => {
             )}
 
             <form onSubmit={handleLogin} className="space-y-4">
+              {/* Mandatory Country & Branch Selection */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 text-slate-700">
+                    <Building2 className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-bold uppercase tracking-wider">
+                      {language === 'my' ? 'နိုင်ငံ နှင့် ဘဏ်ခွဲ ရွေးချယ်မှု (Mandatory Context)' : 'Operating Country & Branch'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                    {language === 'my' ? 'မှန်ကန်စွာရွေးချယ်ပါ' : 'Strict Match'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Country Selector */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center space-x-1">
+                      <Globe className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{language === 'my' ? 'နိုင်ငံ (Country) *' : 'Country *'}</span>
+                    </label>
+                    <select
+                      value={selectedCountryCode}
+                      onChange={(e) => handleCountryChange(e.target.value)}
+                      className="w-full text-xs font-medium bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    >
+                      {(db?.countries || []).map(c => (
+                        <option key={c.code} value={c.code}>
+                          {c.flagEmoji} {language === 'my' ? (c.nameMm || c.nameEn) : c.nameEn} ({c.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Branch Selector */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center space-x-1">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{language === 'my' ? 'ဘဏ်ခွဲ (Branch) *' : 'Branch *'}</span>
+                    </label>
+                    <select
+                      value={selectedBranchId}
+                      onChange={(e) => handleBranchChange(e.target.value)}
+                      className="w-full text-xs font-medium bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    >
+                      {(db?.branches || []).map(b => (
+                        <option key={b.id} value={b.id}>
+                          [{b.countryCode}] {language === 'my' ? (b.nameMm || b.nameEn) : b.nameEn} - {b.city}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-500 leading-tight">
+                  {language === 'my' 
+                    ? '⚠️ အသုံးပြုသူအကောင့်နှင့် ဤသတ်မှတ်ထားသော နိုင်ငံ/ဘဏ်ခွဲ ကိုက်ညီမှသာ စနစ်သို့ ဝင်ရောက်ခွင့်ရရှိပါမည်။' 
+                    : '⚠️ Login requires strict match with your assigned operator Country and Branch.'}
+                </div>
+              </div>
+
               {/* Username or Email */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -648,40 +738,47 @@ export const LoginView: React.FC = () => {
               {((selectedProvider === 'TURSO' ? tursoUsers : supabaseUsers).length > 0 
                 ? (selectedProvider === 'TURSO' ? tursoUsers : supabaseUsers) 
                 : db.users
-              ).map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => handleQuickSelectUser(u)}
-                  className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between group cursor-pointer ${
-                    usernameOrEmail === u.username
-                      ? 'bg-blue-600/30 border-blue-500 ring-1 ring-blue-500/50'
-                      : 'bg-slate-900/60 border-slate-700/80 hover:bg-slate-700/50 hover:border-slate-600'
-                  }`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-bold text-xs text-slate-100 group-hover:text-blue-300 transition-colors truncate">
-                        {u.fullName}
-                      </span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${getRoleBadgeColor(u.role)}`}>
-                        {u.role}
-                      </span>
+              ).map((u) => {
+                const branch = db?.branches?.find(b => b.id === u.branchId);
+                const userCountryCode = u.countryCode || branch?.countryCode || 'MM';
+                const country = db?.countries?.find(c => c.code === userCountryCode);
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => handleQuickSelectUser(u)}
+                    className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between group cursor-pointer ${
+                      usernameOrEmail === u.username
+                        ? 'bg-blue-600/30 border-blue-500 ring-1 ring-blue-500/50'
+                        : 'bg-slate-900/60 border-slate-700/80 hover:bg-slate-700/50 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-xs text-slate-100 group-hover:text-blue-300 transition-colors truncate">
+                          {u.fullName}
+                        </span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${getRoleBadgeColor(u.role)}`}>
+                          {u.role}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center space-x-1.5 truncate">
+                        <span>@{u.username}</span>
+                        <span>•</span>
+                        <span className="text-amber-300/90 font-sans text-[10px] bg-slate-800 px-1.5 py-0.2 rounded border border-slate-700">
+                          {country?.flagEmoji || '🌐'} {branch?.nameEn || u.branchId || 'BR-001'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center space-x-1.5 truncate">
-                      <span>@{u.username}</span>
-                      <span>•</span>
-                      <span>{u.email}</span>
-                    </div>
-                  </div>
 
-                  <div className="pl-2">
-                    <span className="text-[10px] font-semibold text-blue-400 group-hover:text-blue-300 px-2 py-1 rounded bg-blue-950/60 border border-blue-800/60">
-                      {language === 'my' ? 'ရွေးမည်' : 'Select'}
-                    </span>
-                  </div>
-                </button>
-              ))}
+                    <div className="pl-2">
+                      <span className="text-[10px] font-semibold text-blue-400 group-hover:text-blue-300 px-2 py-1 rounded bg-blue-950/60 border border-blue-800/60">
+                        {language === 'my' ? 'ရွေးမည်' : 'Select'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Turso Cloud Helper Actions */}

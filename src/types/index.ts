@@ -41,6 +41,7 @@ export interface User {
   email: string;
   role: UserRole;
   branchId: string;
+  countryCode?: string;
   phone: string;
   status: 'ACTIVE' | 'INACTIVE';
   lastLogin?: string;
@@ -215,6 +216,7 @@ export interface RemittanceTransaction {
   
   sendingBranchId: string;
   payoutBranchId?: string;
+  branchId?: string;
   partnerCompanyId?: string;
   
   purposeId: string;

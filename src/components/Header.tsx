@@ -41,12 +41,18 @@ export const Header: React.FC<HeaderProps> = ({
     isTursoConnected,
     isSyncingTurso,
     syncTursoBidirectional,
-    lastTursoSyncTime
+    lastTursoSyncTime,
+    activeBranchId,
+    activeCountryCode,
+    setActiveBranchId,
+    setActiveCountryCode
   } = useRemittance();
   const [showCompanyModal, setShowCompanyModal] = React.useState(false);
+  const [showBranchSwitcher, setShowBranchSwitcher] = React.useState(false);
 
   const pendingCount = db.transactions.filter(t => t.status === 'PENDING_APPROVAL').length;
-  const currentBranch = db.branches.find(b => b.id === currentUser.branchId) || db.branches[0];
+  const currentBranch = db.branches.find(b => b.id === (activeBranchId || currentUser.branchId)) || db.branches[0];
+  const currentCountry = db.countries.find(c => c.code === (activeCountryCode || currentUser.countryCode || currentBranch?.countryCode || 'MM'));
 
   return (
     <header className="h-14 bg-white border-b border-slate-200 sticky top-0 z-40 px-4 sm:px-6 flex items-center justify-between shrink-0 shadow-xs">
@@ -173,10 +179,98 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* Branch Badge */}
-        <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-700">
-          <Building2 className="w-3.5 h-3.5 text-blue-600" />
-          <span className="font-semibold text-[11px]">{language === 'my' ? currentBranch?.nameMm : currentBranch?.nameEn}</span>
+        {/* Country & Branch Context Badge with Switcher */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowBranchSwitcher(!showBranchSwitcher)}
+            className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs text-slate-700 transition-colors cursor-pointer"
+            title={language === 'my' ? 'လက်ရှိ ရွေးချယ်ထားသော နိုင်ငံနှင့် ဘဏ်ခွဲ ပြောင်းရန် နှိပ်ပါ' : 'Click to change active Country and Branch context'}
+          >
+            <span className="text-sm leading-none">{currentCountry?.flagEmoji || '🌐'}</span>
+            <span className="font-bold text-[11px] text-slate-900">{currentCountry?.code || 'MM'}</span>
+            <span className="text-slate-300 font-mono">/</span>
+            <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="font-semibold text-[11px] text-blue-900 truncate max-w-[140px]">
+              {language === 'my' ? currentBranch?.nameMm : currentBranch?.nameEn}
+            </span>
+          </button>
+
+          {/* Quick Context Switcher Dropdown */}
+          {showBranchSwitcher && (
+            <div className="absolute right-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-3 space-y-3 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <span className="text-xs font-bold text-slate-800">
+                  {language === 'my' ? 'လုပ်ငန်းခွင် နိုင်ငံနှင့် ဘဏ်ခွဲ ရွေးချယ်မှု' : 'Operating Branch & Country'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowBranchSwitcher(false)}
+                  className="text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  {language === 'my' ? 'နိုင်ငံ (Country)' : 'Country'}
+                </label>
+                <select
+                  value={activeCountryCode || currentCountry?.code || 'MM'}
+                  onChange={(e) => {
+                    const newCountry = e.target.value;
+                    setActiveCountryCode(newCountry);
+                    // Find first branch belonging to this country
+                    const matchedBranch = db.branches.find(b => b.countryCode === newCountry);
+                    if (matchedBranch) {
+                      setActiveBranchId(matchedBranch.id);
+                    }
+                  }}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-medium text-slate-900 focus:outline-none focus:border-blue-500"
+                >
+                  {db.countries.map(c => (
+                    <option key={c.id} value={c.code}>
+                      {c.flagEmoji} {c.nameEn} ({c.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                  {language === 'my' ? 'ဘဏ်ခွဲ (Branch)' : 'Branch'}
+                </label>
+                <select
+                  value={activeBranchId || currentBranch?.id || 'BR-001'}
+                  onChange={(e) => {
+                    const bId = e.target.value;
+                    setActiveBranchId(bId);
+                    const b = db.branches.find(br => br.id === bId);
+                    if (b?.countryCode) {
+                      setActiveCountryCode(b.countryCode);
+                    }
+                    setShowBranchSwitcher(false);
+                  }}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-medium text-slate-900 focus:outline-none focus:border-blue-500"
+                >
+                  {db.branches
+                    .filter(b => !activeCountryCode || b.countryCode === activeCountryCode)
+                    .map(b => (
+                      <option key={b.id} value={b.id}>
+                        {b.code} - {b.nameEn} ({b.city})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded-lg leading-relaxed">
+                {language === 'my' 
+                  ? '💡 နိုင်ငံနှင့် ဘဏ်ခွဲ ပြောင်းလဲလိုက်ပါက Inward၊ Outward နှင့် Reports များတွင် သက်ဆိုင်ရာ အချက်အလက်များ အလိုအလျောက် သီးသန့် ပြသပေးပါမည်။' 
+                  : '💡 Switching country/branch filters all Inward, Outward, and Reports to this active location context.'}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Role & Operator Switcher */}

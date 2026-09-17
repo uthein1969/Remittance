@@ -50,7 +50,9 @@ export const InwardEntryView: React.FC = () => {
     createInwardRemittance, 
     currentUser,
     saveCompany,
-    deleteCompany
+    deleteCompany,
+    activeBranchId,
+    activeCountryCode
   } = useRemittance();
 
   // Remittance Scope: 'INTERNATIONAL' | 'DOMESTIC'
@@ -393,12 +395,18 @@ export const InwardEntryView: React.FC = () => {
   // Financials
   const [sourceCurrency, setSourceCurrency] = useState('THB');
   const [targetCurrency, setTargetCurrency] = useState('MMK');
-  const [sendAmount, setSendAmount] = useState<number>(30000);
+  const [sendAmount, setSendAmount] = useState<number>(0);
   const [exchangeRate, setExchangeRate] = useState<number>(134.50);
   
   // Routing
   const [partnerCompanyId, setPartnerCompanyId] = useState('CMP-005');
-  const [payoutBranchId, setPayoutBranchId] = useState(currentUser.branchId || 'BR-001');
+  const [payoutBranchId, setPayoutBranchId] = useState(activeBranchId || currentUser.branchId || 'BR-001');
+
+  useEffect(() => {
+    if (activeBranchId) {
+      setPayoutBranchId(activeBranchId);
+    }
+  }, [activeBranchId]);
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('CASH_PICKUP');
   const [payoutBankName, setPayoutBankName] = useState('KBZ Bank Ltd');
   const [payoutAccountNumber, setPayoutAccountNumber] = useState('');
@@ -662,6 +670,11 @@ export const InwardEntryView: React.FC = () => {
 
     if (!receiverName || !receiverPhone || !receiverNrc) {
       setErrorMessage(language === 'my' ? 'ငွေထုတ်ယူသူ၏ အမည်၊ ဖုန်းနံပါတ် နှင့် မှတ်ပုံတင် ထည့်သွင်းပါ' : 'Beneficiary Name, Phone, and NRC are required');
+      return;
+    }
+
+    if (!sendAmount || Number(sendAmount) <= 0) {
+      setErrorMessage(language === 'my' ? 'လွှဲပို့ငွေပမာဏ (Send Amount) ထည့်သွင်းပါ' : 'Please enter a valid Send Amount');
       return;
     }
 
@@ -1908,10 +1921,11 @@ export const InwardEntryView: React.FC = () => {
               </label>
               <input
                 type="number"
-                min="1"
+                min="0"
                 step="any"
                 value={sendAmount}
                 onChange={(e) => setSendAmount(Number(e.target.value))}
+                onFocus={(e) => e.target.select()}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono font-bold text-sm focus:border-indigo-500 focus:outline-none"
               />
             </div>

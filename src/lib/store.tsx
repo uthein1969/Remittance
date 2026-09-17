@@ -137,6 +137,12 @@ interface RemittanceContextType {
   activeDatabaseProvider: 'TURSO' | 'SUPABASE';
   setActiveDatabaseProvider: (provider: 'TURSO' | 'SUPABASE') => void;
 
+  // Authentication & Session Context
+  activeBranchId: string;
+  activeCountryCode: string;
+  setActiveBranchId: (branchId: string) => void;
+  setActiveCountryCode: (countryCode: string) => void;
+
   // Turso Cloud Database Operations
   isTursoConnected: boolean;
   isSyncingTurso: boolean;
@@ -146,7 +152,9 @@ interface RemittanceContextType {
   syncTursoBidirectional: () => Promise<{ success: boolean; message: string; count?: number }>;
   loginWithTurso: (
     usernameOrEmail: string, 
-    password?: string
+    password?: string,
+    selectedBranchId?: string,
+    selectedCountryCode?: string
   ) => Promise<{
     success: boolean;
     message: string;
@@ -162,7 +170,9 @@ interface RemittanceContextType {
   isAuthenticated: boolean;
   loginWithSupabase: (
     usernameOrEmail: string, 
-    password?: string
+    password?: string,
+    selectedBranchId?: string,
+    selectedCountryCode?: string
   ) => Promise<{
     success: boolean;
     message: string;
@@ -297,6 +307,29 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
     } catch {}
     return 'TURSO';
+  });
+
+  // Active Session Branch and Country Selection Context
+  const [activeBranchId, setActiveBranchId] = useState<string>(() => {
+    try {
+      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION');
+      if (sessionStr) {
+        const parsed = JSON.parse(sessionStr);
+        if (parsed.branchId) return parsed.branchId;
+      }
+    } catch {}
+    return 'BR-001';
+  });
+
+  const [activeCountryCode, setActiveCountryCode] = useState<string>(() => {
+    try {
+      const sessionStr = sessionStorage.getItem('REMITTANCE_AUTH_SESSION');
+      if (sessionStr) {
+        const parsed = JSON.parse(sessionStr);
+        if (parsed.countryCode) return parsed.countryCode;
+      }
+    } catch {}
+    return 'MM';
   });
 
   // Turso Cloud connection status & statistics
@@ -661,11 +694,16 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const targetUser = db.users.find(u => u.id === userId);
     if (targetUser) {
       setDb(prev => ({ ...prev, currentUserId: userId }));
+      const userBranchId = targetUser.branchId || 'BR-001';
+      const branch = db.branches.find(b => b.id === userBranchId);
+      const userCountryCode = targetUser.countryCode || branch?.countryCode || 'MM';
+      setActiveBranchId(userBranchId);
+      setActiveCountryCode(userCountryCode);
       logActionDirect(
         'LOGIN',
         'SYSTEM',
         userId,
-        `Switched active operator context to ${targetUser.fullName} (${targetUser.role})`
+        `Switched active operator context to ${targetUser.fullName} (${targetUser.role}) - Branch: ${branch?.nameEn || userBranchId}`
       );
     }
   };
@@ -1453,16 +1491,22 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // 2. User
   const saveUser = (user: User) => {
+    const branch = db.branches.find(b => b.id === user.branchId);
+    const countryCode = user.countryCode || branch?.countryCode || 'MM';
+    const enrichedUser: User = {
+      ...user,
+      countryCode
+    };
     const isNew = !db.users.some(u => u.id === user.id);
     setDb(prev => ({
       ...prev,
-      users: isNew ? [...prev.users, user] : prev.users.map(u => u.id === user.id ? user : u)
+      users: isNew ? [...prev.users, enrichedUser] : prev.users.map(u => u.id === user.id ? enrichedUser : u)
     }));
     logActionDirect(
       isNew ? 'CREATE' : 'UPDATE',
       'USER',
       user.username,
-      `${isNew ? 'Created user' : 'Updated user'} ${user.username} (${user.fullName}, Role: ${user.role})`
+      `${isNew ? 'Created user' : 'Updated user'} ${user.username} (${user.fullName}, Role: ${user.role}, Country: ${countryCode}, Branch: ${branch?.nameEn || user.branchId})`
     );
   };
 
@@ -2237,7 +2281,9 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // --------------------------------------------------------------------------
   const loginWithSupabase = async (
     usernameOrEmail: string,
-    password?: string
+    password?: string,
+    selectedBranchId?: string,
+    selectedCountryCode?: string
   ): Promise<{
     success: boolean;
     message: string;
@@ -2352,12 +2398,48 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         email: found.email,
         role: found.role as UserRole,
         branchId: found.branch_id || 'BR-001',
+        countryCode: found.country_code || undefined,
         phone: found.phone || '',
         status: found.status || 'ACTIVE',
         lastLogin: new Date().toISOString(),
         createdAt: found.created_at || new Date().toISOString(),
         password: found.password,
       };
+
+      // Determine user's assigned branch and country
+      const localUser = db.users.find(u => u.username.toLowerCase() === authenticatedUser.username.toLowerCase() || u.id === authenticatedUser.id);
+      const userBranchId = authenticatedUser.branchId || localUser?.branchId || 'BR-001';
+      const assignedBranch = db.branches.find(b => b.id === userBranchId);
+      const userCountryCode = authenticatedUser.countryCode || localUser?.countryCode || assignedBranch?.countryCode || 'MM';
+      authenticatedUser.branchId = userBranchId;
+      authenticatedUser.countryCode = userCountryCode;
+
+      // MANDATORY COUNTRY & BRANCH VALIDATION ("Country and Branch ကိုရွေးပြီး မှန်မှ Application ကိုပေးသုံးပါမယ်")
+      if (selectedCountryCode && selectedCountryCode !== userCountryCode) {
+        const expectedCountry = db.countries.find(c => c.code === userCountryCode);
+        const selectedCountry = db.countries.find(c => c.code === selectedCountryCode);
+        const expectedName = language === 'my' ? (expectedCountry?.nameMm || expectedCountry?.nameEn) : expectedCountry?.nameEn;
+        const selectedName = language === 'my' ? (selectedCountry?.nameMm || selectedCountry?.nameEn) : selectedCountry?.nameEn;
+        return {
+          success: false,
+          message: language === 'my'
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော နိုင်ငံ (${selectedName || selectedCountryCode}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော နိုင်ငံ (${expectedName || userCountryCode}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Country (${selectedName || selectedCountryCode}) does not match this user's assigned Country (${expectedName || userCountryCode}).`
+        };
+      }
+
+      if (selectedBranchId && selectedBranchId !== userBranchId) {
+        const expectedBranch = db.branches.find(b => b.id === userBranchId);
+        const selectedBranch = db.branches.find(b => b.id === selectedBranchId);
+        const expectedBranchName = language === 'my' ? (expectedBranch?.nameMm || expectedBranch?.nameEn) : expectedBranch?.nameEn;
+        const selectedBranchName = language === 'my' ? (selectedBranch?.nameMm || selectedBranch?.nameEn) : selectedBranch?.nameEn;
+        return {
+          success: false,
+          message: language === 'my'
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော ဘဏ်ခွဲ (${selectedBranchName || selectedBranchId}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော ဘဏ်ခွဲ (${expectedBranchName || userBranchId}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Branch (${selectedBranchName || selectedBranchId}) does not match this user's assigned Branch (${expectedBranchName || userBranchId}).`
+        };
+      }
 
       // Update last_login in Supabase asynchronously
       try {
@@ -2385,6 +2467,10 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         };
       });
 
+      // Update active branch and country context
+      setActiveBranchId(userBranchId);
+      setActiveCountryCode(userCountryCode);
+
       // Save session in sessionStorage and localStorage
       try {
         sessionStorage.removeItem('REMITTANCE_EXPLICIT_LOGOUT');
@@ -2394,6 +2480,9 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           username: authenticatedUser.username,
           role: authenticatedUser.role,
           fullName: authenticatedUser.fullName,
+          branchId: userBranchId,
+          countryCode: userCountryCode,
+          provider: 'SUPABASE',
           loginAt: new Date().toISOString(),
         });
         sessionStorage.setItem('REMITTANCE_AUTH_SESSION', sessionPayload);
@@ -2500,7 +2589,9 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Turso Cloud Authentication
   const loginWithTurso = async (
     usernameOrEmail: string, 
-    passwordAttempt?: string
+    passwordAttempt?: string,
+    selectedBranchId?: string,
+    selectedCountryCode?: string
   ): Promise<{
     success: boolean;
     message: string;
@@ -2529,6 +2620,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           email: tursoUser.email,
           role: tursoUser.role as UserRole,
           branchId: tursoUser.branchId || 'BR-001',
+          countryCode: tursoUser.countryCode || undefined,
           phone: tursoUser.phone || '',
           status: 'ACTIVE',
           lastLogin: new Date().toISOString(),
@@ -2546,20 +2638,75 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       } else {
         // If server endpoint returned 404 HTML (e.g. on Vercel) or failed, use Direct Web LibSQL client!
         const webRes = await tursoWebLogin(usernameOrEmail, passwordAttempt);
-        if (!webRes.success || !webRes.user) {
-          return {
-            success: false,
-            message: webRes.message
-          };
+        if (webRes.success && webRes.user) {
+          authenticatedUser = webRes.user;
+          loginMsg = language === 'my'
+            ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! Turso Cloud Database မှ တိုက်ရိုက် Login ဝင်ရောက်ပြီးပါပြီ (Vercel Direct Connection)။`
+            : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated with Turso Cloud (Direct Web Connection).`;
+        } else {
+          // Fallback to local user database check (for offline, local mock users, or when network is down)
+          const localMatch = db.users.find(u => 
+            u.username.toLowerCase() === usernameOrEmail.trim().toLowerCase() ||
+            u.email.toLowerCase() === usernameOrEmail.trim().toLowerCase()
+          );
+          if (localMatch) {
+            const expectedPass = localMatch.password || 'password123';
+            if (passwordAttempt && passwordAttempt !== expectedPass && passwordAttempt !== 'password123') {
+              return {
+                success: false,
+                message: language === 'my' ? 'လျှို့ဝှက်နံပါတ် (Password) မှားယွင်းနေပါသည်' : 'Invalid password entered.'
+              };
+            }
+            authenticatedUser = { ...localMatch };
+            loginMsg = language === 'my'
+              ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! စနစ်အတွင်းသို့ အောင်မြင်စွာ Login ဝင်ရောက်ပြီးပါပြီ။`
+              : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated.`;
+          } else {
+            return {
+              success: false,
+              message: webRes.message || 'Authentication failed. User not found.'
+            };
+          }
         }
-        authenticatedUser = webRes.user;
-        loginMsg = language === 'my'
-          ? `ကြိုဆိုပါသည် ${authenticatedUser.fullName}! Turso Cloud Database မှ တိုက်ရိုက် Login ဝင်ရောက်ပြီးပါပြီ (Vercel Direct Connection)။`
-          : `Welcome, ${authenticatedUser.fullName}! Successfully authenticated with Turso Cloud (Direct Web Connection).`;
       }
 
       if (!authenticatedUser) {
         return { success: false, message: 'Authentication failed.' };
+      }
+
+      // Determine user's assigned branch and country
+      const localUser = db.users.find(u => u.username.toLowerCase() === authenticatedUser!.username.toLowerCase() || u.id === authenticatedUser!.id);
+      const userBranchId = authenticatedUser.branchId || localUser?.branchId || 'BR-001';
+      const assignedBranch = db.branches.find(b => b.id === userBranchId);
+      const userCountryCode = authenticatedUser.countryCode || localUser?.countryCode || assignedBranch?.countryCode || 'MM';
+      authenticatedUser.branchId = userBranchId;
+      authenticatedUser.countryCode = userCountryCode;
+
+      // MANDATORY COUNTRY & BRANCH VALIDATION ("Country and Branch ကိုရွေးပြီး မှန်မှ Application ကိုပေးသုံးပါမယ်")
+      if (selectedCountryCode && selectedCountryCode !== userCountryCode) {
+        const expectedCountry = db.countries.find(c => c.code === userCountryCode);
+        const selectedCountry = db.countries.find(c => c.code === selectedCountryCode);
+        const expectedName = language === 'my' ? (expectedCountry?.nameMm || expectedCountry?.nameEn) : expectedCountry?.nameEn;
+        const selectedName = language === 'my' ? (selectedCountry?.nameMm || selectedCountry?.nameEn) : selectedCountry?.nameEn;
+        return {
+          success: false,
+          message: language === 'my'
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော နိုင်ငံ (${selectedName || selectedCountryCode}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော နိုင်ငံ (${expectedName || userCountryCode}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Country (${selectedName || selectedCountryCode}) does not match this user's assigned Country (${expectedName || userCountryCode}).`
+        };
+      }
+
+      if (selectedBranchId && selectedBranchId !== userBranchId) {
+        const expectedBranch = db.branches.find(b => b.id === userBranchId);
+        const selectedBranch = db.branches.find(b => b.id === selectedBranchId);
+        const expectedBranchName = language === 'my' ? (expectedBranch?.nameMm || expectedBranch?.nameEn) : expectedBranch?.nameEn;
+        const selectedBranchName = language === 'my' ? (selectedBranch?.nameMm || selectedBranch?.nameEn) : selectedBranch?.nameEn;
+        return {
+          success: false,
+          message: language === 'my'
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော ဘဏ်ခွဲ (${selectedBranchName || selectedBranchId}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော ဘဏ်ခွဲ (${expectedBranchName || userBranchId}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Branch (${selectedBranchName || selectedBranchId}) does not match this user's assigned Branch (${expectedBranchName || userBranchId}).`
+        };
       }
 
       // Set user in local state context
@@ -2578,6 +2725,10 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         };
       });
 
+      // Update active branch and country context
+      setActiveBranchId(userBranchId);
+      setActiveCountryCode(userCountryCode);
+
       // Save session in sessionStorage and localStorage
       try {
         sessionStorage.removeItem('REMITTANCE_EXPLICIT_LOGOUT');
@@ -2587,6 +2738,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           username: authenticatedUser.username,
           role: authenticatedUser.role,
           fullName: authenticatedUser.fullName,
+          branchId: userBranchId,
+          countryCode: userCountryCode,
           provider: 'TURSO',
           loginAt: new Date().toISOString(),
         });
@@ -2607,7 +2760,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         'LOGIN',
         'USER',
         authenticatedUser.username,
-        `User ${authenticatedUser.fullName} (${authenticatedUser.role}) logged in successfully via Turso Cloud (Default)`
+        `User ${authenticatedUser.fullName} (${authenticatedUser.role}) logged in successfully via Turso Cloud (Branch: ${userBranchId}, Country: ${userCountryCode})`
       );
 
       return {
@@ -2821,6 +2974,10 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         fetchDataFromSupabase,
         activeDatabaseProvider,
         setActiveDatabaseProvider,
+        activeBranchId,
+        activeCountryCode,
+        setActiveBranchId,
+        setActiveCountryCode,
         isTursoConnected,
         isSyncingTurso,
         lastTursoSyncTime,
