@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -10,7 +10,9 @@ import {
   UserCheck,
   Edit3,
   Building2,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -18,7 +20,15 @@ import { RemittanceTransaction } from '../../types';
 import { VoucherModal } from '../VoucherModal';
 import { EditInwardModal } from './EditInwardModal';
 
-export const InwardApproveView: React.FC = () => {
+export interface InwardApproveViewProps {
+  initialTxId?: string | null;
+  onClearInitialTxId?: () => void;
+}
+
+export const InwardApproveView: React.FC<InwardApproveViewProps> = ({
+  initialTxId,
+  onClearInitialTxId
+}) => {
   const { 
     db, 
     language, 
@@ -42,6 +52,23 @@ export const InwardApproveView: React.FC = () => {
   const [voucherTx, setVoucherTx] = useState<RemittanceTransaction | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTx, setEditingTx] = useState<RemittanceTransaction | null>(null);
+
+  useEffect(() => {
+    if (initialTxId) {
+      const tx = db.transactions.find(t => t.id === initialTxId && t.type === 'INWARD');
+      if (tx) {
+        setSelectedBranch('ALL');
+        setSelectedCountry('ALL');
+        setFilterStatus(tx.status || 'PENDING_APPROVAL');
+        setSearchQuery(tx.transactionNo);
+        setSelectedTx(tx);
+        setShowReviewModal(true);
+        if (onClearInitialTxId) {
+          onClearInitialTxId();
+        }
+      }
+    }
+  }, [initialTxId, db.transactions, onClearInitialTxId]);
 
   const handleOpenEdit = (tx: RemittanceTransaction) => {
     setEditingTx(tx);
@@ -319,13 +346,30 @@ export const InwardApproveView: React.FC = () => {
                         </button>
 
                         {tx.status === 'PENDING_APPROVAL' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleAuthorizePayout(tx)}
-                            className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow transition-all hover:scale-[1.02]"
-                          >
-                            {language === 'my' ? 'ငွေထုတ်ပေးမည်' : 'Authorize Payout'}
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTx(tx);
+                                setShowReviewModal(true);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 hover:text-teal-300 border border-teal-500/30 font-semibold text-xs transition-all flex items-center space-x-1 hover:scale-[1.02] cursor-pointer"
+                              title={language === 'my' ? 'အသေးစိတ် စစ်ဆေးမည်' : 'Review Details'}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>{language === 'my' ? 'စိစစ်ရန်' : 'Review'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTx(tx);
+                                setShowReviewModal(true);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow transition-all hover:scale-[1.02] cursor-pointer"
+                            >
+                              {language === 'my' ? 'ငွေထုတ်ပေးမည်' : 'Authorize Payout'}
+                            </button>
+                          </>
                         ) : (
                           <button
                             type="button"
@@ -348,6 +392,179 @@ export const InwardApproveView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Inward Review & Payout Verification Modal */}
+      {showReviewModal && selectedTx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-800 bg-slate-800/60 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>{language === 'my' ? 'ပြည်တွင်းငွေလွှဲ စိစစ်အတည်ပြုခြင်း' : 'Inward Remittance Review'}</span>
+                    <span className="font-mono text-xs px-2 py-0.5 rounded bg-teal-950 border border-teal-800 text-teal-300">
+                      {selectedTx.transactionNo}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    MTCN: <span className="font-mono font-bold text-teal-300">{selectedTx.mtcn}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReviewModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5 overflow-y-auto flex-1">
+              {/* Beneficiary & Sender Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/80 space-y-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>{language === 'my' ? 'ငွေထုတ်ယူသူ (လက်ခံသူ)' : 'Beneficiary / Receiver'}</span>
+                  </div>
+                  <div className="text-sm font-bold text-white">{selectedTx.receiverName}</div>
+                  {selectedTx.receiverNameMm && (
+                    <div className="text-xs text-slate-300 font-myanmar">{selectedTx.receiverNameMm}</div>
+                  )}
+                  <div className="text-xs text-slate-300">
+                    <span className="text-slate-400">NRC:</span> <span className="font-mono font-semibold text-white">{selectedTx.receiverNrc}</span>
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    <span className="text-slate-400">Phone:</span> <span className="font-mono">{selectedTx.receiverPhone}</span>
+                  </div>
+                  {selectedTx.receiverAddress && (
+                    <div className="text-xs text-slate-400 truncate">
+                      <span>Address:</span> {selectedTx.receiverAddress}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/80 space-y-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>{language === 'my' ? 'ငွေလွှဲပို့သူ (Sender)' : 'Remitter / Sender'}</span>
+                  </div>
+                  <div className="text-sm font-bold text-white">{selectedTx.senderName}</div>
+                  <div className="text-xs text-slate-300">
+                    <span className="text-slate-400">Origin Country:</span> <span className="font-semibold text-white">{selectedTx.senderCountryCode}</span>
+                  </div>
+                  <div className="text-xs text-slate-300">
+                    <span className="text-slate-400">Purpose:</span> <span>{selectedTx.purposeName || 'Family Support'}</span>
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    <span>Date:</span> <span className="font-mono">{selectedTx.createdDate ? new Date(selectedTx.createdDate).toLocaleString() : '-'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Financial Details Banner */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-teal-950/40 to-slate-900 border border-teal-700/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <div className="text-[11px] font-semibold text-teal-300 uppercase tracking-wider">
+                    {language === 'my' ? 'ထုတ်ပေးရမည့် ငွေပမာဏ' : 'Net Payout Amount'}
+                  </div>
+                  <div className="text-2xl font-bold font-mono text-emerald-400 mt-0.5">
+                    {Number(selectedTx.receiveAmount || 0).toLocaleString()} MMK
+                  </div>
+                  <div className="text-xs text-slate-400 font-mono mt-0.5">
+                    {Number(selectedTx.sendAmount || 0).toLocaleString()} {selectedTx.sourceCurrency} @ {Number(selectedTx.exchangeRate || 0).toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="text-right sm:text-right w-full sm:w-auto">
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase ${
+                    selectedTx.status === 'PAID_OUT' || selectedTx.status === 'APPROVED'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                  }`}>
+                    {selectedTx.status}
+                  </span>
+                  <div className="text-[11px] text-slate-400 mt-1 font-mono">
+                    Method: {selectedTx.payoutMethod === 'CASH_PICKUP' ? 'Counter Cash Pickup' : 'Bank Deposit'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Verification Checklist */}
+              <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/60 text-xs text-slate-300 space-y-1.5">
+                <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>{language === 'my' ? 'Checker စစ်ဆေးရမည့် အချက်များ:' : 'Checker Verification Checklist:'}</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-400 pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>{language === 'my' ? 'မူရင်းမှတ်ပုံတင် တိုက်ဆိုင်စစ်ဆေးပြီး' : 'Original Myanmar NRC matched'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>{language === 'my' ? 'MTCN လျှို့ဝှက်ကုဒ် မှန်ကန်မှု စစ်ဆေးပြီး' : 'MTCN secret code verified'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>{language === 'my' ? 'Blacklist / AML စာရင်း စစ်ဆေးပြီး' : 'Sanction & Blacklist cleared'}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>{language === 'my' ? 'ငွေသားပမာဏ မှန်ကန်မှု စစ်ဆေးပြီး' : 'MMK cash denomination ready'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-800/50 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReviewModal(false);
+                  handleOpenEdit(selectedTx);
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 font-semibold text-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{language === 'my' ? 'အချက်အလက် ပြင်ဆင်ရန်' : 'Review & Edit'}</span>
+              </button>
+
+              <div className="flex items-center space-x-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowReviewModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  {language === 'my' ? 'ပိတ်မည်' : 'Close'}
+                </button>
+
+                {selectedTx.status === 'PENDING_APPROVAL' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const txToPayout = selectedTx;
+                      setShowReviewModal(false);
+                      await handleAuthorizePayout(txToPayout);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 active:bg-teal-700 text-white font-bold text-xs shadow-lg transition-all flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>{language === 'my' ? 'ငွေထုတ်ပေးမည် (Authorize Payout)' : 'Authorize Payout & Issue Voucher'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Inward Modal */}
       <EditInwardModal

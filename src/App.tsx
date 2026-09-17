@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Component, useState } from 'react';
+import React, { Component, useState, useEffect } from 'react';
+import { ShieldAlert } from 'lucide-react';
 import { RemittanceProvider, useRemittance } from './lib/store';
 import { LoginView } from './components/Auth/LoginView';
 import { Header } from './components/Header';
@@ -19,16 +20,51 @@ import { AdminSetupManager } from './components/Admin/AdminSetupManager';
 import { BackupRestoreView } from './components/Backup/BackupRestoreView';
 
 const MainLayout: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
+  const { currentUser, isMenuAllowedForRole, language } = useRemittance();
+  const [activeTab, setActiveTab] = useState<NavigationTab>(() => {
+    if (currentUser?.role === 'MAKER') return 'outward_entry';
+    if (currentUser?.role === 'CHECKER') return 'outward_approve';
+    return 'dashboard';
+  });
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>('branch');
   const [auditModuleFilter, setAuditModuleFilter] = useState<string>('ALL');
+  const [targetApprovalTxId, setTargetApprovalTxId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const handleNavigate = (tab: NavigationTab, subTab?: SetupSubTab) => {
+  // Check whether current activeTab is permitted for currentUser.role
+  const isTabPermitted = (tab: NavigationTab): boolean => {
+    if (tab === 'admin_setup') {
+      return currentUser?.role === 'ADMIN';
+    }
+    return isMenuAllowedForRole ? isMenuAllowedForRole(currentUser.role, tab) : true;
+  };
+
+  // Auto-redirect if role changes or activeTab becomes unauthorized
+  useEffect(() => {
+    if (!isTabPermitted(activeTab)) {
+      if (currentUser?.role === 'MAKER') {
+        setActiveTab('outward_entry');
+      } else if (currentUser?.role === 'CHECKER') {
+        setActiveTab('outward_approve');
+      } else if (isTabPermitted('dashboard')) {
+        setActiveTab('dashboard');
+      } else {
+        const order: NavigationTab[] = [
+          'outward_entry', 'outward_approve', 'inward_entry', 'inward_approve',
+          'outward_report', 'inward_report', 'audit_log', 'dashboard'
+        ];
+        const fallback = order.find(t => isTabPermitted(t));
+        if (fallback) setActiveTab(fallback);
+      }
+    }
+  }, [currentUser?.role, activeTab, isMenuAllowedForRole]);
+
+  const handleNavigate = (tab: NavigationTab, subTab?: SetupSubTab, targetTxId?: string) => {
     setActiveTab(tab);
     if (subTab) {
       setSetupSubTab(subTab);
     }
+    setTargetApprovalTxId(targetTxId || null);
   };
 
   const handleNavigateAudit = (module: string = 'ALL') => {
@@ -61,45 +97,79 @@ const MainLayout: React.FC = () => {
         {/* Content Container */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6 min-w-0">
           <div className="max-w-7xl mx-auto space-y-4">
-            {activeTab === 'dashboard' && (
-              <DashboardView onNavigate={handleNavigate} />
-            )}
-            {activeTab === 'outward_entry' && (
-              <OutwardEntryView />
-            )}
-            {activeTab === 'outward_approve' && (
-              <OutwardApproveView />
-            )}
-            {activeTab === 'inward_entry' && (
-              <InwardEntryView />
-            )}
-            {activeTab === 'inward_approve' && (
-              <InwardApproveView />
-            )}
-            {activeTab === 'outward_report' && (
-              <OutwardReportView />
-            )}
-            {activeTab === 'inward_report' && (
-              <InwardReportView />
-            )}
-            {activeTab === 'admin_setup' && (
-              <AdminSetupManager
-                currentSubTab={setupSubTab}
-                onSelectSubTab={setSetupSubTab}
-                onNavigateAudit={handleNavigateAudit}
-              />
-            )}
-            {activeTab === 'audit_log' && (
-              <BackupRestoreView 
-                initialTab="audit" 
-                initialModuleFilter={auditModuleFilter} 
-              />
-            )}
-            {activeTab === 'backup_restore' && (
-              <BackupRestoreView initialTab="backup" />
-            )}
-            {activeTab === 'turso_sync' && (
-              <BackupRestoreView initialTab="turso" />
+            {!isTabPermitted(activeTab) ? (
+              <div className="bg-white border border-rose-200 rounded-xl p-8 text-center max-w-lg mx-auto my-12 shadow-xs space-y-4">
+                <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {language === 'my' ? 'ခွင့်ပြုချက် မရှိပါ (Access Restricted)' : 'Access Restricted'}
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {language === 'my'
+                    ? `သင်၏ လက်ရှိ Role (${currentUser.role}) အတွက် ဤမီနူးအား လုပ်ဆောင်ခွင့် ကန့်သတ်ထားပါသည်။`
+                    : `Your current role (${currentUser.role}) does not have permission to access this module.`}
+                </p>
+                <button
+                  onClick={() => {
+                    if (currentUser.role === 'MAKER') setActiveTab('outward_entry');
+                    else if (currentUser.role === 'CHECKER') setActiveTab('outward_approve');
+                    else setActiveTab('dashboard');
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  {language === 'my' ? 'ခွင့်ပြုထားသော စာမျက်နှာသို့ သွားမည်' : 'Go to Allowed Work Area'}
+                </button>
+              </div>
+            ) : (
+              <>
+                {activeTab === 'dashboard' && (
+                  <DashboardView onNavigate={handleNavigate} />
+                )}
+                {activeTab === 'outward_entry' && (
+                  <OutwardEntryView />
+                )}
+                {activeTab === 'outward_approve' && (
+                  <OutwardApproveView 
+                    initialTxId={targetApprovalTxId}
+                    onClearInitialTxId={() => setTargetApprovalTxId(null)}
+                  />
+                )}
+                {activeTab === 'inward_entry' && (
+                  <InwardEntryView />
+                )}
+                {activeTab === 'inward_approve' && (
+                  <InwardApproveView 
+                    initialTxId={targetApprovalTxId}
+                    onClearInitialTxId={() => setTargetApprovalTxId(null)}
+                  />
+                )}
+                {activeTab === 'outward_report' && (
+                  <OutwardReportView />
+                )}
+                {activeTab === 'inward_report' && (
+                  <InwardReportView />
+                )}
+                {activeTab === 'admin_setup' && (
+                  <AdminSetupManager
+                    currentSubTab={setupSubTab}
+                    onSelectSubTab={setSetupSubTab}
+                    onNavigateAudit={handleNavigateAudit}
+                  />
+                )}
+                {activeTab === 'audit_log' && (
+                  <BackupRestoreView 
+                    initialTab="audit" 
+                    initialModuleFilter={auditModuleFilter} 
+                  />
+                )}
+                {activeTab === 'backup_restore' && (
+                  <BackupRestoreView initialTab="backup" />
+                )}
+                {activeTab === 'turso_sync' && (
+                  <BackupRestoreView initialTab="turso" />
+                )}
+              </>
             )}
           </div>
         </main>

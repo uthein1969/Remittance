@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CheckSquare, 
   CheckCircle2, 
@@ -42,7 +42,15 @@ import {
 } from '../../lib/sampleDocuments';
 import { extractNrcInfoFromUpload, scanNrcWithAi } from '../../lib/nrcOcrParser';
 
-export const OutwardApproveView: React.FC = () => {
+export interface OutwardApproveViewProps {
+  initialTxId?: string | null;
+  onClearInitialTxId?: () => void;
+}
+
+export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
+  initialTxId,
+  onClearInitialTxId
+}) => {
   const { 
     db, 
     language, 
@@ -63,6 +71,24 @@ export const OutwardApproveView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState<RemittanceTransaction | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+
+  useEffect(() => {
+    if (initialTxId) {
+      const tx = db.transactions.find(t => t.id === initialTxId && t.type === 'OUTWARD');
+      if (tx) {
+        setSelectedBranch('ALL');
+        setSelectedCountry('ALL');
+        setFilterStatus(tx.status || 'PENDING_APPROVAL');
+        setSearchQuery(tx.transactionNo);
+        setSelectedTx(tx);
+        setApprovalNote('Verified all sender/receiver compliance details and financial records.');
+        setShowReviewModal(true);
+        if (onClearInitialTxId) {
+          onClearInitialTxId();
+        }
+      }
+    }
+  }, [initialTxId, db.transactions, onClearInitialTxId]);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [approvalNote, setApprovalNote] = useState('');

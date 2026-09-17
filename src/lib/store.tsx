@@ -16,7 +16,10 @@ import {
   Language, 
   UserRole,
   RemittanceStatus,
-  OperatorProfile
+  OperatorProfile,
+  NavigationTab,
+  RoleMenuPermissions,
+  DEFAULT_ROLE_MENU_PERMISSIONS
 } from '../types';
 import { initialDatabase, defaultOperatorProfile } from './mockData';
 import { sampleSenderNrcAttachment, sampleSenderPassportAttachment } from './sampleDocuments';
@@ -184,6 +187,13 @@ interface RemittanceContextType {
   logout: () => void;
   fetchSupabaseUsers: () => Promise<{ success: boolean; users?: User[]; message?: string }>;
   seedUsersToSupabase: () => Promise<{ success: boolean; message: string }>;
+
+  // Role Menu Permissions (Show App Menu by Role)
+  roleMenuPermissions: RoleMenuPermissions;
+  updateRoleMenuPermissions: (role: UserRole, menus: NavigationTab[]) => void;
+  toggleRoleMenuPermission: (role: UserRole, menu: NavigationTab) => void;
+  resetRoleMenuPermissions: () => void;
+  isMenuAllowedForRole: (role: UserRole, tab: NavigationTab) => boolean;
 }
 
 const RemittanceContext = createContext<RemittanceContextType | null>(null);
@@ -250,6 +260,9 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             purposes: Array.isArray(parsed.purposes) && parsed.purposes.length > 0 ? parsed.purposes : initialDatabase.purposes,
             customers: Array.isArray(parsed.customers) ? parsed.customers : initialDatabase.customers,
             auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : initialDatabase.auditLogs,
+            roleMenuPermissions: (parsed.roleMenuPermissions && typeof parsed.roleMenuPermissions === 'object')
+              ? { ...DEFAULT_ROLE_MENU_PERMISSIONS, ...parsed.roleMenuPermissions }
+              : DEFAULT_ROLE_MENU_PERMISSIONS,
           };
         }
       }
@@ -2922,6 +2935,99 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
   };
 
+  // Role Menu Permissions (Show App Menu by User Role)
+  const roleMenuPermissions: RoleMenuPermissions = (db.roleMenuPermissions && typeof db.roleMenuPermissions === 'object')
+    ? { ...DEFAULT_ROLE_MENU_PERMISSIONS, ...db.roleMenuPermissions }
+    : DEFAULT_ROLE_MENU_PERMISSIONS;
+
+  const updateRoleMenuPermissions = (role: UserRole, menus: NavigationTab[]) => {
+    // Security enforcement: Admin Setup can ONLY be accessed by ADMIN role
+    let sanitizedMenus = [...menus];
+    if (role !== 'ADMIN') {
+      sanitizedMenus = sanitizedMenus.filter(m => m !== 'admin_setup');
+    } else if (!sanitizedMenus.includes('admin_setup')) {
+      sanitizedMenus.push('admin_setup');
+    }
+
+    const updatedPermissions: RoleMenuPermissions = {
+      ...roleMenuPermissions,
+      [role]: sanitizedMenus,
+    };
+
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'UPDATE',
+      entityType: 'SYSTEM',
+      entityId: `ROLE_MENU_${role}`,
+      details: `Admin ${currentUser.fullName} updated App Menu permissions for role ${role} (Allowed menus: ${sanitizedMenus.join(', ')})`,
+    };
+
+    setDb(prev => ({
+      ...prev,
+      roleMenuPermissions: updatedPermissions,
+      auditLogs: [auditRecord, ...prev.auditLogs],
+    }));
+
+    syncLiveAuditLogToCloud(auditRecord);
+  };
+
+  const toggleRoleMenuPermission = (role: UserRole, menu: NavigationTab) => {
+    // Non-admin can NEVER have admin_setup
+    if (menu === 'admin_setup' && role !== 'ADMIN') {
+      return;
+    }
+    const current = roleMenuPermissions[role] || DEFAULT_ROLE_MENU_PERMISSIONS[role] || [];
+    let updatedMenus: NavigationTab[];
+    if (current.includes(menu)) {
+      // Admin must always retain admin_setup
+      if (role === 'ADMIN' && menu === 'admin_setup') {
+        return;
+      }
+      updatedMenus = current.filter(m => m !== menu);
+    } else {
+      updatedMenus = [...current, menu];
+    }
+    updateRoleMenuPermissions(role, updatedMenus);
+  };
+
+  const resetRoleMenuPermissions = () => {
+    const auditRecord: AuditRecord = {
+      id: `AUD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id,
+      userName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'UPDATE',
+      entityType: 'SYSTEM',
+      entityId: 'ROLE_MENU_RESET',
+      details: `Admin ${currentUser.fullName} reset App Menu permissions for all roles to standard default policy (Maker: Outward/Inward Entry; Checker: Outward/Inward Approval; Admin: Full System).`,
+    };
+
+    setDb(prev => ({
+      ...prev,
+      roleMenuPermissions: DEFAULT_ROLE_MENU_PERMISSIONS,
+      auditLogs: [auditRecord, ...prev.auditLogs],
+    }));
+
+    syncLiveAuditLogToCloud(auditRecord);
+  };
+
+  const isMenuAllowedForRole = (role: UserRole, tab: NavigationTab): boolean => {
+    // Admin Setup strictly requires ADMIN role
+    if (tab === 'admin_setup') {
+      return role === 'ADMIN';
+    }
+    const currentPerms = (db.roleMenuPermissions && typeof db.roleMenuPermissions === 'object')
+      ? db.roleMenuPermissions
+      : DEFAULT_ROLE_MENU_PERMISSIONS;
+    const rolePerms = currentPerms[role] || DEFAULT_ROLE_MENU_PERMISSIONS[role] || [];
+    return rolePerms.includes(tab);
+  };
+
   return (
     <RemittanceContext.Provider
       value={{
@@ -2995,6 +3101,11 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         logout,
         fetchSupabaseUsers,
         seedUsersToSupabase,
+        roleMenuPermissions,
+        updateRoleMenuPermissions,
+        toggleRoleMenuPermission,
+        resetRoleMenuPermissions,
+        isMenuAllowedForRole,
       }}
     >
       {children}

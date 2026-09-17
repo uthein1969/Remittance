@@ -11,7 +11,8 @@ import {
   Customer, 
   RemittanceTransaction,
   AuditRecord,
-  OperatorProfile
+  OperatorProfile,
+  DEFAULT_ROLE_MENU_PERMISSIONS
 } from '../types';
 import { sampleSenderNrcAttachment, sampleSenderPassportAttachment } from './sampleDocuments';
 
@@ -1275,4 +1276,5 @@ export const initialDatabase: AppDatabase = {
   },
   activeLanguage: 'my', // Default to Myanmar for natural local experience
   currentUserId: 'USR-001',
+  roleMenuPermissions: DEFAULT_ROLE_MENU_PERMISSIONS,
 };

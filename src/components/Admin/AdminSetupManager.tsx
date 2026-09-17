@@ -32,6 +32,7 @@ import { useRemittance } from '../../lib/store';
 import { SetupSubTab } from '../Sidebar';
 import { CompanyProfileModal } from '../CompanyProfileModal';
 import { CompanyProfileSettingForm } from './CompanyProfileSettingForm';
+import { RoleMenuPermissionManager } from './RoleMenuPermissionManager';
 import { 
   Branch, 
   User, 
@@ -75,6 +76,34 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showCompanyProfileModal, setShowCompanyProfileModal] = useState(false);
 
+  // Security Check: "Admin Setup ကို Admin Role ကဘဲလုပ်ခွင့်ရှိပါမယ်"
+  if (currentUser.role !== 'ADMIN') {
+    return (
+      <div className="bg-white border border-rose-200 rounded-xl p-8 text-center max-w-lg mx-auto my-12 shadow-xs space-y-4">
+        <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-slate-900">
+          {language === 'my' ? 'ခွင့်ပြုချက် မရှိပါ (Access Denied)' : 'Access Denied'}
+        </h3>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          {language === 'my' 
+            ? 'Admin Setup ကို Admin Role ကသာ လုပ်ဆောင်ခွင့်ရှိပါသည်။ သင်၏ လက်ရှိ Role သည် '
+            : 'Admin Setup is strictly restricted to Admin role only. Your current role is '}
+          <span className="font-bold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded border border-rose-200">
+            {currentUser.role}
+          </span>
+          {language === 'my' ? ' ဖြစ်နေသဖြင့် ဤအပိုင်းကို ဝင်ရောက်ပြင်ဆင်ခွင့် မပြုပါ။' : '.'}
+        </p>
+        <div className="pt-2">
+          <span className="text-[11px] text-slate-500 bg-slate-100 px-3 py-1 rounded-full font-mono">
+            Security Enforcement: CBM RemitPro Role-Based Access Control
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   // Setup tabs list
   const navTabs: { id: SetupSubTab; labelEn: string; labelMm: string; icon: any; count: number }[] = [
     { id: 'operator_profile', labelEn: '1. Software Company (Orange Box)', labelMm: '၁။ ဆော့ဖ်ဝဲလ်ကုမ္ပဏီ (လိမ္မော်ရောင်အကွက်)', icon: Building2, count: 1 },
@@ -87,6 +116,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
     { id: 'blacklist', labelEn: '8. Blacklist (NRC & Passport)', labelMm: '၈။ နာမည်ပျက်စာရင်း (NRC & Passport)', icon: ShieldAlert, count: db.blacklist.length },
     { id: 'purpose', labelEn: '9. Purpose of Remit', labelMm: '၉။ လွှဲပို့ရည်ရွယ်ချက်များ', icon: FileCheck2, count: db.purposes.length },
     { id: 'customer', labelEn: '10. Customers Master', labelMm: '၁၀။ ဖောက်သည်များ', icon: UserCheck2, count: db.customers.length },
+    { id: 'menu_permission', labelEn: '11. App Menu by Role', labelMm: '၁၁။ မီနူး ခွင့်ပြုချက်များ (Show App Menu)', icon: ShieldCheck, count: 4 },
   ];
 
   const handleOpenAdd = (type: SetupSubTab, presetData?: Partial<RemittancePurpose>) => {
@@ -335,7 +365,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
             <Building2 className="w-4 h-4 text-inherit" />
             <span>{language === 'my' ? 'ကုမ္ပဏီ အချက်အလက်' : 'Company Info'}</span>
           </button>
-          {currentSubTab !== 'operator_profile' && (
+          {currentSubTab !== 'operator_profile' && currentSubTab !== 'menu_permission' && (
             <button
               onClick={() => handleOpenAdd(currentSubTab)}
               className="flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-all shrink-0"
@@ -347,8 +377,8 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
         </div>
       </div>
 
-      {/* Official Orange Rectangular Box: Operating Remittance Company (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) - shown when not in operator_profile */}
-      {currentSubTab !== 'operator_profile' && (
+      {/* Official Orange Rectangular Box: Operating Remittance Company (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) - shown when not in operator_profile and not in menu_permission */}
+      {currentSubTab !== 'operator_profile' && currentSubTab !== 'menu_permission' && (
         <div className="border-2 border-orange-500 bg-orange-50/60 rounded-xl p-4 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-orange-200/80 pb-2.5">
             <div className="flex items-center space-x-3">
@@ -440,9 +470,11 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
         })}
       </div>
 
-      {/* Content Area: Company Profile Setting Form OR Master Data Table */}
+      {/* Content Area: Company Profile Setting Form OR Role Menu Permissions OR Master Data Table */}
       {currentSubTab === 'operator_profile' ? (
         <CompanyProfileSettingForm />
+      ) : currentSubTab === 'menu_permission' ? (
+        <RoleMenuPermissionManager />
       ) : (
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
           {/* Search Bar & Title Header */}

@@ -2,6 +2,53 @@ export type Language = 'en' | 'my';
 
 export type UserRole = 'ADMIN' | 'MAKER' | 'CHECKER' | 'AUDITOR';
 
+export type NavigationTab = 
+  | 'dashboard'
+  | 'outward_entry'
+  | 'outward_approve'
+  | 'inward_entry'
+  | 'inward_approve'
+  | 'outward_report'
+  | 'inward_report'
+  | 'admin_setup'
+  | 'audit_log'
+  | 'backup_restore'
+  | 'turso_sync';
+
+export type RoleMenuPermissions = Record<UserRole, NavigationTab[]>;
+
+export const DEFAULT_ROLE_MENU_PERMISSIONS: RoleMenuPermissions = {
+  ADMIN: [
+    'dashboard',
+    'outward_entry',
+    'outward_approve',
+    'inward_entry',
+    'inward_approve',
+    'outward_report',
+    'inward_report',
+    'admin_setup',
+    'audit_log',
+    'backup_restore',
+    'turso_sync',
+  ],
+  MAKER: [
+    'dashboard',
+    'outward_entry',
+    'inward_entry',
+  ],
+  CHECKER: [
+    'dashboard',
+    'outward_approve',
+    'inward_approve',
+  ],
+  AUDITOR: [
+    'dashboard',
+    'outward_report',
+    'inward_report',
+    'audit_log',
+  ],
+};
+
 export type RemittanceType = 'OUTWARD' | 'INWARD';
 
 export type RemittanceScope = 'DOMESTIC' | 'INTERNATIONAL';
@@ -319,4 +366,5 @@ export interface AppDatabase {
   tursoConfig?: TursoConfig;
   activeLanguage: Language;
   currentUserId: string;
+  roleMenuPermissions?: RoleMenuPermissions;
 }

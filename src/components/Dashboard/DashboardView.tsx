@@ -28,13 +28,12 @@ import { CompanyProfileModal } from '../CompanyProfileModal';
 import { NavigationTab, SetupSubTab } from '../Sidebar';
 
 interface DashboardViewProps {
-  onNavigate: (tab: NavigationTab, setupTab?: SetupSubTab) => void;
+  onNavigate: (tab: NavigationTab, setupTab?: SetupSubTab, targetTxId?: string) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
-  const { db, language, t, approveTransaction, currentUser, operatorProfile } = useRemittance();
+  const { db, language, t, currentUser, operatorProfile } = useRemittance();
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<RemittanceTransaction | null>(null);
-  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [showCompanyModal, setShowCompanyModal] = useState(false);
 
   // Safe number formatter
@@ -72,10 +71,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const pendingTxs = (db?.transactions || []).filter(t => t?.status === 'PENDING_APPROVAL');
   const activeBlacklistCount = (db?.blacklist || []).filter(b => b?.active).length;
 
-  const quickApprove = async (txId: string) => {
-    setApprovingId(txId);
-    await approveTransaction(txId, 'Quick-approved from Dashboard overview');
-    setApprovingId(null);
+  const handleOpenApproval = (tx: RemittanceTransaction) => {
+    if (tx.type === 'OUTWARD') {
+      onNavigate('outward_approve', undefined, tx.id);
+    } else {
+      onNavigate('inward_approve', undefined, tx.id);
+    }
   };
 
   return (
@@ -457,10 +458,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             ) : (
               <div className="divide-y divide-slate-100">
                 {pendingTxs.map((tx) => (
-                  <div key={tx.id} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/60 px-1 rounded transition-colors">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                  <div key={tx.id} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 px-2 rounded-lg transition-colors">
+                    <div className="min-w-0 flex-1 pr-2">
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold shrink-0 ${
                           tx.type === 'OUTWARD' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
                         }`}>
                           {tx.type}
@@ -468,8 +469,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                         <span className="font-mono text-xs font-bold text-slate-900">{tx.transactionNo}</span>
                         <span className="text-[11px] text-slate-500 font-mono">MTCN: {tx.mtcn}</span>
                       </div>
-                      <div className="text-xs text-slate-800 mt-1">
-                        <strong>{tx.senderName}</strong> <span className="text-slate-400">➔</span> <strong>{tx.receiverName}</strong>
+                      <div className="text-xs text-slate-800 mt-1 font-semibold truncate">
+                        <strong>{tx.senderName}</strong> <span className="text-slate-400 font-normal">➔</span> <strong>{tx.receiverName}</strong>
                       </div>
                       <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span>{tx.purposeName}</span>
@@ -483,23 +484,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-end space-x-3">
-                      <div className="text-right">
-                        <div className="text-xs font-bold font-mono text-blue-600">
+                    <div className="flex items-center justify-between sm:justify-end space-x-3 shrink-0">
+                      <div className="text-right shrink-0 min-w-[110px]">
+                        <div className="text-xs font-bold font-mono text-blue-600 whitespace-nowrap">
                           {formatAmount(tx.sendAmount)} {tx.sourceCurrency}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
+                        <div className="text-[10px] text-slate-500 font-mono whitespace-nowrap">
                           ➔ {formatAmount(tx.receiveAmount)} {tx.targetCurrency}
                         </div>
                       </div>
 
-                      {/* Quick Approve or review */}
+                      {/* Review & Approve button - Navigates to relevant approval view without direct auto-approval */}
                       <button
-                        onClick={() => quickApprove(tx.id)}
-                        disabled={approvingId === tx.id}
-                        className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors disabled:opacity-50 shadow-xs"
+                        type="button"
+                        onClick={() => handleOpenApproval(tx)}
+                        className="w-[180px] h-9 shrink-0 inline-flex items-center justify-center rounded-lg bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold transition-all shadow-xs whitespace-nowrap px-3 text-center cursor-pointer hover:scale-[1.01]"
+                        title={language === 'my' 
+                          ? (tx.type === 'OUTWARD' ? 'Outward အတည်ပြုရန် စာမျက်နှာတွင် အသေးစိတ် စစ်ဆေးမည်' : 'Inward အတည်ပြုရန် စာမျက်နှာတွင် အသေးစိတ် စစ်ဆေးမည်')
+                          : (tx.type === 'OUTWARD' ? 'Review & Approve in Outward Queue' : 'Review & Authorize in Inward Queue')}
                       >
-                        {approvingId === tx.id ? '...' : t.approve}
+                        {t.approve}
                       </button>
                     </div>
                   </div>
