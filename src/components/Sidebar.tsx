@@ -7,6 +7,7 @@ import {
   CheckCircle2, 
   FileSpreadsheet, 
   FileText, 
+  BarChart3,
   Settings, 
   History, 
   Database, 
@@ -34,7 +35,9 @@ export type NavigationTab =
   | 'inward_entry'
   | 'inward_approve'
   | 'outward_report'
+  | 'total_outward_report'
   | 'inward_report'
+  | 'total_inward_report'
   | 'admin_setup'
   | 'audit_log'
   | 'backup_restore'

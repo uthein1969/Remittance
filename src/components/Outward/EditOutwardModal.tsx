@@ -33,6 +33,7 @@ import {
   createSampleMyanmarPassportSvg 
 } from '../../lib/sampleDocuments';
 import { extractNrcInfoFromUpload, scanNrcWithAi, ExtractedNrcInfo } from '../../lib/nrcOcrParser';
+import { readFileAsOptimizedDataUrl } from '../../lib/imageCompressor';
 
 interface EditOutwardModalProps {
   isOpen: boolean;
@@ -196,10 +197,10 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
   const handleUploadFile = (e: React.ChangeEvent<HTMLInputElement>, type: 'nrc-front' | 'nrc-back' | 'passport') => {
     const file = e.target.files?.[0];
     if (!file || !formData) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      const sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
+
+    readFileAsOptimizedDataUrl(file).then((opt) => {
+      const dataUrl = opt.dataUrl;
+      const sizeStr = opt.sizeStr;
       if (type === 'nrc-front' || type === 'nrc-back') {
         const extracted = extractNrcInfoFromUpload(file, dataUrl, db.customers);
         setNrcOcrResult(extracted);
@@ -215,24 +216,24 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
           senderOccupation: extracted.occupation || prev.senderOccupation,
           ...(type === 'nrc-front' ? {
             senderNrcAttachment: dataUrl,
-            senderNrcAttachmentName: file.name,
-            senderNrcAttachmentType: file.type || 'image/jpeg',
+            senderNrcAttachmentName: opt.name,
+            senderNrcAttachmentType: opt.type,
             senderNrcAttachmentSize: sizeStr,
             senderNrcFrontAttachment: dataUrl,
-            senderNrcFrontAttachmentName: file.name,
-            senderNrcFrontAttachmentType: file.type || 'image/jpeg',
+            senderNrcFrontAttachmentName: opt.name,
+            senderNrcFrontAttachmentType: opt.type,
             senderNrcFrontAttachmentSize: sizeStr,
           } : {
             senderNrcBackAttachment: dataUrl,
-            senderNrcBackAttachmentName: file.name,
-            senderNrcBackAttachmentType: file.type || 'image/jpeg',
+            senderNrcBackAttachmentName: opt.name,
+            senderNrcBackAttachmentType: opt.type,
             senderNrcBackAttachmentSize: sizeStr,
           })
         } : null);
 
         setUploadFeedback({
           message: language === 'my'
-            ? `✨ မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${extracted.nameEn || extracted.nameMm}) နှင့် မှတ်ပုံတင်နံပတ် (${extracted.nrcNumber}) ကို Auto တန်းပြီး ဖြည့်သွင်းပေးလိုက်ပါပြီ (${file.name})`
+            ? `✨ မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${extracted.nameEn || extracted.nameMm}) နှင့် မှတ်ပုံတင်နံပတ် (${extracted.nrcNumber}) ကို Auto တန်းပြီး ဖြည့်သွင်းပေးလိုက်ပါပြီ (${opt.name})`
             : `✨ Auto-populated Name (${extracted.nameEn}) and NRC (${extracted.nrcNumber}) from uploaded NRC card!`,
           type
         });
@@ -262,24 +263,23 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
           ...prev,
           senderIdType: 'PASSPORT',
           senderPassportAttachment: dataUrl,
-          senderPassportAttachmentName: file.name,
-          senderPassportAttachmentType: file.type || 'image/jpeg',
+          senderPassportAttachmentName: opt.name,
+          senderPassportAttachmentType: opt.type,
           senderPassportAttachmentSize: sizeStr,
           senderPassbookAttachment: dataUrl,
-          senderPassbookAttachmentName: file.name,
-          senderPassbookAttachmentType: file.type || 'image/jpeg',
+          senderPassbookAttachmentName: opt.name,
+          senderPassbookAttachmentType: opt.type,
           senderPassbookAttachmentSize: sizeStr
         } : null);
         setUploadFeedback({
           message: language === 'my'
-            ? `Passport ဓာတ်ပုံအသစ် အောင်မြင်စွာ အစားထိုးထည့်သွင်းပြီးပါပြီ (${file.name})`
-            : `Successfully replaced Passport picture (${file.name})`,
+            ? `Passport ဓာတ်ပုံအသစ် အောင်မြင်စွာ အစားထိုးထည့်သွင်းပြီးပါပြီ (${opt.name})`
+            : `Successfully replaced Passport picture (${opt.name})`,
           type
         });
       }
       setTimeout(() => setUploadFeedback(null), 5000);
-    };
-    reader.readAsDataURL(file);
+    });
     e.target.value = '';
   };
 

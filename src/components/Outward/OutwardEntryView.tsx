@@ -25,7 +25,9 @@ import {
   Sparkles,
   Receipt,
   Layers,
-  Loader2
+  Loader2,
+  Calendar,
+  Clock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -40,6 +42,7 @@ import {
   createSampleDepositReceiptSvg
 } from '../../lib/sampleDocuments';
 import { extractNrcInfoFromUpload, scanNrcWithAi, ExtractedNrcInfo } from '../../lib/nrcOcrParser';
+import { readFileAsOptimizedDataUrl } from '../../lib/imageCompressor';
 
 export const OutwardEntryView: React.FC = () => {
   const { 
@@ -107,6 +110,31 @@ export const OutwardEntryView: React.FC = () => {
     }
   }, [activeBranchId]);
   const [senderNote, setSenderNote] = useState('');
+
+  // Transaction Date & Time (User Request #1: Form အပေါ်ပိုင်းမှာ Date Time ဖော်ပြရန်)
+  const getLocalDateTimeString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const [entryDateTime, setEntryDateTime] = useState<string>(getLocalDateTimeString);
+  const [liveCurrentTime, setLiveCurrentTime] = useState<string>(() => new Date().toLocaleTimeString());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveCurrentTime(new Date().toLocaleTimeString());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleResetToCurrentTime = () => {
+    setEntryDateTime(getLocalDateTimeString());
+  };
   
   // Purpose & Routing Details: Proof Attachment Category & Documents
   const [proofCategory, setProofCategory] = useState<'DEPOSIT_RECEIPT' | 'CUSTOM'>('DEPOSIT_RECEIPT');
@@ -360,11 +388,10 @@ export const OutwardEntryView: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const url = event.target?.result as string;
-      const size = `${(file.size / 1024).toFixed(1)} KB`;
-      const doc = { url, name: file.name, type: file.type || 'image/jpeg', size };
+    readFileAsOptimizedDataUrl(file).then((opt) => {
+      const url = opt.dataUrl;
+      const size = opt.sizeStr;
+      const doc = { url, name: opt.name, type: opt.type, size };
 
       if (target === 'nrc-front' || target === 'nrc-both' || target === 'nrc-back') {
         // Step 1: Immediate local smart fill so UI updates instantly
@@ -472,8 +499,7 @@ export const OutwardEntryView: React.FC = () => {
           : `File "${file.name}" uploaded successfully (${size})`
       });
       setTimeout(() => setUploadFeedback(null), 5000);
-    };
-    reader.readAsDataURL(file);
+    });
     e.target.value = '';
   };
 
@@ -575,6 +601,7 @@ export const OutwardEntryView: React.FC = () => {
     setIsSubmitting(true);
     try {
       const newTx = await createOutwardRemittance({
+        createdDate: entryDateTime ? new Date(entryDateTime).toISOString() : new Date().toISOString(),
         scope,
         senderName,
         senderNameMm,
@@ -679,6 +706,15 @@ export const OutwardEntryView: React.FC = () => {
 
           {/* Scope Switch & Active Branch Badge */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+            {/* Live System Date & Time Display */}
+            <div className="flex items-center space-x-2 text-xs text-slate-300 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 font-mono shadow-inner">
+              <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              <span>{new Date(entryDateTime).toLocaleDateString()}</span>
+              <span className="text-slate-500">|</span>
+              <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse" />
+              <span className="text-sky-300 font-semibold">{liveCurrentTime}</span>
+            </div>
+
             <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
               <Building2 className="w-4 h-4 text-sky-400" />
               <span>{language === 'my' ? 'ဆောင်ရွက်သည့် ဘဏ်ခွဲ' : 'Sending Branch'}: </span>
@@ -788,6 +824,52 @@ export const OutwardEntryView: React.FC = () => {
 
       {/* Main Entry Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* TOP SECTION: Transaction Date & Time (User Request #1) */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center flex-shrink-0">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                <span>{language === 'my' ? 'ရက်စွဲ နှင့် အချိန် (Transaction Date & Time)' : 'Transaction Date & Time'}</span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-sky-500/20 text-sky-300 font-mono font-medium">
+                  {new Date(entryDateTime).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                <span>{language === 'my' ? 'ငွေလွှဲပေးပို့မှု ပြုလုပ်သည့် ရက်စွဲနှင့် စနစ်အချိန်' : 'Remittance execution timestamp registered in audit ledger'}</span>
+                <span className="text-slate-600 hidden sm:inline">•</span>
+                <span className="text-amber-400 font-mono font-medium flex items-center space-x-1">
+                  <Clock className="w-3 h-3" />
+                  <span>Live: {liveCurrentTime}</span>
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center space-x-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl shadow-inner">
+              <Calendar className="w-4 h-4 text-sky-400 shrink-0" />
+              <input
+                type="datetime-local"
+                value={entryDateTime}
+                onChange={(e) => setEntryDateTime(e.target.value)}
+                className="bg-transparent text-xs font-mono text-white focus:outline-none cursor-pointer"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleResetToCurrentTime}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-sky-300 border border-slate-700 text-xs font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
+              title={language === 'my' ? 'ယခုအချိန် ပြန်သတ်မှတ်မည်' : 'Reset to current system time'}
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{language === 'my' ? 'ယခုအချိန်' : 'Current Time'}</span>
+            </button>
+          </div>
+        </div>
+
         {/* UPPER FRAME: Sender Information */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">

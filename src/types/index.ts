@@ -9,7 +9,9 @@ export type NavigationTab =
   | 'inward_entry'
   | 'inward_approve'
   | 'outward_report'
+  | 'total_outward_report'
   | 'inward_report'
+  | 'total_inward_report'
   | 'admin_setup'
   | 'audit_log'
   | 'backup_restore'
@@ -25,7 +27,9 @@ export const DEFAULT_ROLE_MENU_PERMISSIONS: RoleMenuPermissions = {
     'inward_entry',
     'inward_approve',
     'outward_report',
+    'total_outward_report',
     'inward_report',
+    'total_inward_report',
     'admin_setup',
     'audit_log',
     'backup_restore',
@@ -44,7 +48,9 @@ export const DEFAULT_ROLE_MENU_PERMISSIONS: RoleMenuPermissions = {
   AUDITOR: [
     'dashboard',
     'outward_report',
+    'total_outward_report',
     'inward_report',
+    'total_inward_report',
     'audit_log',
   ],
 };

@@ -29,7 +29,10 @@ import {
   Upload,
   Maximize2,
   FileCheck,
-  Sparkles
+  Sparkles,
+  Calendar,
+  Clock,
+  RefreshCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useRemittance } from '../../lib/store';
@@ -38,6 +41,7 @@ import { VoucherModal } from '../VoucherModal';
 import { uploadPassportToSupabase } from '../../lib/supabase';
 import { DocumentLightboxModal } from '../Common/DocumentLightboxModal';
 import { createSampleMyanmarNrcSvg, createSampleMyanmarNrcBackSvg } from '../../lib/sampleDocuments';
+import { readFileAsOptimizedDataUrl } from '../../lib/imageCompressor';
 
 export const InwardEntryView: React.FC = () => {
   const { 
@@ -66,6 +70,31 @@ export const InwardEntryView: React.FC = () => {
 
   // Form states
   const [mtcn, setMtcn] = useState('');
+
+  // Transaction Date & Time (User Request #1: Form အပေါ်ပိုင်းမှာ Date Time ဖော်ပြရန်)
+  const getLocalDateTimeString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const [entryDateTime, setEntryDateTime] = useState<string>(getLocalDateTimeString);
+  const [liveCurrentTime, setLiveCurrentTime] = useState<string>(() => new Date().toLocaleTimeString());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLiveCurrentTime(new Date().toLocaleTimeString());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleResetToCurrentTime = () => {
+    setEntryDateTime(getLocalDateTimeString());
+  };
   
   // Beneficiary / Receiver in Myanmar
   const [receiverName, setReceiverName] = useState('');
@@ -136,9 +165,8 @@ export const InwardEntryView: React.FC = () => {
       text: language === 'my' ? 'Supabase သို့ Passport ပူးတွဲစာရွက်စာတမ်း တင်ပို့နေပါသည်...' : 'Uploading passport to Supabase...'
     });
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
+    readFileAsOptimizedDataUrl(file).then(async (opt) => {
+      const dataUrl = opt.dataUrl;
       setSenderPassportAttachment(dataUrl);
 
       try {
@@ -169,15 +197,13 @@ export const InwardEntryView: React.FC = () => {
       } finally {
         setIsUploadingPassport(false);
       }
-    };
-    reader.onerror = () => {
+    }).catch(() => {
       setIsUploadingPassport(false);
       setPassportUploadStatus({
         type: 'error',
         text: language === 'my' ? 'ဖိုင်ဖတ်ရှု၍ မရပါ' : 'Failed to read file'
       });
-    };
-    reader.readAsDataURL(file);
+    });
   };
 
   const handlePassportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -248,14 +274,13 @@ export const InwardEntryView: React.FC = () => {
       text: language === 'my' ? `${sideLabel} ဖိုင် တင်ပို့နေပါသည်...` : `Uploading ${sideLabel}...`
     });
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
+    readFileAsOptimizedDataUrl(file).then(async (opt) => {
+      const dataUrl = opt.dataUrl;
       const initialDoc = {
         url: dataUrl,
-        name: file.name,
-        type: file.type || 'image/jpeg',
-        size: fileSizeStr
+        name: opt.name,
+        type: opt.type,
+        size: opt.sizeStr
       };
 
       if (side === 'front') setSenderNrcFrontDoc(initialDoc);
@@ -267,9 +292,9 @@ export const InwardEntryView: React.FC = () => {
         if (uploadRes.success && uploadRes.url) {
           const updatedDoc = {
             url: uploadRes.url,
-            name: file.name,
-            type: file.type || 'image/jpeg',
-            size: fileSizeStr
+            name: opt.name,
+            type: opt.type,
+            size: opt.sizeStr
           };
           if (side === 'front') setSenderNrcFrontDoc(updatedDoc);
           else setSenderNrcBackDoc(updatedDoc);
@@ -299,16 +324,14 @@ export const InwardEntryView: React.FC = () => {
         if (side === 'front') setIsUploadingNrcFront(false);
         else setIsUploadingNrcBack(false);
       }
-    };
-    reader.onerror = () => {
+    }).catch(() => {
       if (side === 'front') setIsUploadingNrcFront(false);
       else setIsUploadingNrcBack(false);
       setNrcUploadStatus({
         type: 'error',
         text: language === 'my' ? 'ဖိုင်ဖတ်ရှု၍ မရပါ' : 'Failed to read file'
       });
-    };
-    reader.readAsDataURL(file);
+    });
   };
 
   const handleAttachSampleNrcFront = () => {
@@ -692,6 +715,7 @@ export const InwardEntryView: React.FC = () => {
     setIsSubmitting(true);
     try {
       const newTx = await createInwardRemittance({
+        createdDate: entryDateTime ? new Date(entryDateTime).toISOString() : new Date().toISOString(),
         mtcn: mtcn || undefined,
         scope,
         senderName: senderName || (scope === 'DOMESTIC' ? 'Local Remitter' : 'Overseas Remitter'),
@@ -777,6 +801,15 @@ export const InwardEntryView: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* Live System Date & Time Display */}
+          <div className="flex items-center space-x-2 text-xs text-slate-300 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700 font-mono shadow-inner">
+            <Calendar className="w-3.5 h-3.5 text-amber-400" />
+            <span>{new Date(entryDateTime).toLocaleDateString()}</span>
+            <span className="text-slate-500">|</span>
+            <Clock className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+            <span className="text-indigo-300 font-semibold">{liveCurrentTime}</span>
+          </div>
+
           <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-700">
             <Building2 className="w-4 h-4 text-sky-400" />
             <span>{t.payoutBranch}: </span>
@@ -893,6 +926,52 @@ export const InwardEntryView: React.FC = () => {
 
       {/* Main Entry Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* TOP SECTION: Transaction Date & Time (User Request #1) */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-white uppercase tracking-wider flex items-center space-x-2">
+                <span>{language === 'my' ? 'ရက်စွဲ နှင့် အချိန် (Disbursement Date & Time)' : 'Disbursement Date & Time'}</span>
+                <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 font-mono font-medium">
+                  {new Date(entryDateTime).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                <span>{language === 'my' ? 'ငွေထုတ်ယူပေးချေသည့် ရက်စွဲနှင့် စနစ်အချိန်' : 'Remittance payout disbursement timestamp registered in audit ledger'}</span>
+                <span className="text-slate-600 hidden sm:inline">•</span>
+                <span className="text-amber-400 font-mono font-medium flex items-center space-x-1">
+                  <Clock className="w-3 h-3" />
+                  <span>Live: {liveCurrentTime}</span>
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center space-x-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl shadow-inner">
+              <Calendar className="w-4 h-4 text-indigo-400 shrink-0" />
+              <input
+                type="datetime-local"
+                value={entryDateTime}
+                onChange={(e) => setEntryDateTime(e.target.value)}
+                className="bg-transparent text-xs font-mono text-white focus:outline-none cursor-pointer"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleResetToCurrentTime}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 border border-slate-700 text-xs font-medium flex items-center space-x-1.5 transition-colors cursor-pointer"
+              title={language === 'my' ? 'ယခုအချိန် ပြန်သတ်မှတ်မည်' : 'Reset to current system time'}
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{language === 'my' ? 'ယခုအချိန်' : 'Current Time'}</span>
+            </button>
+          </div>
+        </div>
+
         {/* UPPER FRAME: Domestic Sender & Origin Branch / Overseas Sender & Partner */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">

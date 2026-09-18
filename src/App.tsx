@@ -6,6 +6,7 @@
 import React, { Component, useState, useEffect } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { RemittanceProvider, useRemittance } from './lib/store';
+import { clearIndexedDb } from './lib/indexedDbStorage';
 import { LoginView } from './components/Auth/LoginView';
 import { Header } from './components/Header';
 import { Sidebar, NavigationTab, SetupSubTab } from './components/Sidebar';
@@ -206,6 +207,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     try {
       localStorage.removeItem('REMITTANCE_APP_DB_V1');
       sessionStorage.clear();
+      clearIndexedDb().catch(() => {});
     } catch {}
     window.location.reload();
   };

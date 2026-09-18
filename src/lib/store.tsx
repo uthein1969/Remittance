@@ -32,6 +32,12 @@ import {
   tursoWebSyncPush, 
   tursoWebSyncPull 
 } from './tursoWebClient';
+import { 
+  persistDatabaseSafely, 
+  loadDbFromIndexedDb, 
+  clearIndexedDb, 
+  LOCAL_STORAGE_DB_KEY 
+} from './indexedDbStorage';
 
 async function safeFetchJson(url: string, options?: RequestInit): Promise<{ ok: boolean; data?: any; isHtml?: boolean }> {
   try {
@@ -47,7 +53,7 @@ async function safeFetchJson(url: string, options?: RequestInit): Promise<{ ok: 
   }
 }
 
-const DB_STORAGE_KEY = 'REMITTANCE_APP_DB_V1';
+const DB_STORAGE_KEY = LOCAL_STORAGE_DB_KEY;
 
 interface RemittanceContextType {
   db: AppDatabase;
@@ -280,13 +286,40 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return base;
   });
 
-  // Save to localStorage on state change
+  // Hydrate full uncompressed data from IndexedDB on startup
   useEffect(() => {
-    try {
-      localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(db));
-    } catch (err) {
-      console.error('Failed to persist database:', err);
-    }
+    let active = true;
+    loadDbFromIndexedDb().then((idbDb) => {
+      if (!active || !idbDb) return;
+      if (Array.isArray(idbDb.transactions) && Array.isArray(idbDb.branches)) {
+        setDb((prev) => {
+          const idbTxCount = idbDb.transactions?.length || 0;
+          const prevTxCount = prev.transactions?.length || 0;
+          if (idbTxCount >= prevTxCount) {
+            return {
+              ...prev,
+              ...idbDb,
+              operatorProfile: {
+                ...prev.operatorProfile,
+                ...(idbDb.operatorProfile || {})
+              }
+            };
+          }
+          return prev;
+        });
+      }
+    }).catch((err) => {
+      console.warn('Initial IndexedDB hydration note:', err);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Save to resilient multi-tier storage (IndexedDB primary + quota-safe localStorage)
+  useEffect(() => {
+    persistDatabaseSafely(db);
   }, [db]);
 
   // Authentication state - Default to false so Login Form is shown on initial open
@@ -1151,7 +1184,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       creatorUserId: currentUser.id,
       creatorName: `${currentUser.fullName} (${currentUser.role})`,
       
-      createdDate: new Date().toISOString(),
+      createdDate: txData.createdDate || new Date().toISOString(),
     };
 
     const auditRecord: AuditRecord = {
@@ -1274,7 +1307,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       creatorUserId: currentUser.id,
       creatorName: `${currentUser.fullName} (${currentUser.role})`,
       
-      createdDate: new Date().toISOString(),
+      createdDate: txData.createdDate || new Date().toISOString(),
     };
 
     const auditRecord: AuditRecord = {
@@ -1751,7 +1784,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
 
       setDb(dataToRestore);
-      localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(dataToRestore));
+      persistDatabaseSafely(dataToRestore);
 
       logActionDirect(
         'RESTORE',
@@ -1769,7 +1802,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const resetToDefaultData = () => {
     setDb(initialDatabase);
-    localStorage.setItem(DB_STORAGE_KEY, JSON.stringify(initialDatabase));
+    clearIndexedDb().catch(() => {});
+    persistDatabaseSafely(initialDatabase);
     logActionDirect(
       'RESTORE',
       'SYSTEM',

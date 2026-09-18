@@ -41,6 +41,7 @@ import {
   createSampleDepositReceiptSvg
 } from '../../lib/sampleDocuments';
 import { extractNrcInfoFromUpload, scanNrcWithAi } from '../../lib/nrcOcrParser';
+import { readFileAsOptimizedDataUrl } from '../../lib/imageCompressor';
 
 export interface OutwardApproveViewProps {
   initialTxId?: string | null;
@@ -304,10 +305,10 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
   ) => {
     const file = e.target.files?.[0];
     if (!file || !selectedTx) return;
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      const sizeStr = `${(file.size / 1024).toFixed(1)} KB`;
+
+    readFileAsOptimizedDataUrl(file).then(async (opt) => {
+      const dataUrl = opt.dataUrl;
+      const sizeStr = opt.sizeStr;
       let updated: RemittanceTransaction = { ...selectedTx };
 
       if (type === 'nrc-front' || type === 'nrc' || type === 'nrc-back') {
@@ -323,17 +324,17 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
           senderOccupation: extracted.occupation || updated.senderOccupation,
           ...(type === 'nrc-back' ? {
             senderNrcBackAttachment: dataUrl,
-            senderNrcBackAttachmentName: file.name,
-            senderNrcBackAttachmentType: file.type || 'image/jpeg',
+            senderNrcBackAttachmentName: opt.name,
+            senderNrcBackAttachmentType: opt.type,
             senderNrcBackAttachmentSize: sizeStr
           } : {
             senderNrcAttachment: dataUrl,
-            senderNrcAttachmentName: file.name,
-            senderNrcAttachmentType: file.type || 'image/jpeg',
+            senderNrcAttachmentName: opt.name,
+            senderNrcAttachmentType: opt.type,
             senderNrcAttachmentSize: sizeStr,
             senderNrcFrontAttachment: dataUrl,
-            senderNrcFrontAttachmentName: file.name,
-            senderNrcFrontAttachmentType: file.type || 'image/jpeg',
+            senderNrcFrontAttachmentName: opt.name,
+            senderNrcFrontAttachmentType: opt.type,
             senderNrcFrontAttachmentSize: sizeStr
           })
         };
@@ -370,24 +371,24 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
         updated = {
           ...updated,
           proofDocumentUrl: dataUrl,
-          proofDocumentName: file.name,
-          proofDocumentType: file.type || 'image/jpeg',
+          proofDocumentName: opt.name,
+          proofDocumentType: opt.type,
           proofDocumentSize: sizeStr,
           proofDocCategory: type === 'deposit' ? 'DEPOSIT_RECEIPT' : 'OTHER'
         };
       }
 
-      await updateTransaction(updated, `Uploaded ${type} file: ${file.name}`);
+      await updateTransaction(updated, `Uploaded ${type} file: ${opt.name}`);
       setSelectedTx(updated);
       setUploadFeedback({
         message: language === 'my'
-          ? `ပုံအသစ် အောင်မြင်စွာ အစားထိုးထည့်သွင်းပြီးပါပြီ (${file.name})`
-          : `Successfully replaced old picture with new file (${file.name})`,
+          ? `ပုံအသစ် အောင်မြင်စွာ အစားထိုးထည့်သွင်းပြီးပါပြီ (${opt.name})`
+          : `Successfully replaced old picture with new file (${opt.name})`,
         type: 'general'
       });
       setTimeout(() => setUploadFeedback(null), 6000);
-    };
-    reader.readAsDataURL(file);
+    });
+    e.target.value = '';
   };
 
   const handleRemoveAttachment = async (
