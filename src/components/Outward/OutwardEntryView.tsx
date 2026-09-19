@@ -57,18 +57,25 @@ export const OutwardEntryView: React.FC = () => {
     activeCountryCode
   } = useRemittance();
 
+  // Active User / Login Branch & Country context
+  const currentBranch = db.branches.find(b => b.id === (activeBranchId || currentUser.branchId)) || db.branches[0];
+  const currentCountry = db.countries.find(c => c.code === (activeCountryCode || currentUser.countryCode || currentBranch?.countryCode || 'MM'));
+  const userCountryCode = (currentCountry?.code || activeCountryCode || currentUser.countryCode || currentBranch?.countryCode || 'MM').toUpperCase();
+  const isMyanmarLogin = userCountryCode === 'MM';
+
   // Form State
   const [scope, setScope] = useState<RemittanceScope>('INTERNATIONAL');
   
   // Sender
   const [senderName, setSenderName] = useState('');
   const [senderNameMm, setSenderNameMm] = useState('');
-  const [senderIdType, setSenderIdType] = useState<'NRC' | 'PASSPORT'>('NRC');
+  // Rule: If User Login by Myanmar Country Default is NRC and Login by other country Default is Passport
+  const [senderIdType, setSenderIdType] = useState<'NRC' | 'PASSPORT'>(() => (isMyanmarLogin ? 'NRC' : 'PASSPORT'));
   const [senderNrc, setSenderNrc] = useState('');
   const [senderPassport, setSenderPassport] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
   const [senderAddress, setSenderAddress] = useState('');
-  const [senderCountryCode, setSenderCountryCode] = useState(activeCountryCode || 'MM');
+  const [senderCountryCode, setSenderCountryCode] = useState(userCountryCode || 'MM');
   const [senderFatherName, setSenderFatherName] = useState('U Tin Aung');
   const [senderDateOfBirth, setSenderDateOfBirth] = useState('14/07/1988');
   const [senderOccupation, setSenderOccupation] = useState('Company Staff');
@@ -109,6 +116,14 @@ export const OutwardEntryView: React.FC = () => {
       setSendingBranchId(activeBranchId);
     }
   }, [activeBranchId]);
+
+  // Sync default sender ID type and country according to user login country:
+  // If User Login by Myanmar Country Default is NRC and Login by other country Default is Passport
+  useEffect(() => {
+    const defaultType: 'NRC' | 'PASSPORT' = isMyanmarLogin ? 'NRC' : 'PASSPORT';
+    setSenderIdType(defaultType);
+    setSenderCountryCode(userCountryCode);
+  }, [userCountryCode, currentUser.id, isMyanmarLogin]);
   const [senderNote, setSenderNote] = useState('');
 
   // Transaction Date & Time (User Request #1: Form အပေါ်ပိုင်းမှာ Date Time ဖော်ပြရန်)
@@ -158,6 +173,8 @@ export const OutwardEntryView: React.FC = () => {
   const [uploadFeedback, setUploadFeedback] = useState<{ message: string; type?: string } | null>(null);
   const [nrcOcrResult, setNrcOcrResult] = useState<ExtractedNrcInfo | null>(null);
   const [isScanningNrc, setIsScanningNrc] = useState(false);
+  // OCR Checkbox Toggle: Default is unchecked (false), OCR function only works when checked (true)
+  const [isOcrEnabled, setIsOcrEnabled] = useState<boolean>(false);
 
   // Compliance Screening Matches
   const [senderMatch, setSenderMatch] = useState<BlacklistEntry | null>(null);
@@ -220,8 +237,10 @@ export const OutwardEntryView: React.FC = () => {
       setSenderAddress(cust.address);
       if (cust.passportNumber && !cust.nrcNumber) {
         setSenderIdType('PASSPORT');
-      } else {
+      } else if (cust.nrcNumber && !cust.passportNumber) {
         setSenderIdType('NRC');
+      } else {
+        setSenderIdType(isMyanmarLogin ? 'NRC' : 'PASSPORT');
       }
     }
   };
@@ -249,31 +268,41 @@ export const OutwardEntryView: React.FC = () => {
     const name = `NRC_Front_${nameEnVal.replace(/\s+/g, '_')}_${nrcVal.replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
     const doc = { url, name, type: 'image/svg+xml', size: '18.4 KB' };
     setSenderNrcFrontDoc(doc);
-
-    if (!senderName) setSenderName(nameEnVal);
-    if (!senderNameMm) setSenderNameMm(nameMmVal);
-    if (!senderNrc) setSenderNrc(nrcVal);
-    if (!senderFatherName) setSenderFatherName(fatherVal);
-    if (!senderDateOfBirth) setSenderDateOfBirth(dobVal);
     setSenderIdType('NRC');
 
-    setNrcOcrResult({
-      nameEn: nameEnVal,
-      nameMm: nameMmVal,
-      nrcNumber: nrcVal,
-      fatherName: fatherVal,
-      dob: dobVal,
-      confidence: 99,
-      method: 'SVG_TEXT',
-      extractedFields: ['nrcNumber', 'nameEn', 'nameMm', 'fatherName', 'dob']
-    });
+    if (isOcrEnabled) {
+      if (!senderName) setSenderName(nameEnVal);
+      if (!senderNameMm) setSenderNameMm(nameMmVal);
+      if (!senderNrc) setSenderNrc(nrcVal);
+      if (!senderFatherName) setSenderFatherName(fatherVal);
+      if (!senderDateOfBirth) setSenderDateOfBirth(dobVal);
 
-    setUploadFeedback({
-      message: language === 'my'
-        ? `✨ မှတ်ပုံတင်မှ အမည် (${nameEnVal}) နှင့် မှတ်ပုံတင်နံပတ် (${nrcVal}) ကို Auto ဖတ်ရှုဖော်ပြပြီးပါပြီ`
-        : `✨ Auto-populated Name (${nameEnVal}) and NRC (${nrcVal}) from NRC Card`
-    });
-    setTimeout(() => setUploadFeedback(null), 6000);
+      setNrcOcrResult({
+        nameEn: nameEnVal,
+        nameMm: nameMmVal,
+        nrcNumber: nrcVal,
+        fatherName: fatherVal,
+        dob: dobVal,
+        confidence: 99,
+        method: 'SVG_TEXT',
+        extractedFields: ['nrcNumber', 'nameEn', 'nameMm', 'fatherName', 'dob']
+      });
+
+      setUploadFeedback({
+        message: language === 'my'
+          ? `✨ [OCR ON] မှတ်ပုံတင်မှ အမည် (${nameEnVal}) နှင့် မှတ်ပုံတင်နံပတ် (${nrcVal}) ကို Auto ဖတ်ရှုဖော်ပြပြီးပါပြီ`
+          : `✨ [OCR ON] Auto-populated Name (${nameEnVal}) and NRC (${nrcVal}) from NRC Card`
+      });
+      setTimeout(() => setUploadFeedback(null), 6000);
+    } else {
+      setNrcOcrResult(null);
+      setUploadFeedback({
+        message: language === 'my'
+          ? `မှတ်ပုံတင် အရှေ့ခြမ်း (NRC Front) အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ (OCR အမှန်ခြစ် ဖြုတ်ထားပါသည်)`
+          : `Successfully attached Sender NRC Card (Front) without OCR (OCR is unchecked)`
+      });
+      setTimeout(() => setUploadFeedback(null), 5000);
+    }
   };
 
   // Helper to generate sample Back NRC
@@ -309,33 +338,43 @@ export const OutwardEntryView: React.FC = () => {
     const backUrl = createSampleMyanmarNrcBackSvg(occupationVal, addressVal);
     const backName = `NRC_Back_${nameEnVal.replace(/\s+/g, '_')}_${nrcVal.replace(/[^a-zA-Z0-9]/g, '_')}.svg`;
     setSenderNrcBackDoc({ url: backUrl, name: backName, type: 'image/svg+xml', size: '16.2 KB' });
-
-    setSenderName(nameEnVal);
-    setSenderNameMm(nameMmVal);
-    setSenderNrc(nrcVal);
-    if (!senderFatherName) setSenderFatherName(fatherVal);
-    if (!senderDateOfBirth) setSenderDateOfBirth(dobVal);
-    if (!senderAddress) setSenderAddress(addressVal);
     setSenderIdType('NRC');
 
-    setNrcOcrResult({
-      nameEn: nameEnVal,
-      nameMm: nameMmVal,
-      nrcNumber: nrcVal,
-      fatherName: fatherVal,
-      dob: dobVal,
-      address: addressVal,
-      confidence: 99,
-      method: 'SVG_TEXT',
-      extractedFields: ['nrcNumber', 'nameEn', 'nameMm', 'fatherName', 'dob', 'address']
-    });
+    if (isOcrEnabled) {
+      setSenderName(nameEnVal);
+      setSenderNameMm(nameMmVal);
+      setSenderNrc(nrcVal);
+      if (!senderFatherName) setSenderFatherName(fatherVal);
+      if (!senderDateOfBirth) setSenderDateOfBirth(dobVal);
+      if (!senderAddress) setSenderAddress(addressVal);
 
-    setUploadFeedback({
-      message: language === 'my'
-        ? `✨ မှတ်ပုံတင် (ရှေ့/နောက်) ပူးတွဲပြီး အမည် (${nameEnVal}) နှင့် မှတ်ပုံတင်နံပတ် (${nrcVal}) အား Auto တန်းပြီးဖော်ပြပြီးပါပြီ`
-        : `✨ Attached both sides & auto-populated Name (${nameEnVal}) and NRC (${nrcVal})`
-    });
-    setTimeout(() => setUploadFeedback(null), 7000);
+      setNrcOcrResult({
+        nameEn: nameEnVal,
+        nameMm: nameMmVal,
+        nrcNumber: nrcVal,
+        fatherName: fatherVal,
+        dob: dobVal,
+        address: addressVal,
+        confidence: 99,
+        method: 'SVG_TEXT',
+        extractedFields: ['nrcNumber', 'nameEn', 'nameMm', 'fatherName', 'dob', 'address']
+      });
+
+      setUploadFeedback({
+        message: language === 'my'
+          ? `✨ [OCR ON] မှတ်ပုံတင် (ရှေ့/နောက်) ပူးတွဲပြီး အမည် (${nameEnVal}) နှင့် မှတ်ပုံတင်နံပတ် (${nrcVal}) အား Auto တန်းပြီးဖော်ပြပြီးပါပြီ`
+          : `✨ [OCR ON] Attached both sides & auto-populated Name (${nameEnVal}) and NRC (${nrcVal})`
+      });
+      setTimeout(() => setUploadFeedback(null), 7000);
+    } else {
+      setNrcOcrResult(null);
+      setUploadFeedback({
+        message: language === 'my'
+          ? `မှတ်ပုံတင် ရှေ့/နောက် (NRC Both) အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ (OCR အမှန်ခြစ် ဖြုတ်ထားသဖြင့် ဖိုင်သာ ပူးတွဲပါသည်)`
+          : `Attached both NRC files without OCR parsing (OCR is unchecked)`
+      });
+      setTimeout(() => setUploadFeedback(null), 5000);
+    }
   };
 
   // Helper to generate sample Passport
@@ -347,6 +386,8 @@ export const OutwardEntryView: React.FC = () => {
     const name = `Passport_${(senderName || 'Sender').replace(/\s+/g, '_')}_${passNo}.svg`;
     const doc = { url, name, type: 'image/svg+xml', size: '24.1 KB' };
     setSenderPassportDoc(doc);
+    setSenderIdType('PASSPORT');
+    if (!senderPassport) setSenderPassport(passNo);
     setUploadFeedback({
       message: language === 'my'
         ? `နိုင်ငံကူးလက်မှတ် (Passport) အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ`
@@ -394,19 +435,6 @@ export const OutwardEntryView: React.FC = () => {
       const doc = { url, name: opt.name, type: opt.type, size };
 
       if (target === 'nrc-front' || target === 'nrc-both' || target === 'nrc-back') {
-        // Step 1: Immediate local smart fill so UI updates instantly
-        const localExtracted = extractNrcInfoFromUpload(file, url, db.customers);
-        setNrcOcrResult(localExtracted);
-
-        if (localExtracted.nameEn) setSenderName(localExtracted.nameEn);
-        if (localExtracted.nameMm) setSenderNameMm(localExtracted.nameMm);
-        if (localExtracted.nrcNumber) setSenderNrc(localExtracted.nrcNumber);
-        if (localExtracted.fatherName) setSenderFatherName(localExtracted.fatherName);
-        if (localExtracted.dob) setSenderDateOfBirth(localExtracted.dob);
-        if (localExtracted.address) setSenderAddress(localExtracted.address);
-        if (localExtracted.occupation) setSenderOccupation(localExtracted.occupation);
-        setSenderIdType('NRC');
-
         if (target === 'nrc-front' || target === 'nrc-both') {
           setSenderNrcFrontDoc(doc);
           if (target === 'nrc-both') {
@@ -415,74 +443,100 @@ export const OutwardEntryView: React.FC = () => {
         } else if (target === 'nrc-back') {
           setSenderNrcBackDoc(doc);
         }
+        setSenderIdType('NRC');
 
-        if (target === 'nrc-back') {
-          setUploadFeedback({
-            message: language === 'my'
-              ? `✨ NRC အနောက်ခြမ်း ဖိုင်တင်သွင်းပြီးပါပြီ: နေရပ်လိပ်စာ (${localExtracted.address || 'စစ်ဆေးနေပါသည်'}) နှင့် အလုပ်အကိုင် (${localExtracted.occupation || ''}) Auto ဖြည့်သွင်းပေးလိုက်ပါပြီ (${size})`
-              : `✨ NRC Back Uploaded: Address (${localExtracted.address || 'Processing...'}) & Occupation (${localExtracted.occupation || ''}) (${size})`
-          });
-        } else if (localExtracted.nameEn || localExtracted.nrcNumber) {
-          setUploadFeedback({
-            message: language === 'my'
-              ? `✨ မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${localExtracted.nameEn || localExtracted.nameMm || ''}) နှင့် မှတ်ပုံတင်နံပတ် (${localExtracted.nrcNumber || ''}) အား Auto တန်းပြီး ဖြည့်သွင်းဖော်ပြပေးလိုက်ပါပြီ (${size})`
-              : `✨ NRC Uploaded: Auto-populated Name (${localExtracted.nameEn || localExtracted.nameMm}) & NRC (${localExtracted.nrcNumber}) (${size})`
+        // Check whether OCR Function is enabled (Checkbox ON) or disabled (Unchecked Default)
+        if (isOcrEnabled) {
+          // Step 1: Immediate local smart fill so UI updates instantly
+          const localExtracted = extractNrcInfoFromUpload(file, url, db.customers);
+          setNrcOcrResult(localExtracted);
+
+          if (localExtracted.nameEn) setSenderName(localExtracted.nameEn);
+          if (localExtracted.nameMm) setSenderNameMm(localExtracted.nameMm);
+          if (localExtracted.nrcNumber) setSenderNrc(localExtracted.nrcNumber);
+          if (localExtracted.fatherName) setSenderFatherName(localExtracted.fatherName);
+          if (localExtracted.dob) setSenderDateOfBirth(localExtracted.dob);
+          if (localExtracted.address) setSenderAddress(localExtracted.address);
+          if (localExtracted.occupation) setSenderOccupation(localExtracted.occupation);
+
+          if (target === 'nrc-back') {
+            setUploadFeedback({
+              message: language === 'my'
+                ? `✨ [OCR ON] NRC အနောက်ခြမ်း ဖိုင်တင်သွင်းပြီးပါပြီ: နေရပ်လိပ်စာ (${localExtracted.address || 'စစ်ဆေးနေပါသည်'}) နှင့် အလုပ်အကိုင် (${localExtracted.occupation || ''}) Auto ဖြည့်သွင်းပေးလိုက်ပါပြီ (${size})`
+                : `✨ [OCR ON] NRC Back Uploaded: Address (${localExtracted.address || 'Processing...'}) & Occupation (${localExtracted.occupation || ''}) (${size})`
+            });
+          } else if (localExtracted.nameEn || localExtracted.nrcNumber) {
+            setUploadFeedback({
+              message: language === 'my'
+                ? `✨ [OCR ON] မှတ်ပုံတင် ဖိုင်တင်သွင်းပြီးသည်နှင့် အမည် (${localExtracted.nameEn || localExtracted.nameMm || ''}) နှင့် မှတ်ပုံတင်နံပတ် (${localExtracted.nrcNumber || ''}) အား Auto တန်းပြီး ဖြည့်သွင်းဖော်ပြပေးလိုက်ပါပြီ (${size})`
+                : `✨ [OCR ON] NRC Uploaded: Auto-populated Name (${localExtracted.nameEn || localExtracted.nameMm}) & NRC (${localExtracted.nrcNumber}) (${size})`
+            });
+          } else {
+            setUploadFeedback({
+              message: language === 'my'
+                ? `✨ [OCR ON] NRC ဖိုင် (${file.name}) တင်သွင်းပြီးပါပြီ။ AI Vision OCR ဖြင့် အချက်အလက်များ ဖတ်ရှုနေပါသည်...`
+                : `✨ [OCR ON] NRC file (${file.name}) uploaded. AI Vision OCR scanning card details...`
+            });
+          }
+
+          // Step 2: Asynchronous AI Vision OCR scanning via Gemini
+          setIsScanningNrc(true);
+          scanNrcWithAi(file, url, db.customers).then((aiExtracted) => {
+            setIsScanningNrc(false);
+            setNrcOcrResult(aiExtracted);
+            if (aiExtracted.nameEn) setSenderName(aiExtracted.nameEn);
+            if (aiExtracted.nameMm) setSenderNameMm(aiExtracted.nameMm);
+            if (aiExtracted.nrcNumber) setSenderNrc(aiExtracted.nrcNumber);
+            if (aiExtracted.fatherName) setSenderFatherName(aiExtracted.fatherName);
+            if (aiExtracted.dob) setSenderDateOfBirth(aiExtracted.dob);
+            if (aiExtracted.address) setSenderAddress(aiExtracted.address);
+            if (aiExtracted.occupation) setSenderOccupation(aiExtracted.occupation);
+
+            if (target === 'nrc-back' && aiExtracted.address) {
+              setUploadFeedback({
+                message: language === 'my'
+                  ? `✨ AI Vision OCR မှတ်ပုံတင် အနောက်ခြမ်း ဖတ်ရှုပြီးစီးပါပြီ- လိပ်စာ: ${aiExtracted.address}`
+                  : `✨ AI OCR NRC Back Complete: Address: ${aiExtracted.address}`
+              });
+            } else if (aiExtracted.nameEn || aiExtracted.nrcNumber) {
+              setUploadFeedback({
+                message: language === 'my'
+                  ? `✨ AI Vision OCR မှတ်ပုံတင် ဖတ်ရှုပြီးစီးပါပြီ- ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
+                  : `✨ AI OCR Complete: ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
+              });
+            } else if (aiExtracted.isAiSuccess === false && aiExtracted.error) {
+              setUploadFeedback({
+                message: language === 'my'
+                  ? `⚠️ AI OCR အသိပေးချက်: ${aiExtracted.errorMessageMm || aiExtracted.error}`
+                  : `⚠️ AI OCR Notice: ${aiExtracted.error}`
+              });
+            }
+
+            if (aiExtracted.confidence >= 80) {
+              try {
+                confetti({ particleCount: 25, spread: 50, origin: { y: 0.3 } });
+              } catch {}
+            }
+          }).catch((err) => {
+            console.warn('AI OCR failed, using local extraction:', err);
+            setIsScanningNrc(false);
           });
         } else {
+          // Checkbox is UNCHECKED (Default Status): Do NOT run OCR function, document is attached only
+          setNrcOcrResult(null);
+          setIsScanningNrc(false);
           setUploadFeedback({
             message: language === 'my'
-              ? `✨ NRC ဖိုင် (${file.name}) တင်သွင်းပြီးပါပြီ။ AI Vision OCR ဖြင့် အချက်အလက်များ ဖတ်ရှုနေပါသည်...`
-              : `✨ NRC file (${file.name}) uploaded. AI Vision OCR scanning card details...`
+              ? `မှတ်ပုံတင်ဖိုင် (${file.name}) အား အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ (OCR အမှန်ခြစ် ဖြုတ်ထားသဖြင့် ဖိုင်သာ ပူးတွဲထားပါသည်) (${size})`
+              : `NRC file "${file.name}" attached successfully (OCR is unchecked, document attached only) (${size})`
           });
         }
 
-        // Step 2: Asynchronous AI Vision OCR scanning via Gemini
-        setIsScanningNrc(true);
-        scanNrcWithAi(file, url, db.customers).then((aiExtracted) => {
-          setIsScanningNrc(false);
-          setNrcOcrResult(aiExtracted);
-          if (aiExtracted.nameEn) setSenderName(aiExtracted.nameEn);
-          if (aiExtracted.nameMm) setSenderNameMm(aiExtracted.nameMm);
-          if (aiExtracted.nrcNumber) setSenderNrc(aiExtracted.nrcNumber);
-          if (aiExtracted.fatherName) setSenderFatherName(aiExtracted.fatherName);
-          if (aiExtracted.dob) setSenderDateOfBirth(aiExtracted.dob);
-          if (aiExtracted.address) setSenderAddress(aiExtracted.address);
-          if (aiExtracted.occupation) setSenderOccupation(aiExtracted.occupation);
-
-          if (target === 'nrc-back' && aiExtracted.address) {
-            setUploadFeedback({
-              message: language === 'my'
-                ? `✨ AI Vision OCR မှတ်ပုံတင် အနောက်ခြမ်း ဖတ်ရှုပြီးစီးပါပြီ- လိပ်စာ: ${aiExtracted.address}`
-                : `✨ AI OCR NRC Back Complete: Address: ${aiExtracted.address}`
-            });
-          } else if (aiExtracted.nameEn || aiExtracted.nrcNumber) {
-            setUploadFeedback({
-              message: language === 'my'
-                ? `✨ AI Vision OCR မှတ်ပုံတင် ဖတ်ရှုပြီးစီးပါပြီ- ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
-                : `✨ AI OCR Complete: ${aiExtracted.nameEn || aiExtracted.nameMm} (${aiExtracted.nrcNumber})`
-            });
-          } else if (aiExtracted.isAiSuccess === false && aiExtracted.error) {
-            setUploadFeedback({
-              message: language === 'my'
-                ? `⚠️ AI OCR အသိပေးချက်: ${aiExtracted.errorMessageMm || aiExtracted.error}`
-                : `⚠️ AI OCR Notice: ${aiExtracted.error}`
-            });
-          }
-
-          if (aiExtracted.confidence >= 80) {
-            try {
-              confetti({ particleCount: 25, spread: 50, origin: { y: 0.3 } });
-            } catch {}
-          }
-        }).catch((err) => {
-          console.warn('AI OCR failed, using local extraction:', err);
-          setIsScanningNrc(false);
-        });
-
-        setTimeout(() => setUploadFeedback(null), 8000);
+        setTimeout(() => setUploadFeedback(null), 7000);
         return;
       } else if (target === 'passport') {
         setSenderPassportDoc(doc);
+        setSenderIdType('PASSPORT');
       } else if (target === 'deposit') {
         setDepositReceiptDoc(doc);
         setProofCategory('DEPOSIT_RECEIPT');
@@ -880,10 +934,18 @@ export const OutwardEntryView: React.FC = () => {
                 </h3>
               </div>
               <div className="flex items-center space-x-2">
-                {/* Upload NRC to Auto Fill Button */}
-                <label className="inline-flex items-center space-x-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer border border-emerald-500/50 shadow-xs transition-all hover:scale-[1.02]">
-                  <Upload className="w-3.5 h-3.5 text-emerald-200" />
-                  <span>{language === 'my' ? 'မှတ်ပုံတင် Upload (Auto တန်းဖြည့်မည်)' : 'Upload NRC (Auto Fill)'}</span>
+                {/* Upload NRC Button (shows OCR badge if enabled, otherwise regular file upload) */}
+                <label className={`inline-flex items-center space-x-1.5 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer border shadow-xs transition-all hover:scale-[1.02] ${
+                  isOcrEnabled
+                    ? 'bg-emerald-750 hover:bg-emerald-650 border-emerald-500/60 ring-1 ring-emerald-500/40'
+                    : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                }`}>
+                  <Upload className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>
+                    {isOcrEnabled
+                      ? (language === 'my' ? 'မှတ်ပုံတင် Upload (Auto တန်းဖြည့်မည်)' : 'Upload NRC (OCR Auto-Fill)')
+                      : (language === 'my' ? 'မှတ်ပုံတင် Upload (ဖိုင်တွဲမည်)' : 'Upload NRC File')}
+                  </span>
                   <input
                     type="file"
                     accept="image/*,.pdf,.svg"
@@ -905,8 +967,59 @@ export const OutwardEntryView: React.FC = () => {
               </div>
             </div>
 
-            {/* OCR Auto-fill Scanning Indicator */}
-            {isScanningNrc && (
+            {/* OCR Function Checkbox (Default: Unchecked / Disabled) */}
+            <div className={`p-3 rounded-xl border transition-all ${
+              isOcrEnabled
+                ? 'bg-emerald-950/40 border-emerald-500/50 shadow-sm'
+                : 'bg-slate-900/90 border-slate-800'
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <label htmlFor="outward-ocr-toggle-checkbox" className="flex items-start sm:items-center space-x-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    id="outward-ocr-toggle-checkbox"
+                    checked={isOcrEnabled}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setIsOcrEnabled(val);
+                      if (!val) {
+                        setNrcOcrResult(null);
+                        setIsScanningNrc(false);
+                      }
+                    }}
+                    className="w-4 h-4 mt-0.5 sm:mt-0 rounded text-emerald-600 bg-slate-950 border-slate-600 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer accent-emerald-500"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold text-white flex items-center gap-1.5">
+                      <Sparkles className={`w-3.5 h-3.5 ${isOcrEnabled ? 'text-emerald-400' : 'text-slate-400'}`} />
+                      <span>{language === 'my' ? 'AI OCR အလိုအလျောက် စာဖတ်စနစ် အသုံးပြုမည်' : 'Enable AI OCR Auto-Fill Function'}</span>
+                    </span>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {language === 'my'
+                        ? 'အမှန်ခြစ်ထားပါက (ON) မှတ်ပုံတင်ဖိုင် တင်သွင်းသည်နှင့် အချက်အလက်များ အလိုအလျောက် ဖတ်ရှုဖြည့်သွင်းပေးပါမည်။ အမှန်ခြစ်ဖြုတ်ထားပါက (Default OFF) ဖိုင်သာတင်မည်ဖြစ်ပြီး OCR စနစ် အလုပ်မလုပ်ပါ။'
+                        : 'When checked (ON), uploaded NRC documents auto-fill sender details. When unchecked (Default OFF), documents attach without OCR.'}
+                    </p>
+                  </div>
+                </label>
+
+                <div className="shrink-0 self-start sm:self-center">
+                  {isOcrEnabled ? (
+                    <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{language === 'my' ? 'Status: ON (OCR အလုပ်လုပ်နေပါသည်)' : 'Status: ON (OCR Active)'}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                      <span className="w-2 h-2 rounded-full bg-slate-500" />
+                      <span>{language === 'my' ? 'Status: OFF ပုံမှန် (OCR မလုပ်ပါ)' : 'Status: OFF Default (No OCR)'}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* OCR Auto-fill Scanning Indicator (Only when OCR is enabled) */}
+            {isScanningNrc && isOcrEnabled && (
               <div className="bg-amber-950/60 border border-amber-500/50 rounded-xl p-3 text-amber-200 shadow-sm flex items-center justify-between animate-pulse">
                 <div className="flex items-center space-x-2.5">
                   <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
@@ -922,8 +1035,8 @@ export const OutwardEntryView: React.FC = () => {
               </div>
             )}
 
-            {/* OCR Auto-fill Notification Banner */}
-            {nrcOcrResult && !isScanningNrc && (
+            {/* OCR Auto-fill Notification Banner (Only when OCR is enabled) */}
+            {nrcOcrResult && !isScanningNrc && isOcrEnabled && (
               <div className="bg-emerald-950/70 border border-emerald-500/60 rounded-xl p-3 text-emerald-200 shadow-sm space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2 font-bold text-white text-xs">
@@ -997,18 +1110,36 @@ export const OutwardEntryView: React.FC = () => {
               </div>
 
               {/* ID Type Switcher & Number */}
-              <div className="sm:col-span-2 bg-slate-950/60 p-3 rounded-xl border border-slate-800 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 font-bold text-[11px] flex items-center space-x-1.5">
-                    <FileCheck className="w-3.5 h-3.5 text-sky-400" />
-                    <span>{language === 'my' ? 'ငွေလွှဲသူ သက်သေခံကတ်ပြား အမျိုးအစား' : 'Sender Identity Document Type'}</span>
-                  </span>
+              <div className="sm:col-span-2 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-slate-300 font-bold text-xs flex items-center space-x-1.5">
+                      <FileCheck className="w-3.5 h-3.5 text-sky-400" />
+                      <span>{language === 'my' ? 'ငွေလွှဲသူ သက်သေခံကတ်ပြား အမျိုးအစား' : 'Sender Identity Document Type'}</span>
+                    </span>
+
+                    {/* User Login Country Default Badge */}
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border flex items-center gap-1.5 shadow-xs ${
+                      isMyanmarLogin
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${isMyanmarLogin ? 'bg-emerald-400' : 'bg-sky-400'} animate-pulse`} />
+                      <span>
+                        {isMyanmarLogin
+                          ? (language === 'my' ? '🇲🇲 Myanmar Login (Default: NRC)' : '🇲🇲 Myanmar Login (Default: NRC)')
+                          : (language === 'my' ? `🌐 ${currentCountry?.flagEmoji || ''} ${currentCountry?.nameEn || userCountryCode} Login (Default: Passport)` : `🌐 ${currentCountry?.flagEmoji || ''} ${currentCountry?.nameEn || userCountryCode} Login (Default: Passport)`)}
+                      </span>
+                    </span>
+                  </div>
+
                   {/* Selector Switch */}
                   <div className="inline-flex bg-slate-900 p-0.5 rounded-lg border border-slate-700 text-[11px]">
                     <button
                       type="button"
+                      id="sender-id-type-nrc-btn"
                       onClick={() => setSenderIdType('NRC')}
-                      className={`px-3 py-1 rounded-md font-bold transition-all flex items-center space-x-1 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-md font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
                         senderIdType === 'NRC'
                           ? 'bg-emerald-600 text-white shadow-xs'
                           : 'text-slate-400 hover:text-white'
@@ -1016,11 +1147,17 @@ export const OutwardEntryView: React.FC = () => {
                     >
                       <FileText className="w-3 h-3" />
                       <span>{language === 'my' ? 'မှတ်ပုံတင် (NRC)' : 'NRC Card'}</span>
+                      {isMyanmarLogin && (
+                        <span className="text-[9px] bg-emerald-800/90 text-emerald-100 font-bold px-1 py-0.2 rounded ml-1">
+                          {language === 'my' ? 'မူရင်း' : 'Default'}
+                        </span>
+                      )}
                     </button>
                     <button
                       type="button"
+                      id="sender-id-type-passport-btn"
                       onClick={() => setSenderIdType('PASSPORT')}
-                      className={`px-3 py-1 rounded-md font-bold transition-all flex items-center space-x-1 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-md font-bold transition-all flex items-center space-x-1.5 cursor-pointer ${
                         senderIdType === 'PASSPORT'
                           ? 'bg-sky-600 text-white shadow-xs'
                           : 'text-slate-400 hover:text-white'
@@ -1028,6 +1165,11 @@ export const OutwardEntryView: React.FC = () => {
                     >
                       <FileCheck className="w-3 h-3" />
                       <span>{language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : 'Passport'}</span>
+                      {!isMyanmarLogin && (
+                        <span className="text-[9px] bg-sky-800/90 text-sky-100 font-bold px-1 py-0.2 rounded ml-1">
+                          {language === 'my' ? 'မူရင်း' : 'Default'}
+                        </span>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1064,272 +1206,324 @@ export const OutwardEntryView: React.FC = () => {
                   </div>
                 )}
 
-                {/* SENDER IDENTITY ATTACHMENT BOXES */}
-                {senderIdType === 'NRC' ? (
-                  <div className="pt-2 border-t border-slate-800/80 space-y-2">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-300 font-semibold flex items-center gap-1.5">
-                        <Paperclip className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{language === 'my' ? 'မှတ်ပုံတင် ရှေ့/နောက် ပူးတွဲဖိုင်များ' : 'NRC Front & Back Attachments'}</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleAttachBothNrc}
-                        className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold transition-all cursor-pointer hover:scale-[1.02]"
-                      >
-                        <Sparkles className="w-2.5 h-2.5" />
-                        <span>{language === 'my' ? 'ရှေ့/နောက် တစ်ပြိုင်နက်တွဲမည်' : 'Attach Both'}</span>
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {/* FRONT NRC */}
-                      <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-2.5 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1">
-                            <FileText className="w-3 h-3 text-emerald-400" />
-                            <span>{language === 'my' ? 'NRC အရှေ့ခြမ်း' : 'Front NRC'}</span>
-                          </span>
-                          {senderNrcFrontDoc && (
-                            <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded">
-                              ✓ {language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}
-                            </span>
-                          )}
-                        </div>
-
-                        {senderNrcFrontDoc?.url ? (
-                          <div className="space-y-1.5">
-                            <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/10] flex items-center justify-center">
-                              <img src={senderNrcFrontDoc.url} alt="NRC Front" className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-1 backdrop-blur-[2px]">
-                                <button
-                                  type="button"
-                                  onClick={() => openLightbox({
-                                    title: language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (Front)' : "Sender's NRC Card (Front)",
-                                    url: senderNrcFrontDoc.url,
-                                    name: senderNrcFrontDoc.name,
-                                    size: senderNrcFrontDoc.size,
-                                    idNumber: senderNrc
-                                  })}
-                                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
-                                  title="Enlarge"
-                                >
-                                  <Maximize2 className="w-3 h-3 text-emerald-400" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-slate-400">
-                              <span className="truncate max-w-[110px] font-mono">{senderNrcFrontDoc.name}</span>
-                              <span className="text-emerald-400 font-mono">{senderNrcFrontDoc.size}</span>
-                            </div>
-                            <div className="flex items-center space-x-1 pt-1 border-t border-slate-800">
-                              <button
-                                type="button"
-                                onClick={() => openLightbox({
-                                  title: language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (Front)' : "Sender's NRC Card (Front)",
-                                  url: senderNrcFrontDoc.url,
-                                  name: senderNrcFrontDoc.name,
-                                  size: senderNrcFrontDoc.size,
-                                  idNumber: senderNrc
-                                })}
-                                className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-[10px] font-semibold cursor-pointer"
-                              >
-                                <Eye className="w-3 h-3" />
-                                <span>{language === 'my' ? 'ကြည့်' : 'View'}</span>
-                              </button>
-                              <label className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer transition-colors">
-                                <Upload className="w-3 h-3" />
-                                <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf,.svg"
-                                  className="hidden"
-                                  onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDoc('nrc-front')}
-                                className="p-1 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 cursor-pointer"
-                                title="Remove"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="border border-dashed border-slate-700 rounded-lg p-2.5 text-center space-y-1.5">
-                            <p className="text-[10px] text-slate-400">
-                              {language === 'my' ? 'အရှေ့ခြမ်း မတွဲရသေးပါ' : 'No front side attached'}
-                            </p>
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={handleAttachSampleNrcFront}
-                                className="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold cursor-pointer"
-                              >
-                                + {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}
-                              </button>
-                              <label className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer">
-                                <span>{language === 'my' ? 'တင်မည်' : 'Upload'}</span>
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf,.svg"
-                                  className="hidden"
-                                  onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                                />
-                              </label>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* BACK NRC */}
-                      <div className="bg-slate-900 border border-emerald-500/30 rounded-xl p-2.5 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1">
-                            <FileText className="w-3 h-3 text-emerald-400" />
-                            <span>{language === 'my' ? 'NRC အနောက်ခြမ်း' : 'Back NRC'}</span>
-                          </span>
-                          {senderNrcBackDoc && (
-                            <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded">
-                              ✓ {language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}
-                            </span>
-                          )}
-                        </div>
-
-                        {senderNrcBackDoc?.url ? (
-                          <div className="space-y-1.5">
-                            <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/10] flex items-center justify-center">
-                              <img src={senderNrcBackDoc.url} alt="NRC Back" className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-1 backdrop-blur-[2px]">
-                                <button
-                                  type="button"
-                                  onClick={() => openLightbox({
-                                    title: language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (Back)' : "Sender's NRC Card (Back)",
-                                    url: senderNrcBackDoc.url,
-                                    name: senderNrcBackDoc.name,
-                                    size: senderNrcBackDoc.size,
-                                    idNumber: senderNrc
-                                  })}
-                                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
-                                  title="Enlarge"
-                                >
-                                  <Maximize2 className="w-3 h-3 text-emerald-400" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-slate-400">
-                              <span className="truncate max-w-[110px] font-mono">{senderNrcBackDoc.name}</span>
-                              <span className="text-emerald-400 font-mono">{senderNrcBackDoc.size}</span>
-                            </div>
-                            <div className="flex items-center space-x-1 pt-1 border-t border-slate-800">
-                              <button
-                                type="button"
-                                onClick={() => openLightbox({
-                                  title: language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (Back)' : "Sender's NRC Card (Back)",
-                                  url: senderNrcBackDoc.url,
-                                  name: senderNrcBackDoc.name,
-                                  size: senderNrcBackDoc.size,
-                                  idNumber: senderNrc
-                                })}
-                                className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-[10px] font-semibold cursor-pointer"
-                              >
-                                <Eye className="w-3 h-3" />
-                                <span>{language === 'my' ? 'ကြည့်' : 'View'}</span>
-                              </button>
-                              <label className="flex-1 inline-flex items-center justify-center space-x-1 py-1 px-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer transition-colors">
-                                <Upload className="w-3 h-3" />
-                                <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf,.svg"
-                                  className="hidden"
-                                  onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                                />
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDoc('nrc-back')}
-                                className="p-1 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 cursor-pointer"
-                                title="Remove"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="border border-dashed border-slate-700 rounded-lg p-2.5 text-center space-y-1.5">
-                            <p className="text-[10px] text-slate-400">
-                              {language === 'my' ? 'အနောက်ခြမ်း မတွဲရသေးပါ' : 'No back side attached'}
-                            </p>
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={handleAttachSampleNrcBack}
-                                className="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold cursor-pointer"
-                              >
-                                + {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}
-                              </button>
-                              <label className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer">
-                                <span>{language === 'my' ? 'တင်မည်' : 'Upload'}</span>
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf,.svg"
-                                  className="hidden"
-                                  onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                                />
-                              </label>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                {/* SENDER IDENTITY DOCUMENTS (WORDS AND ROWS FOR NRC FRONT, NRC BACK, PASSPORT) */}
+                <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-300 font-bold flex items-center gap-1.5">
+                      <Paperclip className="w-3.5 h-3.5 text-sky-400" />
+                      <span>{language === 'my' ? 'သက်သေခံကတ်ပြား ပူးတွဲဖိုင်များ' : 'Identity Document Attachments'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      id="attach-both-nrc-btn"
+                      onClick={handleAttachBothNrc}
+                      className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-400" />
+                      <span>{language === 'my' ? '⚡ NRC ရှေ့/နောက် တစ်ပြိုင်နက်တွဲမည်' : '⚡ Attach Both NRC (Front & Back)'}</span>
+                    </button>
                   </div>
-                ) : (
-                  /* PASSPORT ATTACHMENT BOX */
-                  <div className="pt-2 border-t border-slate-800/80 space-y-2">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-300 font-semibold flex items-center gap-1.5">
-                        <Paperclip className="w-3.5 h-3.5 text-sky-400" />
-                        <span>{language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport) ပူးတွဲဖိုင်' : 'Passport Document Attachment'}</span>
-                      </span>
-                      {senderPassportDoc && (
-                        <span className="text-[9px] bg-sky-500/20 text-sky-300 font-bold px-1.5 py-0.5 rounded">
-                          ✓ {language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}
-                        </span>
-                      )}
-                    </div>
 
-                    <div className="bg-slate-900 border border-sky-500/30 rounded-xl p-3">
-                      {senderPassportDoc?.url ? (
-                        <div className="space-y-2">
-                          <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] flex items-center justify-center">
-                            <img src={senderPassportDoc.url} alt="Sender Passport" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                              <button
-                                type="button"
-                                onClick={() => openLightbox({
-                                  title: language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : "Sender's Passport",
-                                  url: senderPassportDoc.url,
-                                  name: senderPassportDoc.name,
-                                  size: senderPassportDoc.size,
-                                  idNumber: senderPassport
-                                })}
-                                className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
-                                title="Enlarge"
-                              >
-                                <Maximize2 className="w-3.5 h-3.5 text-sky-400" />
-                              </button>
+                  {/* ROWS FOR NRC FRONT, NRC BACK, PASSPORT */}
+                  <div className="divide-y divide-slate-800/80 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+                    {/* ROW 1: NRC FRONT */}
+                    <div className={`p-3 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      senderNrcFrontDoc ? 'bg-emerald-950/20' : 'hover:bg-slate-850/50'
+                    }`}>
+                      {/* Words: Document Name & Status */}
+                      <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          senderNrcFrontDoc ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-xs text-white">
+                              {language === 'my' ? 'မှတ်ပုံတင် (အရှေ့ခြမ်း)' : 'NRC Front'}
+                            </span>
+                            {senderIdType === 'NRC' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                                {language === 'my' ? 'အဓိက ID' : 'Primary ID'}
+                              </span>
+                            )}
+                            {senderNrcFrontDoc ? (
+                              <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                {language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not Attached'}
+                              </span>
+                            )}
+                          </div>
+                          {/* File details by words */}
+                          {senderNrcFrontDoc ? (
+                            <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                              <span className="truncate max-w-[200px] sm:max-w-[280px] text-slate-300" title={senderNrcFrontDoc.name}>
+                                {senderNrcFrontDoc.name || 'NRC_Front.svg'}
+                              </span>
+                              <span className="text-emerald-400 shrink-0 font-semibold">{senderNrcFrontDoc.size || '18.4 KB'}</span>
                             </div>
-                          </div>
-                          <div className="flex items-center justify-between text-[11px] text-slate-400">
-                            <span className="truncate max-w-[180px] font-mono">{senderPassportDoc.name}</span>
-                            <span className="text-sky-400 font-mono font-semibold">{senderPassportDoc.size}</span>
-                          </div>
-                          <div className="flex items-center space-x-2 pt-1 border-t border-slate-800">
+                          ) : (
+                            <p className="text-[11px] text-slate-400">
+                              {language === 'my' ? 'မှတ်ပုံတင် အရှေ့မျက်နှာစာ ဖိုင် (JPG, PNG, PDF, SVG)' : 'Front side of NRC Card (JPG, PNG, PDF, SVG)'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons: If Attached show Preview Button */}
+                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                        {senderNrcFrontDoc ? (
+                          <>
+                            {/* PREVIEW BUTTON (If Attached) */}
                             <button
                               type="button"
+                              id="preview-sender-nrc-front-btn"
+                              onClick={() => openLightbox({
+                                title: language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း (NRC Front)' : "Sender's NRC Card (Front)",
+                                url: senderNrcFrontDoc.url,
+                                name: senderNrcFrontDoc.name,
+                                size: senderNrcFrontDoc.size,
+                                idNumber: senderNrc
+                              })}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                              title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
+                            >
+                              <Eye className="w-3.5 h-3.5 text-sky-400" />
+                              <span>{language === 'my' ? 'Preview' : 'Preview'}</span>
+                            </button>
+
+                            {/* Replace Button */}
+                            <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+                              <Upload className="w-3 h-3 text-slate-400" />
+                              <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf,.svg"
+                                className="hidden"
+                                onChange={(e) => handleUploadFile(e, 'nrc-front')}
+                              />
+                            </label>
+
+                            {/* Remove Button */}
+                            <button
+                              type="button"
+                              id="remove-sender-nrc-front-btn"
+                              onClick={() => handleRemoveDoc('nrc-front')}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800 transition-colors cursor-pointer"
+                              title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {/* Quick Sample Button */}
+                            <button
+                              type="button"
+                              id="sample-sender-nrc-front-btn"
+                              onClick={handleAttachSampleNrcFront}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              <span>+ {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}</span>
+                            </button>
+
+                            {/* Upload Button */}
+                            <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                              <Upload className="w-3 h-3" />
+                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf,.svg"
+                                className="hidden"
+                                onChange={(e) => handleUploadFile(e, 'nrc-front')}
+                              />
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ROW 2: NRC BACK */}
+                    <div className={`p-3 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      senderNrcBackDoc ? 'bg-emerald-950/20' : 'hover:bg-slate-850/50'
+                    }`}>
+                      {/* Words: Document Name & Status */}
+                      <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          senderNrcBackDoc ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-xs text-white">
+                              {language === 'my' ? 'မှတ်ပုံတင် (အနောက်ခြမ်း)' : 'NRC Back'}
+                            </span>
+                            {senderIdType === 'NRC' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                                {language === 'my' ? 'အဓိက ID' : 'Primary ID'}
+                              </span>
+                            )}
+                            {senderNrcBackDoc ? (
+                              <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                {language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not Attached'}
+                              </span>
+                            )}
+                          </div>
+                          {/* File details by words */}
+                          {senderNrcBackDoc ? (
+                            <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                              <span className="truncate max-w-[200px] sm:max-w-[280px] text-slate-300" title={senderNrcBackDoc.name}>
+                                {senderNrcBackDoc.name || 'NRC_Back.svg'}
+                              </span>
+                              <span className="text-emerald-400 shrink-0 font-semibold">{senderNrcBackDoc.size || '16.2 KB'}</span>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-400">
+                              {language === 'my' ? 'မှတ်ပုံတင် အနောက်မျက်နှာစာ ဖိုင် (လိပ်စာ/သွေးအုပ်စု)' : 'Back side of NRC Card (Address & details)'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons: If Attached show Preview Button */}
+                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                        {senderNrcBackDoc ? (
+                          <>
+                            {/* PREVIEW BUTTON (If Attached) */}
+                            <button
+                              type="button"
+                              id="preview-sender-nrc-back-btn"
+                              onClick={() => openLightbox({
+                                title: language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း (NRC Back)' : "Sender's NRC Card (Back)",
+                                url: senderNrcBackDoc.url,
+                                name: senderNrcBackDoc.name,
+                                size: senderNrcBackDoc.size,
+                                idNumber: senderNrc
+                              })}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                              title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
+                            >
+                              <Eye className="w-3.5 h-3.5 text-sky-400" />
+                              <span>{language === 'my' ? 'Preview' : 'Preview'}</span>
+                            </button>
+
+                            {/* Replace Button */}
+                            <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+                              <Upload className="w-3 h-3 text-slate-400" />
+                              <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf,.svg"
+                                className="hidden"
+                                onChange={(e) => handleUploadFile(e, 'nrc-back')}
+                              />
+                            </label>
+
+                            {/* Remove Button */}
+                            <button
+                              type="button"
+                              id="remove-sender-nrc-back-btn"
+                              onClick={() => handleRemoveDoc('nrc-back')}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800 transition-colors cursor-pointer"
+                              title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {/* Quick Sample Button */}
+                            <button
+                              type="button"
+                              id="sample-sender-nrc-back-btn"
+                              onClick={handleAttachSampleNrcBack}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              <span>+ {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}</span>
+                            </button>
+
+                            {/* Upload Button */}
+                            <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                              <Upload className="w-3 h-3" />
+                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf,.svg"
+                                className="hidden"
+                                onChange={(e) => handleUploadFile(e, 'nrc-back')}
+                              />
+                            </label>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ROW 3: PASSPORT */}
+                    <div className={`p-3 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      senderPassportDoc ? 'bg-sky-950/20' : 'hover:bg-slate-850/50'
+                    }`}>
+                      {/* Words: Document Name & Status */}
+                      <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                        <div className={`p-2 rounded-lg shrink-0 ${
+                          senderPassportDoc ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          <FileCheck className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-xs text-white">
+                              {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : 'Passport'}
+                            </span>
+                            {senderIdType === 'PASSPORT' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-semibold border border-sky-500/30">
+                                {language === 'my' ? 'အဓိက ID' : 'Primary ID'}
+                              </span>
+                            )}
+                            {senderPassportDoc ? (
+                              <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                {language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not Attached'}
+                              </span>
+                            )}
+                          </div>
+                          {/* File details by words */}
+                          {senderPassportDoc ? (
+                            <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                              <span className="truncate max-w-[200px] sm:max-w-[280px] text-slate-300" title={senderPassportDoc.name}>
+                                {senderPassportDoc.name || 'Passport.svg'}
+                              </span>
+                              <span className="text-sky-400 shrink-0 font-semibold">{senderPassportDoc.size || '24.1 KB'}</span>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-400">
+                              {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် မူရင်း စာမျက်နှာ ဖိုင် (JPG, PNG, PDF, SVG)' : 'Passport bio page document (JPG, PNG, PDF, SVG)'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Buttons: If Attached show Preview Button */}
+                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                        {senderPassportDoc ? (
+                          <>
+                            {/* PREVIEW BUTTON (If Attached) */}
+                            <button
+                              type="button"
+                              id="preview-sender-passport-btn"
                               onClick={() => openLightbox({
                                 title: language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : "Sender's Passport",
                                 url: senderPassportDoc.url,
@@ -1337,14 +1531,17 @@ export const OutwardEntryView: React.FC = () => {
                                 size: senderPassportDoc.size,
                                 idNumber: senderPassport
                               })}
-                              className="flex-1 inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold cursor-pointer"
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                              title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
                             >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
+                              <Eye className="w-3.5 h-3.5 text-sky-400" />
+                              <span>{language === 'my' ? 'Preview' : 'Preview'}</span>
                             </button>
-                            <label className="flex-1 inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold cursor-pointer transition-colors">
-                              <Upload className="w-3.5 h-3.5" />
-                              <span>{language === 'my' ? 'ပုံအသစ် အစားထိုး' : 'Replace Picture'}</span>
+
+                            {/* Replace Button */}
+                            <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+                              <Upload className="w-3 h-3 text-slate-400" />
+                              <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
                               <input
                                 type="file"
                                 accept="image/*,.pdf,.svg"
@@ -1352,31 +1549,34 @@ export const OutwardEntryView: React.FC = () => {
                                 onChange={(e) => handleUploadFile(e, 'passport')}
                               />
                             </label>
+
+                            {/* Remove Button */}
                             <button
                               type="button"
+                              id="remove-sender-passport-btn"
                               onClick={() => handleRemoveDoc('passport')}
-                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 cursor-pointer"
-                              title="Remove"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800 transition-colors cursor-pointer"
+                              title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="border border-dashed border-slate-700 rounded-lg p-3 text-center space-y-2">
-                          <p className="text-xs text-slate-400">
-                            {language === 'my' ? 'Passport ပူးတွဲဖိုင် မရှိသေးပါ' : 'No passport attached yet'}
-                          </p>
-                          <div className="flex items-center justify-center gap-2">
+                          </>
+                        ) : (
+                          <>
+                            {/* Quick Sample Button */}
                             <button
                               type="button"
+                              id="sample-sender-passport-btn"
                               onClick={handleAttachSamplePassport}
-                              className="px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-bold cursor-pointer"
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-bold transition-colors cursor-pointer"
                             >
-                              + {language === 'my' ? 'နမူနာ Passport တွဲမည်' : 'Attach Sample Passport'}
+                              <span>+ {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}</span>
                             </button>
-                            <label className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold cursor-pointer">
-                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload Passport'}</span>
+
+                            {/* Upload Button */}
+                            <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                              <Upload className="w-3 h-3" />
+                              <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
                               <input
                                 type="file"
                                 accept="image/*,.pdf,.svg"
@@ -1384,12 +1584,12 @@ export const OutwardEntryView: React.FC = () => {
                                 onChange={(e) => handleUploadFile(e, 'passport')}
                               />
                             </label>
-                          </div>
-                        </div>
-                      )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
 
               <div>
