@@ -1005,410 +1005,333 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                 </div>
               )}
 
-              {/* CONDITIONAL ATTACHMENT BOXES:
-                  If NRC: Front and Back attach box appear
-                  If Passport: Passport attach box appears */}
-              {(formData.senderIdType || 'NRC') === 'NRC' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* NRC FRONT BOX */}
-                  <div className="bg-slate-900/80 border border-emerald-500/25 rounded-xl p-3 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>{language === 'my' ? 'မှတ်ပုံတင် (အရှေ့ခြမ်း)' : 'NRC Card (Front Side)'}</span>
-                      </span>
-                      {(formData.senderNrcFrontAttachment || formData.senderNrcAttachment) ? (
-                        <div className="flex items-center space-x-1.5">
-                          <label
-                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold transition-colors cursor-pointer hover:scale-105 active:scale-95"
-                            title={language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}
-                          >
-                            <Upload className="w-2.5 h-2.5" />
-                            <span>{language === 'my' ? 'အစားထိုးတင်' : 'Replace'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf,.svg"
-                              className="hidden"
-                              onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                            />
-                          </label>
-                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                            {language === 'my' ? 'အရှေ့ခြမ်း ပူးတွဲပြီး' : 'Front Attached'}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] font-bold text-slate-500">{language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not attached'}</span>
-                      )}
+              {/* SENDER IDENTITY DOCUMENTS: WORDS AND ROWS (NO PICTURE FRAMES) */}
+              <div className="divide-y divide-slate-800/80 rounded-xl border border-slate-800 bg-slate-900/70 overflow-hidden">
+                {/* ROW 1: NRC FRONT */}
+                <div className={`p-3 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  (formData.senderNrcFrontAttachment || formData.senderNrcAttachment) ? 'bg-emerald-950/20' : 'hover:bg-slate-850/50'
+                }`}>
+                  {/* Words: Document Name & Status */}
+                  <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      (formData.senderNrcFrontAttachment || formData.senderNrcAttachment) ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      <FileText className="w-4 h-4" />
                     </div>
-
-                    {(formData.senderNrcFrontAttachment || formData.senderNrcAttachment) ? (
-                      <div className="space-y-2">
-                        <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] flex items-center justify-center">
-                          <img
-                            src={formData.senderNrcFrontAttachment || formData.senderNrcAttachment}
-                            alt="Sender NRC Front"
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                            <button
-                              type="button"
-                              onClick={() => setLightboxDoc({
-                                isOpen: true,
-                                title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် (အရှေ့ခြမ်း)' : "Sender's NRC Card (Front)",
-                                url: formData.senderNrcFrontAttachment || formData.senderNrcAttachment,
-                                name: formData.senderNrcFrontAttachmentName || formData.senderNrcAttachmentName || 'Sender_NRC_Front.svg',
-                                type: formData.senderNrcFrontAttachmentType || formData.senderNrcAttachmentType || 'image/svg+xml',
-                                size: formData.senderNrcFrontAttachmentSize || formData.senderNrcAttachmentSize || '',
-                                idNumber: formData.senderNrc,
-                                sender: formData.senderName
-                              })}
-                              className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                            >
-                              <Maximize2 className="w-3 h-3 text-emerald-400" />
-                              <span>{language === 'my' ? 'အကြီးကြည့်' : 'Enlarge'}</span>
-                            </button>
-                            <label className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold border border-emerald-400/50 transition-colors cursor-pointer shadow-sm">
-                              <Upload className="w-3 h-3" />
-                              <span>{language === 'my' ? 'ပုံအသစ်တင်' : 'Replace Pic'}</span>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf,.svg"
-                                className="hidden"
-                                onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                              />
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] text-slate-400">
-                          <span className="truncate max-w-[140px] font-mono">
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-white">
+                          {language === 'my' ? 'မှတ်ပုံတင် (အရှေ့ခြမ်း)' : 'NRC Front'}
+                        </span>
+                        {(formData.senderIdType || 'NRC') === 'NRC' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                            {language === 'my' ? 'အဓိက ID' : 'Primary ID'}
+                          </span>
+                        )}
+                        {(formData.senderNrcFrontAttachment || formData.senderNrcAttachment) ? (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not Attached'}
+                          </span>
+                        )}
+                      </div>
+                      {/* File details by words */}
+                      {(formData.senderNrcFrontAttachment || formData.senderNrcAttachment) ? (
+                        <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                          <span className="truncate max-w-[200px] sm:max-w-[280px] text-slate-300" title={formData.senderNrcFrontAttachmentName || formData.senderNrcAttachmentName || 'Sender_NRC_Front.svg'}>
                             {formData.senderNrcFrontAttachmentName || formData.senderNrcAttachmentName || 'Sender_NRC_Front.svg'}
                           </span>
-                          <span className="text-emerald-400 font-mono font-bold">
-                            {formData.senderNrcFrontAttachmentSize || formData.senderNrcAttachmentSize || '18 KB'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-1.5 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => setLightboxDoc({
-                              isOpen: true,
-                              title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် (အရှေ့ခြမ်း)' : "Sender's NRC Card (Front)",
-                              url: formData.senderNrcFrontAttachment || formData.senderNrcAttachment,
-                              name: formData.senderNrcFrontAttachmentName || formData.senderNrcAttachmentName || 'Sender_NRC_Front.svg',
-                              type: formData.senderNrcFrontAttachmentType || formData.senderNrcAttachmentType || 'image/svg+xml',
-                              size: formData.senderNrcFrontAttachmentSize || formData.senderNrcAttachmentSize || '',
-                              idNumber: formData.senderNrc,
-                              sender: formData.senderName
-                            })}
-                            className="inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
-                          </button>
-                          
-                          {/* PROMINENT REPLACE BUTTON */}
-                          <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 text-[11px] font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
-                            <Upload className="w-3.5 h-3.5 shrink-0" />
-                            <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf,.svg"
-                              className="hidden"
-                              onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                            />
-                          </label>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveDoc('nrc-front')}
-                            className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition-colors cursor-pointer"
-                            title="Remove NRC Front"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 py-2 text-center">
-                        <div className="text-[11px] text-slate-400">
-                          {language === 'my' ? 'မှတ်ပုံတင် အရှေ့ခြမ်း ဓာတ်ပုံ တင်သွင်းပါ' : 'Upload NRC front card picture'}
-                        </div>
-                        <div className="flex flex-wrap items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleAttachSample('nrc-front')}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold transition-colors cursor-pointer"
-                          >
-                            <span>+ {language === 'my' ? 'နမူနာ အရှေ့ခြမ်း ထည့်မည်' : 'Attach Sample Front'}</span>
-                          </button>
-                          <label className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 text-[10px] font-semibold transition-colors cursor-pointer">
-                            <Upload className="w-2.5 h-2.5" />
-                            <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf,.svg"
-                              className="hidden"
-                              onChange={(e) => handleUploadFile(e, 'nrc-front')}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* NRC BACK BOX */}
-                  <div className="bg-slate-900/80 border border-emerald-500/25 rounded-xl p-3 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-rose-400" />
-                        <span>{language === 'my' ? 'မှတ်ပုံတင် (အနောက်ခြမ်း)' : 'NRC Card (Back Side)'}</span>
-                      </span>
-                      {formData.senderNrcBackAttachment ? (
-                        <div className="flex items-center space-x-1.5">
-                          <label
-                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold transition-colors cursor-pointer hover:scale-105 active:scale-95"
-                            title={language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}
-                          >
-                            <Upload className="w-2.5 h-2.5" />
-                            <span>{language === 'my' ? 'အစားထိုးတင်' : 'Replace'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf,.svg"
-                              className="hidden"
-                              onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                            />
-                          </label>
-                          <span className="text-[10px] font-bold text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20">
-                            {language === 'my' ? 'အနောက်ခြမ်း ပူးတွဲပြီး' : 'Back Attached'}
-                          </span>
+                          <span className="text-emerald-400 shrink-0 font-semibold">{formData.senderNrcFrontAttachmentSize || formData.senderNrcAttachmentSize || '18 KB'}</span>
                         </div>
                       ) : (
-                        <span className="text-[10px] font-bold text-slate-500">{language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not attached'}</span>
+                        <p className="text-[11px] text-slate-400">
+                          {language === 'my' ? 'မှတ်ပုံတင် အရှေ့မျက်နှာစာ ဖိုင် (JPG, PNG, PDF, SVG)' : 'Front side of NRC Card (JPG, PNG, PDF, SVG)'}
+                        </p>
                       )}
                     </div>
-
-                    {formData.senderNrcBackAttachment ? (
-                      <div className="space-y-2">
-                        <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] flex items-center justify-center">
-                          <img
-                            src={formData.senderNrcBackAttachment}
-                            alt="Sender NRC Back"
-                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                            <button
-                              type="button"
-                              onClick={() => setLightboxDoc({
-                                isOpen: true,
-                                title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် (အနောက်ခြမ်း)' : "Sender's NRC Card (Back)",
-                                url: formData.senderNrcBackAttachment,
-                                name: formData.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg',
-                                type: formData.senderNrcBackAttachmentType || 'image/svg+xml',
-                                size: formData.senderNrcBackAttachmentSize || '',
-                                idNumber: formData.senderNrc,
-                                sender: formData.senderName
-                              })}
-                              className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                            >
-                              <Maximize2 className="w-3 h-3 text-rose-400" />
-                              <span>{language === 'my' ? 'အကြီးကြည့်' : 'Enlarge'}</span>
-                            </button>
-                            <label className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold border border-emerald-400/50 transition-colors cursor-pointer shadow-sm">
-                              <Upload className="w-3 h-3" />
-                              <span>{language === 'my' ? 'ပုံအသစ်တင်' : 'Replace Pic'}</span>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf,.svg"
-                                className="hidden"
-                                onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                              />
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[10px] text-slate-400">
-                          <span className="truncate max-w-[140px] font-mono">
-                            {formData.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg'}
-                          </span>
-                          <span className="text-rose-400 font-mono font-bold">
-                            {formData.senderNrcBackAttachmentSize || '16 KB'}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-1.5 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => setLightboxDoc({
-                              isOpen: true,
-                              title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် (အနောက်ခြမ်း)' : "Sender's NRC Card (Back)",
-                              url: formData.senderNrcBackAttachment,
-                              name: formData.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg',
-                              type: formData.senderNrcBackAttachmentType || 'image/svg+xml',
-                              size: formData.senderNrcBackAttachmentSize || '',
-                              idNumber: formData.senderNrc,
-                              sender: formData.senderName
-                            })}
-                            className="inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
-                          </button>
-                          
-                          {/* PROMINENT REPLACE BUTTON */}
-                          <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 text-[11px] font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
-                            <Upload className="w-3.5 h-3.5 shrink-0" />
-                            <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf,.svg"
-                              className="hidden"
-                              onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                            />
-                          </label>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveDoc('nrc-back')}
-                            className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition-colors cursor-pointer"
-                            title="Remove NRC Back"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 py-2 text-center">
-                        <div className="text-[11px] text-slate-400">
-                          {language === 'my' ? 'မှတ်ပုံတင် အနောက်ခြမ်း ဓာတ်ပုံ တင်သွင်းပါ' : 'Upload NRC back card picture'}
-                        </div>
-                        <div className="flex flex-wrap items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleAttachSample('nrc-back')}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold transition-colors cursor-pointer"
-                          >
-                            <span>+ {language === 'my' ? 'နမူနာ အနောက်ခြမ်း ထည့်မည်' : 'Attach Sample Back'}</span>
-                          </button>
-                          <label className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 text-[10px] font-semibold transition-colors cursor-pointer">
-                            <Upload className="w-2.5 h-2.5" />
-                            <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf,.svg"
-                              className="hidden"
-                              onChange={(e) => handleUploadFile(e, 'nrc-back')}
-                            />
-                          </label>
-                        </div>
-                      </div>
-                    )}
                   </div>
-                </div>
-              ) : (
-                /* PASSPORT ATTACH BOX ONLY WHEN PASSPORT IS CHOSEN */
-                <div className="bg-slate-900/80 border border-sky-500/30 rounded-xl p-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <FileCheck className="w-3.5 h-3.5 text-sky-400" />
-                      <span>{language === 'my' ? 'နိုင်ငံကူးလက်မှတ် ပူးတွဲဖိုင် (Passport Doc)' : 'Passport Document Attachment'}</span>
-                    </span>
-                    {(formData.senderPassportAttachment || formData.senderPassbookAttachment) ? (
-                      <div className="flex items-center space-x-1.5">
-                        <label
-                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[10px] font-bold transition-colors cursor-pointer hover:scale-105 active:scale-95"
-                          title={language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}
+
+                  {/* Action Buttons: If Attached show Preview Button */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    {(formData.senderNrcFrontAttachment || formData.senderNrcAttachment) ? (
+                      <>
+                        {/* PREVIEW BUTTON (If Attached) */}
+                        <button
+                          type="button"
+                          id="edit-preview-sender-nrc-front-btn"
+                          onClick={() => setLightboxDoc({
+                            isOpen: true,
+                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် (အရှေ့ခြမ်း)' : "Sender's NRC Card (Front)",
+                            url: formData.senderNrcFrontAttachment || formData.senderNrcAttachment,
+                            name: formData.senderNrcFrontAttachmentName || formData.senderNrcAttachmentName || 'Sender_NRC_Front.svg',
+                            type: formData.senderNrcFrontAttachmentType || formData.senderNrcAttachmentType || 'image/svg+xml',
+                            size: formData.senderNrcFrontAttachmentSize || formData.senderNrcAttachmentSize || '18 KB',
+                            idNumber: formData.senderNrc,
+                            sender: formData.senderName
+                          })}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                          title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
                         >
-                          <Upload className="w-2.5 h-2.5" />
-                          <span>{language === 'my' ? 'အစားထိုးတင်' : 'Replace'}</span>
+                          <Eye className="w-3.5 h-3.5 text-sky-400" />
+                          <span>{language === 'my' ? 'Preview' : 'Preview'}</span>
+                        </button>
+
+                        {/* Replace Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+                          <Upload className="w-3 h-3 text-slate-400" />
+                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
                           <input
                             type="file"
                             accept="image/*,.pdf,.svg"
                             className="hidden"
-                            onChange={(e) => handleUploadFile(e, 'passport')}
+                            onChange={(e) => handleUploadFile(e, 'nrc-front')}
                           />
                         </label>
-                        <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
-                          {language === 'my' ? 'Passport ပူးတွဲပြီး' : 'Passport Attached'}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-[10px] font-bold text-slate-500">{language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not attached'}</span>
-                    )}
-                  </div>
 
-                  {(formData.senderPassportAttachment || formData.senderPassbookAttachment) ? (
-                    <div className="space-y-2">
-                      <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] max-h-[280px] flex items-center justify-center">
-                        <img
-                          src={formData.senderPassportAttachment || formData.senderPassbookAttachment}
-                          alt="Sender Passport Attachment"
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                          <button
-                            type="button"
-                            onClick={() => setLightboxDoc({
-                              isOpen: true,
-                              title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ နိုင်ငံကူးလက်မှတ် (Passport)' : "Sender's Passport Document",
-                              url: formData.senderPassportAttachment || formData.senderPassbookAttachment,
-                              name: formData.senderPassportAttachmentName || formData.senderPassbookAttachmentName || 'Sender_Passport.svg',
-                              type: formData.senderPassportAttachmentType || formData.senderPassbookAttachmentType || 'image/svg+xml',
-                              size: formData.senderPassportAttachmentSize || formData.senderPassbookAttachmentSize || '',
-                              idNumber: formData.senderPassport || formData.senderPassbook,
-                              sender: formData.senderName
-                            })}
-                            className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                          >
-                            <Maximize2 className="w-3 h-3 text-sky-400" />
-                            <span>{language === 'my' ? 'အကြီးကြည့်' : 'Enlarge'}</span>
-                          </button>
-                          <label className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold border border-sky-400/50 transition-colors cursor-pointer shadow-sm">
-                            <Upload className="w-3 h-3" />
-                            <span>{language === 'my' ? 'ပုံအသစ်တင်' : 'Replace Pic'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf,.svg"
-                              className="hidden"
-                              onChange={(e) => handleUploadFile(e, 'passport')}
-                            />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="truncate max-w-[240px] font-mono">
-                          {formData.senderPassportAttachmentName || formData.senderPassbookAttachmentName || 'Sender_Passport.svg'}
-                        </span>
-                        <span className="text-sky-400 font-mono font-bold">
-                          {formData.senderPassportAttachmentSize || formData.senderPassbookAttachmentSize || '24 KB'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center space-x-1.5 pt-1">
+                        {/* Remove Button */}
                         <button
                           type="button"
+                          id="edit-remove-sender-nrc-front-btn"
+                          onClick={() => handleRemoveDoc('nrc-front')}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800 transition-colors cursor-pointer"
+                          title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {/* Quick Sample Button */}
+                        <button
+                          type="button"
+                          id="edit-sample-sender-nrc-front-btn"
+                          onClick={() => handleAttachSample('nrc-front')}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          <span>+ {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}</span>
+                        </button>
+
+                        {/* Upload Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                          <Upload className="w-3 h-3" />
+                          <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf,.svg"
+                            className="hidden"
+                            onChange={(e) => handleUploadFile(e, 'nrc-front')}
+                          />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* ROW 2: NRC BACK */}
+                <div className={`p-3 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  formData.senderNrcBackAttachment ? 'bg-emerald-950/20' : 'hover:bg-slate-850/50'
+                }`}>
+                  {/* Words: Document Name & Status */}
+                  <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      formData.senderNrcBackAttachment ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-white">
+                          {language === 'my' ? 'မှတ်ပုံတင် (အနောက်ခြမ်း)' : 'NRC Back'}
+                        </span>
+                        {(formData.senderIdType || 'NRC') === 'NRC' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                            {language === 'my' ? 'အဓိက ID' : 'Primary ID'}
+                          </span>
+                        )}
+                        {formData.senderNrcBackAttachment ? (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not Attached'}
+                          </span>
+                        )}
+                      </div>
+                      {/* File details by words */}
+                      {formData.senderNrcBackAttachment ? (
+                        <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                          <span className="truncate max-w-[200px] sm:max-w-[280px] text-slate-300" title={formData.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg'}>
+                            {formData.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg'}
+                          </span>
+                          <span className="text-emerald-400 shrink-0 font-semibold">{formData.senderNrcBackAttachmentSize || '16 KB'}</span>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400">
+                          {language === 'my' ? 'မှတ်ပုံတင် အနောက်မျက်နှာစာ ဖိုင် (လိပ်စာ/သွေးအုပ်စု)' : 'Back side of NRC Card (Address & details)'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons: If Attached show Preview Button */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    {formData.senderNrcBackAttachment ? (
+                      <>
+                        {/* PREVIEW BUTTON (If Attached) */}
+                        <button
+                          type="button"
+                          id="edit-preview-sender-nrc-back-btn"
+                          onClick={() => setLightboxDoc({
+                            isOpen: true,
+                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် (အနောက်ခြမ်း)' : "Sender's NRC Card (Back)",
+                            url: formData.senderNrcBackAttachment,
+                            name: formData.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg',
+                            type: formData.senderNrcBackAttachmentType || 'image/svg+xml',
+                            size: formData.senderNrcBackAttachmentSize || '16 KB',
+                            idNumber: formData.senderNrc,
+                            sender: formData.senderName
+                          })}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                          title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
+                        >
+                          <Eye className="w-3.5 h-3.5 text-sky-400" />
+                          <span>{language === 'my' ? 'Preview' : 'Preview'}</span>
+                        </button>
+
+                        {/* Replace Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+                          <Upload className="w-3 h-3 text-slate-400" />
+                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf,.svg"
+                            className="hidden"
+                            onChange={(e) => handleUploadFile(e, 'nrc-back')}
+                          />
+                        </label>
+
+                        {/* Remove Button */}
+                        <button
+                          type="button"
+                          id="edit-remove-sender-nrc-back-btn"
+                          onClick={() => handleRemoveDoc('nrc-back')}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800 transition-colors cursor-pointer"
+                          title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {/* Quick Sample Button */}
+                        <button
+                          type="button"
+                          id="edit-sample-sender-nrc-back-btn"
+                          onClick={() => handleAttachSample('nrc-back')}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          <span>+ {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}</span>
+                        </button>
+
+                        {/* Upload Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                          <Upload className="w-3 h-3" />
+                          <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf,.svg"
+                            className="hidden"
+                            onChange={(e) => handleUploadFile(e, 'nrc-back')}
+                          />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* ROW 3: PASSPORT */}
+                <div className={`p-3 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  (formData.senderPassportAttachment || formData.senderPassbookAttachment) ? 'bg-sky-950/20' : 'hover:bg-slate-850/50'
+                }`}>
+                  {/* Words: Document Name & Status */}
+                  <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      (formData.senderPassportAttachment || formData.senderPassbookAttachment) ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      <FileCheck className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-white">
+                          {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : 'Passport'}
+                        </span>
+                        {formData.senderIdType === 'PASSPORT' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-semibold border border-sky-500/30">
+                            {language === 'my' ? 'အဓိက ID' : 'Primary ID'}
+                          </span>
+                        )}
+                        {(formData.senderPassportAttachment || formData.senderPassbookAttachment) ? (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not Attached'}
+                          </span>
+                        )}
+                      </div>
+                      {/* File details by words */}
+                      {(formData.senderPassportAttachment || formData.senderPassbookAttachment) ? (
+                        <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                          <span className="truncate max-w-[200px] sm:max-w-[280px] text-slate-300" title={formData.senderPassportAttachmentName || formData.senderPassbookAttachmentName || 'Sender_Passport.svg'}>
+                            {formData.senderPassportAttachmentName || formData.senderPassbookAttachmentName || 'Sender_Passport.svg'}
+                          </span>
+                          <span className="text-sky-400 shrink-0 font-semibold">{formData.senderPassportAttachmentSize || formData.senderPassbookAttachmentSize || '24 KB'}</span>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400">
+                          {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် ဖိုင် (JPG, PNG, PDF, SVG)' : 'Passport document file (JPG, PNG, PDF, SVG)'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons: If Attached show Preview Button */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    {(formData.senderPassportAttachment || formData.senderPassbookAttachment) ? (
+                      <>
+                        {/* PREVIEW BUTTON (If Attached) */}
+                        <button
+                          type="button"
+                          id="edit-preview-sender-passport-btn"
                           onClick={() => setLightboxDoc({
                             isOpen: true,
                             title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ နိုင်ငံကူးလက်မှတ် (Passport)' : "Sender's Passport Document",
                             url: formData.senderPassportAttachment || formData.senderPassbookAttachment,
                             name: formData.senderPassportAttachmentName || formData.senderPassbookAttachmentName || 'Sender_Passport.svg',
                             type: formData.senderPassportAttachmentType || formData.senderPassbookAttachmentType || 'image/svg+xml',
-                            size: formData.senderPassportAttachmentSize || formData.senderPassbookAttachmentSize || '',
+                            size: formData.senderPassportAttachmentSize || formData.senderPassbookAttachmentSize || '24 KB',
                             idNumber: formData.senderPassport || formData.senderPassbook,
                             sender: formData.senderName
                           })}
-                          className="inline-flex items-center justify-center space-x-1 py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                          title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
                         >
-                          <Eye className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
+                          <Eye className="w-3.5 h-3.5 text-sky-400" />
+                          <span>{language === 'my' ? 'Preview' : 'Preview'}</span>
                         </button>
-                        
-                        {/* PROMINENT REPLACE BUTTON */}
-                        <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white border border-sky-400/50 text-[11px] font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
-                          <Upload className="w-3.5 h-3.5 shrink-0" />
-                          <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}</span>
+
+                        {/* Replace Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-colors cursor-pointer">
+                          <Upload className="w-3 h-3 text-slate-400" />
+                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
                           <input
                             type="file"
                             accept="image/*,.pdf,.svg"
@@ -1417,30 +1340,31 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                           />
                         </label>
 
+                        {/* Remove Button */}
                         <button
                           type="button"
+                          id="edit-remove-sender-passport-btn"
                           onClick={() => handleRemoveDoc('passport')}
-                          className="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 transition-colors cursor-pointer"
-                          title="Remove Passport"
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800 transition-colors cursor-pointer"
+                          title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 py-4 text-center">
-                      <div className="text-[11px] text-slate-400">
-                        {language === 'my' ? 'စိစစ်ရန် နိုင်ငံကူးလက်မှတ် (Passport) ဓာတ်ပုံ တင်သွင်းပါ' : 'Upload or generate Passport document'}
-                      </div>
-                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                      </>
+                    ) : (
+                      <>
+                        {/* Quick Sample Button */}
                         <button
                           type="button"
+                          id="edit-sample-sender-passport-btn"
                           onClick={() => handleAttachSample('passport')}
-                          className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-[11px] font-bold transition-colors cursor-pointer"
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-bold transition-colors cursor-pointer"
                         >
-                          <span>+ {language === 'my' ? 'နမူနာ Passport ထည့်မည်' : 'Attach Sample Passport'}</span>
+                          <span>+ {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}</span>
                         </button>
-                        <label className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 text-[11px] font-semibold transition-colors cursor-pointer">
+
+                        {/* Upload Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
                           <Upload className="w-3 h-3" />
                           <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
                           <input
@@ -1450,11 +1374,11 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                             onChange={(e) => handleUploadFile(e, 'passport')}
                           />
                         </label>
-                      </div>
-                    </div>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
 
