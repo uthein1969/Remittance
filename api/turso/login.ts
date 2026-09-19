@@ -97,7 +97,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ success: false, error: `User '${identifier}' not found in Turso DB` });
     }
 
-    const row: any = userRes.rows[0];
+const row: any = userRes.rows[0];
+    const branchIdStr = String(row.branch_id || '');
+    const usernameStr = String(row.username || '').toLowerCase();
+
+    // Singapore branch (BR-007, BR-008, BR-SG-*) သို့မဟုတ် sg-* user ဖြစ်ပါက SG ဟု တိကျစွာ သတ်မှတ်မည်
+    const isSingapore = 
+      branchIdStr.includes('007') || 
+      branchIdStr.includes('008') || 
+      branchIdStr.includes('SG') || 
+      usernameStr.startsWith('sg-') || 
+      usernameStr === 'tloo';
+
+    const assignedCountry = isSingapore ? 'SG' : 'MM';
+
     const user = {
       id: String(row.id),
       username: String(row.username).replace(/^@/, ''),
@@ -105,7 +118,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fullName: String(row.full_name || row.username),
       email: String(row.email || ''),
       role: String(row.role || 'MAKER'),
-      branchId: String(row.branch_id || 'BR-001'),
+      branchId: branchIdStr || (isSingapore ? 'BR-008' : 'BR-001'),
+      branch_id: branchIdStr || (isSingapore ? 'BR-008' : 'BR-001'),
+      countryCode: assignedCountry,
+      country: isSingapore ? 'Singapore' : 'Myanmar',
+      country_code: assignedCountry,
       isActive: Boolean(row.is_active ?? true),
       phone: String(row.phone || ''),
       status: String(row.status || 'ACTIVE')
