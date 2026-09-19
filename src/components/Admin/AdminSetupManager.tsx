@@ -704,7 +704,9 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                   const country = db.countries.find(c => c.code === (b.countryCode || 'MM'));
                   return (
                     <tr key={b.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3 font-mono font-bold text-blue-600">{b.code}</td>
+                      <td className="px-4 py-3 font-mono font-bold text-blue-600">
+                        {b.code || b.branchCode || (b as any).branch_code || b.id}
+                      </td>
                       <td className="px-4 py-3 font-semibold text-slate-900">{b.nameEn} ({b.nameMm})</td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-medium">

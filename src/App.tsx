@@ -21,6 +21,7 @@ import { InwardReportView } from './components/Reports/InwardReportView';
 import { TotalInwardReportView } from './components/Reports/TotalInwardReportView';
 import { AdminSetupManager } from './components/Admin/AdminSetupManager';
 import { BackupRestoreView } from './components/Backup/BackupRestoreView';
+import { useAutoTursoSync } from './hooks/useAutoTursoSync';
 
 const MainLayout: React.FC = () => {
   const { currentUser, isMenuAllowedForRole, language } = useRemittance();
@@ -271,6 +272,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 const RootApp: React.FC = () => {
   const { isAuthenticated } = useRemittance();
+
+  // RemittanceProvider အတွင်းတွင် Auto Turso Sync ကို Run ပေးခြင်း
+  useAutoTursoSync();
 
   // If user is explicitly not authenticated, display the Login View
   if (!isAuthenticated) {

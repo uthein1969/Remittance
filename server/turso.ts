@@ -333,11 +333,13 @@ export async function getTursoStats() {
     // Ensure tables exist
     await initTursoSchema(client);
 
-    const [txCount, custCount, rateCount, logCount] = await Promise.all([
+    const [txCount, custCount, rateCount, logCount, userCount, branchCount] = await Promise.all([
       client.execute('SELECT COUNT(*) as cnt FROM remittance_transactions;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
       client.execute('SELECT COUNT(*) as cnt FROM customer_profiles;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
       client.execute('SELECT COUNT(*) as cnt FROM exchange_rates;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
       client.execute('SELECT COUNT(*) as cnt FROM audit_logs;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM system_users;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM branches;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
     ]);
 
     return {
@@ -351,6 +353,8 @@ export async function getTursoStats() {
         customers: custCount,
         exchangeRates: rateCount,
         auditLogs: logCount,
+        users: userCount,
+        branches: branchCount,
       }
     };
   } catch (err: any) {
@@ -358,7 +362,7 @@ export async function getTursoStats() {
       connected: false,
       isRemote: config.isRemote,
       error: err?.message || 'Unable to fetch Turso stats',
-      counts: { transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0 }
+      counts: { transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0, users: 0, branches: 0 }
     };
   }
 }
@@ -384,16 +388,21 @@ export async function syncPushToTurso(data: {
   // 1. Branches (Users များ မထည့်မီ Branch အရင်ရှိရန်)
   if (data.branches && Array.isArray(data.branches)) {
     for (const b of data.branches) {
-      if (!b.id && !b.branchCode) continue;
+      const branchCode = b.code || b.branchCode || b.branch_code || b.id;
+      if (!b.id && !branchCode) continue;
+
+      const recordId = b.id && !b.id.startsWith('BR-178') 
+        ? b.id 
+        : (b.code ? `BR-${b.code}` : `BR-${Date.now()}`);
+
       try {
         await client.execute({
           sql: `INSERT INTO branches (
-            id, branch_code, country_code, city, phone,
-            name_en, name_mm, manager_name, status, address
+            id, code, city, phone,
+            name_en, name_mm, manager_name, status, address, created_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
-            branch_code=excluded.branch_code,
-            country_code=excluded.country_code,
+            code=excluded.code,
             city=excluded.city,
             phone=excluded.phone,
             name_en=excluded.name_en,
@@ -402,16 +411,16 @@ export async function syncPushToTurso(data: {
             status=excluded.status,
             address=excluded.address;`,
           args: [
-            b.id || `BR-${b.branchCode || Date.now()}`,
-            b.branchCode || b.branch_code || b.id || 'BR-001',
-            b.countryCode || b.country_code || 'MM',
+            recordId,
+            branchCode || 'BR-001',
             b.city || '',
             b.phone || '',
-            b.nameEn || b.name_en || b.branchName || '',
+            b.nameEn || b.name_en || b.name || b.branchName || '',
             b.nameMm || b.name_mm || '',
             b.managerName || b.manager_name || '',
             b.status || 'ACTIVE',
-            b.address || ''
+            b.address || '',
+            b.createdAt || new Date().toISOString()
           ]
         });
         branchesSaved++;
@@ -774,19 +783,29 @@ export async function syncPullFromTurso() {
     lastLogin: String(row.last_login || '')
   }));
 
-  // 6. Branches
-  const branches = branchRes.rows.map((row: any) => ({
-    id: String(row.id),
-    branchCode: String(row.branch_code || row.id),
-    countryCode: String(row.country_code || 'MM'),
-    city: String(row.city || ''),
-    phone: String(row.phone || ''),
-    nameEn: String(row.name_en || ''),
-    nameMm: String(row.name_mm || ''),
-    managerName: String(row.manager_name || ''),
-    status: String(row.status || 'ACTIVE'),
-    address: String(row.address || '')
-  }));
+  // 6. Branches Mapping (city ပေါ်မူတည်၍ Country သတ်မှတ်ခြင်း)
+    const branches = branchRes.rows.map((row: any) => {
+    const branchCode = String(row.code || row.id || '');
+    const cityStr = String(row.city || '').trim().toLowerCase();
+    const idStr = String(row.id || '').toUpperCase();
+
+    // city ထဲတွင် 'singapore' ပါဝင်ပါက သို့မဟုတ် ID တွင် 'SG' ပါပါက SG သတ်မှတ်ပြီး ကျန်သည်ကို MM ဟု သတ်မှတ်မည်
+    const countryCode = (cityStr.includes('singapore') || idStr.includes('SG')) ? 'SG' : 'MM';
+
+    return {
+      id: String(row.id || branchCode),
+      code: branchCode,
+      branchCode: branchCode,
+      countryCode: countryCode, // 'SG' သို့မဟုတ် 'MM'
+      city: String(row.city || ''),
+      phone: String(row.phone || ''),
+      nameEn: String(row.name_en || ''),
+      nameMm: String(row.name_mm || ''),
+      managerName: String(row.manager_name || ''),
+      status: String(row.status || 'ACTIVE'),
+      address: String(row.address || '')
+    };
+  });
 
   return {
     success: true,
