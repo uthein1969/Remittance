@@ -18,10 +18,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       authToken: process.env.TURSO_AUTH_TOKEN
     });
 
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const branches = body?.branches || [];
-    let branchesSaved = 0;
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
 
+    const branches = body?.branches || [];
+    const users = body?.users || [];
+    let branchesSaved = 0;
+    let usersSaved = 0;
+
+    // ၁။ Branches Data များ သိမ်းဆည်းခြင်း
     for (const b of branches) {
       const branchCode = b.code || b.branchCode || b.branch_code || b.id;
       if (!b.id && !branchCode) continue;
@@ -56,10 +67,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       branchesSaved++;
     }
 
+    // ၂။ Users Data များ system_users Table သို့ သိမ်းဆည်းခြင်း
+    for (const u of users) {
+      const username = String(u.username || '').trim().replace(/^@/, '');
+      if (!username) continue;
+
+      const userId = u.id || `USR-${username}`;
+      const branchId = u.branchId || u.branch_id || 'BR-001';
+      const role = u.role || 'MAKER';
+      const fullName = u.fullName || u.name || u.name_en || username;
+      const email = u.email || `${username}@remit.internal`;
+      const phone = u.phone || '';
+      const status = u.status || 'ACTIVE';
+      const isActive = u.isActive ?? u.is_active ?? 1;
+
+      await client.execute({
+        sql: `INSERT INTO system_users (
+          id, username, full_name, email, role, branch_id, is_active, phone, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          username=excluded.username,
+          full_name=excluded.full_name,
+          email=excluded.email,
+          role=excluded.role,
+          branch_id=excluded.branch_id,
+          is_active=excluded.is_active,
+          phone=excluded.phone,
+          status=excluded.status;`,
+        args: [
+          userId,
+          username,
+          fullName,
+          email,
+          role,
+          branchId,
+          isActive ? 1 : 0,
+          phone,
+          status,
+          u.createdAt || new Date().toISOString()
+        ]
+      });
+      usersSaved++;
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Sync push completed successfully',
-      branchesSaved
+      branchesSaved,
+      usersSaved
     });
   } catch (err: any) {
     console.error('Turso sync-push error:', err);
