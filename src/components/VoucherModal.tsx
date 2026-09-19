@@ -21,6 +21,7 @@ import { RemittanceTransaction } from '../types';
 import { useRemittance } from '../lib/store';
 import { CompanyProfileModal } from './CompanyProfileModal';
 import { generateVoucherHtml, printVoucherDocument, downloadVoucherHtml, openVoucherInNewTab } from '../utils/voucherPrint';
+import { formatToDDMMYYYYWithTime } from '../lib/dateUtils';
 
 interface VoucherModalProps {
   transaction: RemittanceTransaction | null;
@@ -231,7 +232,7 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
                   : (language === 'my' ? 'ငွေလွှဲထုတ် ပြေစာ (INWARD)' : 'INWARD PAYOUT VOUCHER')}
               </div>
               <div className="text-[11px] text-slate-500 mt-1">
-                {language === 'my' ? 'နေ့စွဲ' : 'Date'}: {new Date(transaction.createdDate).toLocaleString()}
+                {language === 'my' ? 'နေ့စွဲ' : 'Date'}: {formatToDDMMYYYYWithTime(transaction.createdDate)}
               </div>
               <div className="text-xs font-mono font-bold text-slate-800">
                 Ref: {transaction.transactionNo}

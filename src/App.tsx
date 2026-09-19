@@ -16,7 +16,9 @@ import { OutwardApproveView } from './components/Outward/OutwardApproveView';
 import { InwardEntryView } from './components/Inward/InwardEntryView';
 import { InwardApproveView } from './components/Inward/InwardApproveView';
 import { OutwardReportView } from './components/Reports/OutwardReportView';
+import { TotalOutwardReportView } from './components/Reports/TotalOutwardReportView';
 import { InwardReportView } from './components/Reports/InwardReportView';
+import { TotalInwardReportView } from './components/Reports/TotalInwardReportView';
 import { AdminSetupManager } from './components/Admin/AdminSetupManager';
 import { BackupRestoreView } from './components/Backup/BackupRestoreView';
 
@@ -52,7 +54,7 @@ const MainLayout: React.FC = () => {
       } else {
         const order: NavigationTab[] = [
           'outward_entry', 'outward_approve', 'inward_entry', 'inward_approve',
-          'outward_report', 'inward_report', 'audit_log', 'dashboard'
+          'outward_report', 'total_outward_report', 'inward_report', 'total_inward_report', 'audit_log', 'dashboard'
         ];
         const fallback = order.find(t => isTabPermitted(t));
         if (fallback) setActiveTab(fallback);
@@ -148,8 +150,14 @@ const MainLayout: React.FC = () => {
                 {activeTab === 'outward_report' && (
                   <OutwardReportView />
                 )}
+                {activeTab === 'total_outward_report' && (
+                  <TotalOutwardReportView />
+                )}
                 {activeTab === 'inward_report' && (
                   <InwardReportView />
+                )}
+                {activeTab === 'total_inward_report' && (
+                  <TotalInwardReportView />
                 )}
                 {activeTab === 'admin_setup' && (
                   <AdminSetupManager

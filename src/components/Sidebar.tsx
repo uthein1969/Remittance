@@ -109,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const hasCoreMenus = isAllowed('dashboard') || isAllowed('outward_entry') || isAllowed('outward_approve') || isAllowed('inward_entry') || isAllowed('inward_approve');
   const hasAdminMenu = currentUser.role === 'ADMIN' && isAllowed('admin_setup');
-  const hasReportMenus = isAllowed('outward_report') || isAllowed('inward_report') || isAllowed('audit_log') || isAllowed('backup_restore') || isAllowed('turso_sync');
+  const hasReportMenus = isAllowed('outward_report') || isAllowed('total_outward_report') || isAllowed('inward_report') || isAllowed('total_inward_report') || isAllowed('audit_log') || isAllowed('backup_restore') || isAllowed('turso_sync');
 
   const setupItems: { id: SetupSubTab; label: string; icon: React.ElementType; badge?: number }[] = [
     { 
@@ -337,6 +337,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               )}
 
+              {isAllowed('total_outward_report') && (
+                <button
+                  onClick={() => handleNavClick('total_outward_report')}
+                  className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-colors border-l-[3px] ${
+                    activeTab === 'total_outward_report'
+                      ? 'bg-white/5 text-white border-blue-500 font-semibold'
+                      : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-800/40'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span className="truncate">{t.navTotalOutwardReport}</span>
+                </button>
+              )}
+
               {isAllowed('inward_report') && (
                 <button
                   onClick={() => handleNavClick('inward_report')}
@@ -348,6 +362,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span className="truncate">{t.navInwardReport}</span>
+                </button>
+              )}
+
+              {isAllowed('total_inward_report') && (
+                <button
+                  onClick={() => handleNavClick('total_inward_report')}
+                  className={`w-full flex items-center space-x-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-colors border-l-[3px] ${
+                    activeTab === 'total_inward_report'
+                      ? 'bg-white/5 text-white border-blue-500 font-semibold'
+                      : 'border-transparent text-slate-400 hover:text-white hover:bg-slate-800/40'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4 text-teal-400 shrink-0" />
+                  <span className="truncate">{t.navTotalInwardReport}</span>
                 </button>
               )}
 

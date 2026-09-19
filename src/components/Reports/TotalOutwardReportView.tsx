@@ -18,7 +18,8 @@ import {
   ChevronDown,
   ChevronUp,
   Building2,
-  Globe
+  Globe,
+  User as UserIcon
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { RemittanceTransaction } from '../../types';
@@ -32,6 +33,7 @@ export const TotalOutwardReportView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(activeCountryCode || 'ALL');
   const [selectedBranch, setSelectedBranch] = useState(activeBranchId || 'ALL');
+  const [selectedUser, setSelectedUser] = useState('ALL');
   const [selectedCurrency, setSelectedCurrency] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
   const [startDate, setStartDate] = useState('');
@@ -45,6 +47,25 @@ export const TotalOutwardReportView: React.FC = () => {
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
   const [selectedVoucherTx, setSelectedVoucherTx] = useState<RemittanceTransaction | null>(null);
+
+  const outwardTxs = db.transactions.filter(t => t.type === 'OUTWARD');
+
+  // Distinct users for User Filter
+  const distinctUsers = useMemo(() => {
+    const userMap = new Map<string, { id: string; name: string; role?: string }>();
+    db.users.forEach(u => {
+      userMap.set(u.id, { id: u.id, name: u.fullName, role: u.role });
+    });
+    outwardTxs.forEach(tx => {
+      if (tx.creatorUserId && !userMap.has(tx.creatorUserId)) {
+        userMap.set(tx.creatorUserId, { id: tx.creatorUserId, name: tx.creatorName || tx.creatorUserId });
+      }
+      if (tx.approverUserId && !userMap.has(tx.approverUserId)) {
+        userMap.set(tx.approverUserId, { id: tx.approverUserId, name: tx.approverName || tx.approverUserId });
+      }
+    });
+    return Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [db.users, outwardTxs]);
 
   // Quick Date Range Handler
   const handleDatePreset = (preset: 'ALL' | 'TODAY' | 'YESTERDAY' | 'WEEK' | 'MONTH') => {
@@ -88,10 +109,18 @@ export const TotalOutwardReportView: React.FC = () => {
     }));
   };
 
-  const outwardTxs = db.transactions.filter(t => t.type === 'OUTWARD');
-
   const filteredTxs = useMemo(() => {
     return outwardTxs.filter(tx => {
+      // User / Operator Filter (User Request)
+      if (selectedUser !== 'ALL') {
+        const userObj = distinctUsers.find(u => u.id === selectedUser);
+        const matchCreator = tx.creatorUserId === selectedUser || 
+          (userObj && tx.creatorName && (tx.creatorName.toLowerCase().includes(userObj.name.toLowerCase()) || userObj.name.toLowerCase().includes(tx.creatorName.toLowerCase())));
+        const matchApprover = tx.approverUserId === selectedUser || 
+          (userObj && tx.approverName && (tx.approverName.toLowerCase().includes(userObj.name.toLowerCase()) || userObj.name.toLowerCase().includes(tx.approverName.toLowerCase())));
+        if (!matchCreator && !matchApprover) return false;
+      }
+
       // Currency Filter
       if (selectedCurrency !== 'ALL' && tx.targetCurrency !== selectedCurrency && tx.sourceCurrency !== selectedCurrency) {
         return false;
@@ -131,12 +160,14 @@ export const TotalOutwardReportView: React.FC = () => {
           tx.mtcn.toLowerCase().includes(q) ||
           tx.senderName.toLowerCase().includes(q) ||
           tx.receiverName.toLowerCase().includes(q) ||
-          tx.senderNrc.toLowerCase().includes(q)
+          tx.senderNrc.toLowerCase().includes(q) ||
+          (tx.creatorName && tx.creatorName.toLowerCase().includes(q)) ||
+          (tx.approverName && tx.approverName.toLowerCase().includes(q))
         );
       }
       return true;
     });
-  }, [outwardTxs, selectedCurrency, selectedStatus, selectedCountry, selectedBranch, startDate, endDate, searchQuery, db.branches]);
+  }, [outwardTxs, selectedUser, distinctUsers, selectedCurrency, selectedStatus, selectedCountry, selectedBranch, startDate, endDate, searchQuery, db.branches]);
 
   // Distinct target currencies present in filtered transactions
   const targetCurrenciesList = useMemo(() => {
@@ -332,7 +363,7 @@ export const TotalOutwardReportView: React.FC = () => {
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
           >
             <Printer className="w-4 h-4 text-slate-400" />
-            <span>{t.print || 'Print'}</span>
+            <span>{language === 'my' ? 'ပုံနှိပ်မည်' : 'Print'}</span>
           </button>
 
           <button
@@ -449,58 +480,106 @@ export const TotalOutwardReportView: React.FC = () => {
             >
               This Month
             </button>
-            {(startDate || endDate) && (
+            {(startDate || endDate || selectedUser !== 'ALL') && (
               <button
                 type="button"
-                onClick={() => handleDatePreset('ALL')}
+                onClick={() => {
+                  handleDatePreset('ALL');
+                  setSelectedUser('ALL');
+                }}
                 className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-medium flex items-center space-x-1 ml-1"
-                title="Clear date filter"
+                title="Reset filters"
               >
                 <X className="w-3 h-3" />
-                <span>Clear Date</span>
+                <span>Reset Filters</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Filter Inputs Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
-          {/* Search Box */}
-          <div className="relative lg:col-span-2">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search MTCN, Sender, Receiver, Tx..."
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-            />
+        {/* Filter Inputs Grid: 2 Aligned Rows (5-Column Structure) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+          {/* Top Row - Search Box (spans 3 columns) */}
+          <div className="sm:col-span-2 md:col-span-3">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center space-x-1 h-5">
+              <Search className="w-3.5 h-3.5 text-blue-400" />
+              <span>Search</span>
+            </label>
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search MTCN, Sender, Receiver, Tx..."
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 text-sm h-[38px]"
+              />
+            </div>
           </div>
 
-          {/* Start Date */}
-          <div className="relative">
+          {/* Top Row - From Date (1 column, directly aligns above Currency) */}
+          <div className="col-span-1">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center justify-between h-5">
+              <span className="flex items-center space-x-1">
+                <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                <span>From Date</span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">DD/MM/YYYY</span>
+            </label>
             <input
               type="date"
               value={startDate}
               onChange={(e) => handleCustomDateChange('START', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
-              title="From Date"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-blue-500 cursor-pointer h-[38px]"
+              title="From Date (DD/MM/YYYY)"
             />
           </div>
 
-          {/* End Date */}
-          <div className="relative">
+          {/* Top Row - To Date (1 column, directly aligns above Status) */}
+          <div className="col-span-1">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center justify-between h-5">
+              <span className="flex items-center space-x-1">
+                <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                <span>To Date</span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">DD/MM/YYYY</span>
+            </label>
             <input
               type="date"
               value={endDate}
               onChange={(e) => handleCustomDateChange('END', e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
-              title="To Date"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-blue-500 cursor-pointer h-[38px]"
+              title="To Date (DD/MM/YYYY)"
             />
           </div>
 
-          {/* Country Filter */}
-          <div>
+          {/* Bottom Row - Users (1 column, Burmese removed as requested) */}
+          <div className="col-span-1">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center space-x-1 h-5">
+              <UserIcon className="w-3.5 h-3.5 text-blue-400" />
+              <span>Users</span>
+            </label>
+            <select
+              value={selectedUser}
+              onChange={(e) => setSelectedUser(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer text-sm h-[38px]"
+              title="Filter by User / Operator"
+            >
+              <option value="ALL">All Users</option>
+              {distinctUsers.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.name} {u.role ? `(${u.role})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Bottom Row - Country (1 column) */}
+          <div className="col-span-1">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center space-x-1 h-5">
+              <Globe className="w-3.5 h-3.5 text-blue-400" />
+              <span>Country</span>
+            </label>
             <select
               value={selectedCountry}
               onChange={(e) => {
@@ -514,7 +593,7 @@ export const TotalOutwardReportView: React.FC = () => {
                   setSelectedBranch('ALL');
                 }
               }}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer text-sm h-[38px]"
             >
               <option value="ALL">All Countries</option>
               {db.countries.map(c => (
@@ -525,12 +604,16 @@ export const TotalOutwardReportView: React.FC = () => {
             </select>
           </div>
 
-          {/* Branch Filter */}
-          <div>
+          {/* Bottom Row - Branch (1 column) */}
+          <div className="col-span-1">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center space-x-1 h-5">
+              <Building2 className="w-3.5 h-3.5 text-blue-400" />
+              <span>Branch</span>
+            </label>
             <select
               value={selectedBranch}
               onChange={(e) => setSelectedBranch(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer text-sm h-[38px]"
             >
               <option value="ALL">All Branches</option>
               {db.branches
@@ -541,17 +624,41 @@ export const TotalOutwardReportView: React.FC = () => {
             </select>
           </div>
 
-          {/* Currency Filter */}
-          <div>
+          {/* Bottom Row - Currency (1 column) */}
+          <div className="col-span-1">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center space-x-1 h-5">
+              <Coins className="w-3.5 h-3.5 text-blue-400" />
+              <span>Currency</span>
+            </label>
             <select
               value={selectedCurrency}
               onChange={(e) => setSelectedCurrency(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer text-sm h-[38px]"
             >
               <option value="ALL">All Currencies</option>
               {db.currencies.map(c => (
                 <option key={c.id} value={c.code}>{c.code} ({c.nameEn})</option>
               ))}
+            </select>
+          </div>
+
+          {/* Bottom Row - Status (1 column) */}
+          <div className="col-span-1">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center space-x-1 h-5">
+              <Layers className="w-3.5 h-3.5 text-blue-400" />
+              <span>Status</span>
+            </label>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer text-sm h-[38px]"
+            >
+              <option value="ALL">All Status</option>
+              <option value="APPROVED">APPROVED</option>
+              <option value="PENDING_APPROVAL">PENDING APPROVAL</option>
+              <option value="PAID_OUT">PAID OUT</option>
+              <option value="REJECTED">REJECTED</option>
+              <option value="ON_HOLD">ON HOLD</option>
             </select>
           </div>
         </div>
@@ -665,6 +772,7 @@ export const TotalOutwardReportView: React.FC = () => {
                                       <th className="py-2 px-3">Receiver</th>
                                       <th className="py-2 px-3 text-right">Send MMK</th>
                                       <th className="py-2 px-3 text-right">Payout Currency</th>
+                                      <th className="py-2 px-3">User / Operator</th>
                                       <th className="py-2 px-3">Status</th>
                                       <th className="py-2 px-3 text-right">Action</th>
                                     </tr>
@@ -678,6 +786,17 @@ export const TotalOutwardReportView: React.FC = () => {
                                         <td className="py-2 px-3 font-sans text-slate-200">{t.receiverName} ({t.receiverCountryCode})</td>
                                         <td className="py-2 px-3 text-right text-slate-100">{Number(t.sendAmount).toLocaleString()} MMK</td>
                                         <td className="py-2 px-3 text-right text-emerald-400 font-bold">{Number(t.receiveAmount).toLocaleString()} {t.targetCurrency}</td>
+                                        <td className="py-2 px-3 font-sans">
+                                          <div className="text-slate-200 text-[11px] flex items-center space-x-1">
+                                            <UserIcon className="w-3 h-3 text-blue-400 shrink-0" />
+                                            <span className="truncate max-w-[120px]">{t.creatorName || 'Staff'}</span>
+                                          </div>
+                                          {t.approverName && (
+                                            <div className="text-[10px] text-emerald-400 truncate max-w-[120px]">
+                                              ✓ {t.approverName}
+                                            </div>
+                                          )}
+                                        </td>
                                         <td className="py-2 px-3 font-sans">
                                           <span className="px-2 py-0.5 rounded-full text-[10px] bg-blue-500/20 text-blue-300 font-bold">
                                             {t.status}

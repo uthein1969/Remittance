@@ -3,6 +3,7 @@ import {
   CheckSquare, 
   CheckCircle2, 
   XCircle, 
+  X,
   PauseCircle, 
   Printer, 
   Eye, 
@@ -54,6 +55,7 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
 }) => {
   const { 
     db, 
+    currentUser,
     language, 
     t, 
     approveTransaction, 
@@ -66,9 +68,11 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
     activeCountryCode
   } = useRemittance();
   
+  const isAdmin = currentUser?.role === 'ADMIN';
+  
   const [filterStatus, setFilterStatus] = useState<string>('PENDING_APPROVAL');
-  const [selectedCountry, setSelectedCountry] = useState(activeCountryCode || 'ALL');
-  const [selectedBranch, setSelectedBranch] = useState(activeBranchId || 'ALL');
+  const [selectedCountry, setSelectedCountry] = useState('ALL');
+  const [selectedBranch, setSelectedBranch] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState<RemittanceTransaction | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -111,9 +115,8 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
 
   const outwardTxs = db.transactions.filter(t => t.type === 'OUTWARD');
 
-  const filteredTxs = outwardTxs.filter(tx => {
-    if (filterStatus !== 'ALL' && tx.status !== filterStatus) return false;
-    
+  // Location filter applied first so status tab counts match the selected country/branch
+  const locationFilteredTxs = outwardTxs.filter(tx => {
     // Country Filter
     if (selectedCountry !== 'ALL') {
       const branch = db.branches.find(b => b.id === (tx.sendingBranchId || tx.branchId));
@@ -127,6 +130,15 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
     if (selectedBranch !== 'ALL' && tx.sendingBranchId !== selectedBranch && tx.branchId !== selectedBranch) {
       return false;
     }
+    return true;
+  });
+
+  const pendingCount = locationFilteredTxs.filter(t => t.status === 'PENDING_APPROVAL').length;
+  const approvedCount = locationFilteredTxs.filter(t => t.status === 'APPROVED').length;
+  const allCount = locationFilteredTxs.length;
+
+  const filteredTxs = locationFilteredTxs.filter(tx => {
+    if (filterStatus !== 'ALL' && tx.status !== filterStatus) return false;
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -148,6 +160,7 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
   };
 
   const handleOpenEdit = (tx: RemittanceTransaction) => {
+    if (!isAdmin) return;
     setEditingTx(tx);
     setShowEditModal(true);
   };
@@ -471,7 +484,7 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                 filterStatus === 'PENDING_APPROVAL' ? 'bg-amber-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
-              {language === 'my' ? 'စိစစ်ရန်ကျန်' : 'Pending'} ({outwardTxs.filter(t => t.status === 'PENDING_APPROVAL').length})
+              {language === 'my' ? 'စိစစ်ရန်ကျန်' : 'Pending'} ({pendingCount})
             </button>
             <button
               onClick={() => setFilterStatus('APPROVED')}
@@ -479,7 +492,7 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                 filterStatus === 'APPROVED' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-white'
               }`}
             >
-              {language === 'my' ? 'အတည်ပြုပြီး' : 'Approved'}
+              {language === 'my' ? 'အတည်ပြုပြီး' : 'Approved'} ({approvedCount})
             </button>
             <button
               onClick={() => setFilterStatus('ALL')}
@@ -487,7 +500,7 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                 filterStatus === 'ALL' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
               }`}
             >
-              {t.all}
+              {t.all} ({allCount})
             </button>
           </div>
 
@@ -618,7 +631,7 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                     <td className="px-4 py-3">
                       <div className="font-mono font-bold text-white">{tx.transactionNo}</div>
                       <div className="font-mono text-amber-400 text-[11px]">MTCN: {tx.mtcn}</div>
-                      <div className="text-[10px] text-slate-500">{new Date(tx.createdDate).toLocaleDateString()}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">{formatToDDMMYYYY(tx.createdDate)}</div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-bold text-slate-200">{tx.senderName}</div>
@@ -712,26 +725,15 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end space-x-2">
                         {tx.status === 'PENDING_APPROVAL' ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(tx)}
-                              className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-amber-200 border border-amber-500/40 font-bold text-xs transition-all flex items-center space-x-1 hover:scale-[1.02] cursor-pointer shadow-xs"
-                              title={language === 'my' ? 'ငွေလွှဲအချက်အလက် စိစစ်ပြင်ဆင်ရန်' : 'Review & Edit Details'}
-                            >
-                              <Edit3 className="w-3.5 h-3.5 text-amber-400" />
-                              <span>{language === 'my' ? 'Review & Edit' : 'Review & Edit'}</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenReview(tx)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition-colors flex items-center space-x-1 cursor-pointer"
-                              title={t.review}
-                            >
-                              <CheckSquare className="w-3.5 h-3.5" />
-                              <span>{t.review}</span>
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReview(tx)}
+                            className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-950/40 transition-all flex items-center space-x-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                            title={language === 'my' ? 'စိစစ် & အတည်ပြုမည်' : 'Review & Approve'}
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" />
+                            <span>{language === 'my' ? 'စိစစ် & အတည်ပြု' : 'Review & Approve'}</span>
+                          </button>
                         ) : (
                           <button
                             onClick={() => {
@@ -756,19 +758,42 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
 
       {/* Checker Review Modal */}
       {showReviewModal && selectedTx && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-2xl w-full shadow-2xl p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center space-x-2">
-                <CheckSquare className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-bold text-white">
-                  {language === 'my' ? 'ငွေလွှဲပို့မှု စိစစ်အတည်ပြုခြင်း (Checker Review)' : 'Outward Remittance Approval Review'}
-                </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header with Title, Transaction Number & Top Close Button */}
+            <div className="px-6 py-4 border-b border-slate-800 bg-slate-800/60 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+                  <CheckSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>{language === 'my' ? 'ငွေလွှဲပို့မှု စိစစ်အတည်ပြုခြင်း (Checker Review)' : 'Outward Remittance Approval Review'}</span>
+                    <span className="font-mono text-xs text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded-md border border-amber-400/20">
+                      {selectedTx.transactionNo}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {language === 'my' ? 'ငွေလွှဲစိစစ်ချက်နှင့် အထောက်အထားများ အပြည့်အစုံ ကြည့်ရှုရန်' : 'View all transaction details, KYC compliance checks & attachments'}
+                  </p>
+                </div>
               </div>
-              <span className="font-mono text-xs text-amber-400 font-bold">{selectedTx.transactionNo}</span>
+
+              {/* Close Button at Top */}
+              <button
+                type="button"
+                onClick={() => setShowReviewModal(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
+                title={language === 'my' ? 'ပိတ်မည် (Close)' : 'Close'}
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Quick overview grid */}
+            {/* Scrollable Body with Top-Down Scrollbar to view all information */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1 text-slate-200 custom-scrollbar scroll-smooth">
+              {/* Quick overview grid */}
             <div className="grid grid-cols-2 gap-4 text-xs bg-slate-950 p-4 rounded-xl border border-slate-800">
               <div>
                 <span className="text-slate-400 block font-medium">{t.senderName}:</span>
@@ -876,17 +901,17 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                 </button>
               </div>
 
-              {/* Instructional Banner on How to Replace Pictures */}
+              {/* Informational Banner on Data Text View & Preview */}
               <div className="flex items-start space-x-2 p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 text-xs">
                 <AlertCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold text-emerald-300">
-                    {language === 'my' ? 'ပုံဟောင်းအား ပုံအသစ်ဖြင့် အစားထိုးလိုပါက:' : 'How to replace with new picture:'}
+                    {language === 'my' ? 'စာရွက်စာတမ်း အချက်အလက်နှင့် ပုံကြည့်ရှုခြင်း:' : 'Document Data & Picture Preview:'}
                   </span>{' '}
                   <span>
                     {language === 'my' 
-                      ? 'သက်ဆိုင်ရာ ကတ်ပေါ်ရှိ စိမ်းပြာရောင် "ပုံအသစ် အစားထိုးတင်မည် (Replace Picture)" ခလုတ်ကို နှိပ်၍ မိမိစက်တွင်းမှ ဓာတ်ပုံအသစ်ကို ရွေးချယ်နိုင်ပါသည်။ ချက်ချင်း အလိုအလျောက် အစားထိုး အတည်ပြုသွားပါမည်။'
-                      : 'Click the prominent "Replace Picture" button on any card below to select and upload your new file. It will instantly replace the existing picture.'}
+                      ? 'စာရွက်စာတမ်း အချက်အလက်များကို စာသားအတန်းလိုက် ဖော်ပြထားပါသည်။ မူရင်းပုံ ကြည့်ရှုလိုပါက သက်ဆိုင်ရာ အတန်းရှိ "Preview" ခလုတ်ကို နှိပ်၍ ကြည့်ရှုနိုင်ပါသည်။'
+                      : 'Documents are displayed strictly as word rows. Click the "Preview" button in any row to inspect original documents.'}
                   </span>
                 </div>
               </div>
@@ -908,663 +933,488 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                 </div>
               )}
 
-              {/* Document Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* 1. NRC Front Side Card */}
-                {(selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment) ? (
-                  <div className="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-3 flex flex-col justify-between space-y-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                          <FileText className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-200">
+              {/* Documents Table: Only Show by Words by Rows (No Picture Frames) */}
+              <div className="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950/80">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-900/90 text-slate-400 font-semibold text-[11px]">
+                      <th className="py-2.5 px-3">{language === 'my' ? 'စာရွက်စာတမ်း အမျိုးအစား' : 'Document Type'}</th>
+                      <th className="py-2.5 px-3">{language === 'my' ? 'အချက်အလက် / နံပါတ်' : 'Reference / ID'}</th>
+                      <th className="py-2.5 px-3">{language === 'my' ? 'ဖိုင်အမည် & ဆိုဒ်' : 'Attached File & Size'}</th>
+                      <th className="py-2.5 px-3 text-center">{language === 'my' ? 'အခြေအနေ' : 'Status'}</th>
+                      <th className="py-2.5 px-3 text-right">{language === 'my' ? 'လုပ်ဆောင်ချက်' : 'Actions'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 text-[11px]">
+                    {/* Row 1: NRC Front */}
+                    <tr className="hover:bg-slate-900/50 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="p-1 rounded-md bg-emerald-500/20 text-emerald-400 shrink-0">
+                            <FileText className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="font-semibold text-slate-200">
                             {language === 'my' ? 'NRC အရှေ့ခြမ်း (Front)' : 'NRC Card (Front Side)'}
-                          </div>
-                          <div className="text-[10px] text-emerald-400 font-mono font-semibold">
-                            {selectedTx.senderNrc || '12/BAHANA(N)184920'}
-                          </div>
+                          </span>
                         </div>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <label
-                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold transition-colors cursor-pointer hover:scale-105 active:scale-95"
-                          title={language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}
-                        >
-                          <Upload className="w-2.5 h-2.5" />
-                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'nrc-front')}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAttachment('nrc-front')}
-                          className="text-slate-400 hover:text-rose-400 transition-colors p-1 rounded-md cursor-pointer"
-                          title={language === 'my' ? 'ဖိုင် ဖယ်ရှားမည်' : 'Remove Front NRC'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Thumbnail preview with hover zoom */}
-                    <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] flex items-center justify-center">
-                      <img
-                        src={selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment}
-                        alt="Sender NRC Front"
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် အရှေ့ခြမ်း' : "Sender's NRC Card (Front)",
-                            url: selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment,
-                            name: selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName || 'Sender_NRC_Front.svg',
-                            type: selectedTx.senderNrcFrontAttachmentType || selectedTx.senderNrcAttachmentType || 'image/svg+xml',
-                            size: selectedTx.senderNrcFrontAttachmentSize || selectedTx.senderNrcAttachmentSize || '',
-                            idNumber: selectedTx.senderNrc,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                        >
-                          <Maximize2 className="w-3 h-3 text-emerald-400" />
-                          <span>{language === 'my' ? 'အကြီးကြည့်' : 'Enlarge'}</span>
-                        </button>
-                        <label className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold border border-emerald-400/50 transition-colors cursor-pointer shadow-sm">
-                          <Upload className="w-3 h-3" />
-                          <span>{language === 'my' ? 'ပုံအသစ်တင်' : 'Replace Pic'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'nrc-front')}
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Metadata & Actions */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="truncate max-w-[140px] font-mono" title={selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName}>
-                          {selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName || 'NRC_Front.svg'}
-                        </span>
-                        <span className="text-emerald-400/80 font-mono font-bold">
-                          {selectedTx.senderNrcFrontAttachmentSize || selectedTx.senderNrcAttachmentSize || '18 KB'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center space-x-1.5 pt-1 border-t border-slate-800/80">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် အရှေ့ခြမ်း' : "Sender's NRC Card (Front)",
-                            url: selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment,
-                            name: selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName || 'Sender_NRC_Front.svg',
-                            type: selectedTx.senderNrcFrontAttachmentType || selectedTx.senderNrcAttachmentType || 'image/svg+xml',
-                            size: selectedTx.senderNrcFrontAttachmentSize || selectedTx.senderNrcAttachmentSize || '',
-                            idNumber: selectedTx.senderNrc,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
-                        </button>
-
-                        {/* PROMINENT REPLACE BUTTON */}
-                        <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 text-[11px] font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
-                          <Upload className="w-3.5 h-3.5 shrink-0" />
-                          <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'nrc-front')}
-                          />
-                        </label>
-
-                        <a
-                          href={selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment}
-                          download={selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName || 'Sender_NRC_Front.svg'}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                          title="Download NRC Front"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-slate-900/40 border border-dashed border-slate-700/80 rounded-xl p-3 flex flex-col justify-between items-center text-center space-y-2 min-h-[160px]">
-                    <div className="flex flex-col items-center space-y-1 mt-2">
-                      <FileText className="w-6 h-6 text-slate-500" />
-                      <div className="text-xs font-bold text-slate-400">
-                        {language === 'my' ? 'NRC အရှေ့ခြမ်း မရှိပါ' : 'No NRC Front Attached'}
-                      </div>
-                      <p className="text-[10px] text-slate-500 max-w-[180px]">
-                        {language === 'my' ? 'ငွေလွှဲသူ၏ မှတ်ပုံတင် အရှေ့ခြမ်း ပုံတင်ပါ' : 'Upload front side of sender NRC'}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-                      <button
-                        type="button"
-                        onClick={() => handleQuickAttach('nrc-front')}
-                        className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold transition-colors cursor-pointer"
-                      >
-                        <span>+ {language === 'my' ? 'နမူနာ အရှေ့ခြမ်းတွဲ' : 'Attach Front'}</span>
-                      </button>
-                      <label className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition-all shadow-xs cursor-pointer hover:scale-105">
-                        <Upload className="w-3 h-3" />
-                        <span>{language === 'my' ? 'အရှေ့ခြမ်း ပုံတင်မည်' : 'Upload Front'}</span>
-                        <input
-                          type="file"
-                          accept="image/*,.pdf,.svg"
-                          className="hidden"
-                          onChange={(e) => handleFileUpload(e, 'nrc-front')}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* 2. NRC Back Side Card */}
-                {selectedTx.senderNrcBackAttachment ? (
-                  <div className="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-3 flex flex-col justify-between space-y-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <div className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400">
-                          <FileText className="w-4 h-4" />
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-emerald-400 font-medium">
+                        {selectedTx.senderNrc || '12/BAHANA(N)184920'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">
+                        {(selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment) ? (
+                          <>
+                            <span className="font-mono text-slate-200">
+                              {selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName || 'NRC_Front.svg'}
+                            </span>{' '}
+                            <span className="text-[10px] text-emerald-400 font-bold ml-1">
+                              {selectedTx.senderNrcFrontAttachmentSize || selectedTx.senderNrcAttachmentSize || '18 KB'}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-500 italic">{language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not attached'}</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {(selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment) ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold text-[10px]">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span>{language === 'my' ? 'စစ်ဆေးပြီး' : 'Verified'}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-semibold text-[10px]">
+                            Pending
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="flex items-center justify-end space-x-1.5">
+                          {(selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment) ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openLightbox({
+                                  title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် အရှေ့ခြမ်း' : "Sender's NRC Card (Front)",
+                                  url: selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment,
+                                  name: selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName || 'Sender_NRC_Front.svg',
+                                  type: selectedTx.senderNrcFrontAttachmentType || selectedTx.senderNrcAttachmentType || 'image/svg+xml',
+                                  size: selectedTx.senderNrcFrontAttachmentSize || selectedTx.senderNrcAttachmentSize || '',
+                                  idNumber: selectedTx.senderNrc,
+                                  sender: selectedTx.senderName
+                                })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs"
+                                title={language === 'my' ? 'မူရင်းပုံ ကြည့်ရှုမည်' : 'Preview Picture'}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Preview</span>
+                              </button>
+                              <label
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+                                title={language === 'my' ? 'အစားထိုး' : 'Replace'}
+                              >
+                                <Upload className="w-3 h-3 text-slate-400" />
+                                <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'nrc-front')}
+                                />
+                              </label>
+                              <a
+                                href={selectedTx.senderNrcFrontAttachment || selectedTx.senderNrcAttachment}
+                                download={selectedTx.senderNrcFrontAttachmentName || selectedTx.senderNrcAttachmentName || 'Sender_NRC_Front.svg'}
+                                className="p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                title="Download"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAttachment('nrc-front')}
+                                className="p-1 rounded-md text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title="Remove"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex items-center space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickAttach('nrc-front')}
+                                className="px-2 py-1 rounded-md bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 text-[10px] font-semibold transition-colors cursor-pointer"
+                              >
+                                + Sample
+                              </button>
+                              <label className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition-colors cursor-pointer">
+                                <Upload className="w-3 h-3" />
+                                <span>Upload</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'nrc-front')}
+                                />
+                              </label>
+                            </div>
+                          )}
                         </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-200">
+                      </td>
+                    </tr>
+
+                    {/* Row 2: NRC Back */}
+                    <tr className="hover:bg-slate-900/50 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="p-1 rounded-md bg-rose-500/20 text-rose-400 shrink-0">
+                            <FileText className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="font-semibold text-slate-200">
                             {language === 'my' ? 'NRC အနောက်ခြမ်း (Back)' : 'NRC Card (Back Side)'}
-                          </div>
-                          <div className="text-[10px] text-rose-300 font-mono font-semibold">
-                            {language === 'my' ? 'လိပ်စာ/လက်ဗွေခြမ်း' : 'Residence & Fingerprint'}
-                          </div>
+                          </span>
                         </div>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <label
-                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold transition-colors cursor-pointer hover:scale-105 active:scale-95"
-                          title={language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}
-                        >
-                          <Upload className="w-2.5 h-2.5" />
-                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'nrc-back')}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAttachment('nrc-back')}
-                          className="text-slate-400 hover:text-rose-400 transition-colors p-1 rounded-md cursor-pointer"
-                          title={language === 'my' ? 'ဖိုင် ဖယ်ရှားမည်' : 'Remove Back NRC'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Thumbnail preview with hover zoom */}
-                    <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] flex items-center justify-center">
-                      <img
-                        src={selectedTx.senderNrcBackAttachment}
-                        alt="Sender NRC Back"
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် အနောက်ခြမ်း' : "Sender's NRC Card (Back Side)",
-                            url: selectedTx.senderNrcBackAttachment,
-                            name: selectedTx.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg',
-                            type: selectedTx.senderNrcBackAttachmentType || 'image/svg+xml',
-                            size: selectedTx.senderNrcBackAttachmentSize || '',
-                            idNumber: selectedTx.senderNrc,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                        >
-                          <Maximize2 className="w-3 h-3 text-rose-400" />
-                          <span>{language === 'my' ? 'အကြီးကြည့်' : 'Enlarge'}</span>
-                        </button>
-                        <label className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold border border-emerald-400/50 transition-colors cursor-pointer shadow-sm">
-                          <Upload className="w-3 h-3" />
-                          <span>{language === 'my' ? 'ပုံအသစ်တင်' : 'Replace Pic'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'nrc-back')}
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Metadata & Actions */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="truncate max-w-[140px] font-mono" title={selectedTx.senderNrcBackAttachmentName}>
-                          {selectedTx.senderNrcBackAttachmentName || 'NRC_Back.svg'}
-                        </span>
-                        <span className="text-rose-400/80 font-mono font-bold">
-                          {selectedTx.senderNrcBackAttachmentSize || '16 KB'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center space-x-1.5 pt-1 border-t border-slate-800/80">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် အနောက်ခြမ်း' : "Sender's NRC Card (Back Side)",
-                            url: selectedTx.senderNrcBackAttachment,
-                            name: selectedTx.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg',
-                            type: selectedTx.senderNrcBackAttachmentType || 'image/svg+xml',
-                            size: selectedTx.senderNrcBackAttachmentSize || '',
-                            idNumber: selectedTx.senderNrc,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
-                        </button>
-
-                        {/* PROMINENT REPLACE BUTTON */}
-                        <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 text-[11px] font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
-                          <Upload className="w-3.5 h-3.5 shrink-0" />
-                          <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'nrc-back')}
-                          />
-                        </label>
-
-                        <a
-                          href={selectedTx.senderNrcBackAttachment}
-                          download={selectedTx.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg'}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                          title="Download NRC Back"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-slate-900/40 border border-dashed border-slate-700/80 rounded-xl p-3 flex flex-col justify-between items-center text-center space-y-2 min-h-[160px]">
-                    <div className="flex flex-col items-center space-y-1 mt-2">
-                      <FileText className="w-6 h-6 text-slate-500" />
-                      <div className="text-xs font-bold text-slate-400">
-                        {language === 'my' ? 'NRC အနောက်ခြမ်း မရှိပါ' : 'No NRC Back Attached'}
-                      </div>
-                      <p className="text-[10px] text-slate-500 max-w-[180px]">
-                        {language === 'my' ? 'ငွေလွှဲသူ၏ မှတ်ပုံတင် အနောက်ခြမ်း ပုံတင်ပါ' : 'Upload back side of sender NRC'}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-                      <button
-                        type="button"
-                        onClick={() => handleQuickAttach('nrc-back')}
-                        className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold transition-colors cursor-pointer"
-                      >
-                        <span>+ {language === 'my' ? 'နမူနာ အနောက်ခြမ်းတွဲ' : 'Attach Back'}</span>
-                      </button>
-                      <label className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] transition-all shadow-xs cursor-pointer hover:scale-105">
-                        <Upload className="w-3 h-3" />
-                        <span>{language === 'my' ? 'အနောက်ခြမ်း ပုံတင်မည်' : 'Upload Back'}</span>
-                        <input
-                          type="file"
-                          accept="image/*,.pdf,.svg"
-                          className="hidden"
-                          onChange={(e) => handleFileUpload(e, 'nrc-back')}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* 3. Passport Document Card */}
-                {(selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment) ? (
-                  <div className="bg-slate-900/90 border border-sky-500/30 rounded-xl p-3 flex flex-col justify-between space-y-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400">
-                          <FileCheck className="w-4 h-4" />
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300 font-medium">
+                        {language === 'my' ? 'သွေးအုပ်စု & လိပ်စာ' : 'Blood Group & Address'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">
+                        {selectedTx.senderNrcBackAttachment ? (
+                          <>
+                            <span className="font-mono text-slate-200">
+                              {selectedTx.senderNrcBackAttachmentName || 'NRC_Back.svg'}
+                            </span>{' '}
+                            <span className="text-[10px] text-rose-400 font-bold ml-1">
+                              {selectedTx.senderNrcBackAttachmentSize || '16 KB'}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-500 italic">{language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not attached'}</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {selectedTx.senderNrcBackAttachment ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold text-[10px]">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span>{language === 'my' ? 'စစ်ဆေးပြီး' : 'Verified'}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-semibold text-[10px]">
+                            Pending
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="flex items-center justify-end space-x-1.5">
+                          {selectedTx.senderNrcBackAttachment ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openLightbox({
+                                  title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ မှတ်ပုံတင် အနောက်ခြမ်း' : "Sender's NRC Card (Back Side)",
+                                  url: selectedTx.senderNrcBackAttachment,
+                                  name: selectedTx.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg',
+                                  type: selectedTx.senderNrcBackAttachmentType || 'image/svg+xml',
+                                  size: selectedTx.senderNrcBackAttachmentSize || '',
+                                  idNumber: selectedTx.senderNrc,
+                                  sender: selectedTx.senderName
+                                })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs"
+                                title={language === 'my' ? 'မူရင်းပုံ ကြည့်ရှုမည်' : 'Preview Picture'}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Preview</span>
+                              </button>
+                              <label
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+                                title={language === 'my' ? 'အစားထိုး' : 'Replace'}
+                              >
+                                <Upload className="w-3 h-3 text-slate-400" />
+                                <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'nrc-back')}
+                                />
+                              </label>
+                              <a
+                                href={selectedTx.senderNrcBackAttachment}
+                                download={selectedTx.senderNrcBackAttachmentName || 'Sender_NRC_Back.svg'}
+                                className="p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                title="Download"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAttachment('nrc-back')}
+                                className="p-1 rounded-md text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title="Remove"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex items-center space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickAttach('nrc-back')}
+                                className="px-2 py-1 rounded-md bg-rose-600/20 text-rose-300 hover:bg-rose-600/30 text-[10px] font-semibold transition-colors cursor-pointer"
+                              >
+                                + Sample
+                              </button>
+                              <label className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] transition-colors cursor-pointer">
+                                <Upload className="w-3 h-3" />
+                                <span>Upload</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'nrc-back')}
+                                />
+                              </label>
+                            </div>
+                          )}
                         </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-200">
+                      </td>
+                    </tr>
+
+                    {/* Row 3: Passport */}
+                    <tr className="hover:bg-slate-900/50 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="p-1 rounded-md bg-sky-500/20 text-sky-400 shrink-0">
+                            <FileCheck className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="font-semibold text-slate-200">
                             {language === 'my' ? 'နိုင်ငံကူးလက်မှတ် (Passport)' : 'Passport Document'}
-                          </div>
-                          <div className="text-[10px] text-sky-400 font-mono font-semibold">
-                            {selectedTx.senderPassport || 'MA-918234'}
-                          </div>
+                          </span>
                         </div>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <label
-                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[10px] font-bold transition-colors cursor-pointer hover:scale-105 active:scale-95"
-                          title={language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}
-                        >
-                          <Upload className="w-2.5 h-2.5" />
-                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'passport')}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAttachment('passport')}
-                          className="text-slate-400 hover:text-rose-400 transition-colors p-1 rounded-md cursor-pointer"
-                          title={language === 'my' ? 'ဖိုင် ဖယ်ရှားမည်' : 'Remove Passport attachment'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Thumbnail preview with hover zoom */}
-                    <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] flex items-center justify-center">
-                      <img
-                        src={selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment}
-                        alt="Sender Passport Document"
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ နိုင်ငံကူးလက်မှတ် (Passport)' : "Sender's Passport Document",
-                            url: selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment,
-                            name: selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName || 'Sender_Passport.svg',
-                            type: selectedTx.senderPassportAttachmentType || selectedTx.senderPassbookAttachmentType || 'image/svg+xml',
-                            size: selectedTx.senderPassportAttachmentSize || selectedTx.senderPassbookAttachmentSize || '',
-                            idNumber: selectedTx.senderPassport,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                        >
-                          <Maximize2 className="w-3 h-3 text-sky-400" />
-                          <span>{language === 'my' ? 'အကြီးကြည့်' : 'Enlarge'}</span>
-                        </button>
-                        <label className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold border border-sky-400/50 transition-colors cursor-pointer shadow-sm">
-                          <Upload className="w-3 h-3" />
-                          <span>{language === 'my' ? 'ပုံအသစ်တင်' : 'Replace Pic'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'passport')}
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Metadata & Actions */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="truncate max-w-[140px] font-mono" title={selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName}>
-                          {selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName || 'Sender_Passport.svg'}
-                        </span>
-                        <span className="text-sky-400/80 font-mono font-bold">
-                          {selectedTx.senderPassportAttachmentSize || selectedTx.senderPassbookAttachmentSize || '24 KB'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center space-x-1.5 pt-1 border-t border-slate-800/80">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ နိုင်ငံကူးလက်မှတ် (Passport)' : "Sender's Passport Document",
-                            url: selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment,
-                            name: selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName || 'Sender_Passport.svg',
-                            type: selectedTx.senderPassportAttachmentType || selectedTx.senderPassbookAttachmentType || 'image/svg+xml',
-                            size: selectedTx.senderPassportAttachmentSize || selectedTx.senderPassbookAttachmentSize || '',
-                            idNumber: selectedTx.senderPassport,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
-                        </button>
-
-                        {/* PROMINENT REPLACE BUTTON */}
-                        <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white border border-sky-400/50 text-[11px] font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
-                          <Upload className="w-3.5 h-3.5 shrink-0" />
-                          <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'passport')}
-                          />
-                        </label>
-
-                        <a
-                          href={selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment}
-                          download={selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName || 'Sender_Passport.svg'}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                          title="Download Passport file"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-slate-900/40 border border-dashed border-slate-700/80 rounded-xl p-3 flex flex-col justify-between items-center text-center space-y-2 min-h-[160px]">
-                    <div className="flex flex-col items-center space-y-1 mt-2">
-                      <FileCheck className="w-6 h-6 text-slate-500" />
-                      <div className="text-xs font-bold text-slate-400">
-                        {language === 'my' ? 'Passport မရှိပါ' : 'No Passport Attached'}
-                      </div>
-                      <p className="text-[10px] text-slate-500 max-w-[180px]">
-                        {language === 'my' ? 'စိစစ်ရန်အတွက် ငွေလွှဲသူ၏ Passport ပူးတွဲနိုင်ပါသည်' : 'Attach sender Passport to verify identity'}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-                      <button
-                        type="button"
-                        onClick={() => handleQuickAttach('passport')}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-[10px] font-bold transition-colors cursor-pointer"
-                      >
-                        <span>+ {language === 'my' ? 'နမူနာ Passport' : 'Sample Passport'}</span>
-                      </button>
-                      <label className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-all shadow-xs cursor-pointer hover:scale-105">
-                        <Upload className="w-3 h-3" />
-                        <span>{language === 'my' ? 'Passport တင်မည်' : 'Upload Passport'}</span>
-                        <input
-                          type="file"
-                          accept="image/*,.pdf,.svg"
-                          className="hidden"
-                          onChange={(e) => handleFileUpload(e, 'passport')}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. Deposit Slip / Remittance Proof Document Card */}
-                {selectedTx.proofDocumentUrl ? (
-                  <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-3 flex flex-col justify-between space-y-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
-                          <Receipt className="w-4 h-4" />
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-sky-300 font-medium">
+                        {selectedTx.senderPassport || 'MB-102948'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">
+                        {(selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment) ? (
+                          <>
+                            <span className="font-mono text-slate-200">
+                              {selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName || 'Sender_Passport.svg'}
+                            </span>{' '}
+                            <span className="text-[10px] text-sky-400 font-bold ml-1">
+                              {selectedTx.senderPassportAttachmentSize || selectedTx.senderPassbookAttachmentSize || '24 KB'}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-500 italic">{language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not attached'}</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {(selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment) ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold text-[10px]">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span>{language === 'my' ? 'စစ်ဆေးပြီး' : 'Verified'}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-semibold text-[10px]">
+                            Optional
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="flex items-center justify-end space-x-1.5">
+                          {(selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment) ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openLightbox({
+                                  title: language === 'my' ? 'ငွေလွှဲပို့သူ၏ နိုင်ငံကူးလက်မှတ် (Passport)' : "Sender's Passport Document",
+                                  url: selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment,
+                                  name: selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName || 'Sender_Passport.svg',
+                                  type: selectedTx.senderPassportAttachmentType || selectedTx.senderPassbookAttachmentType || 'image/svg+xml',
+                                  size: selectedTx.senderPassportAttachmentSize || selectedTx.senderPassbookAttachmentSize || '',
+                                  idNumber: selectedTx.senderPassport,
+                                  sender: selectedTx.senderName
+                                })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs"
+                                title={language === 'my' ? 'မူရင်းပုံ ကြည့်ရှုမည်' : 'Preview Picture'}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Preview</span>
+                              </button>
+                              <label
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+                                title={language === 'my' ? 'အစားထိုး' : 'Replace'}
+                              >
+                                <Upload className="w-3 h-3 text-slate-400" />
+                                <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'passport')}
+                                />
+                              </label>
+                              <a
+                                href={selectedTx.senderPassportAttachment || selectedTx.senderPassbookAttachment}
+                                download={selectedTx.senderPassportAttachmentName || selectedTx.senderPassbookAttachmentName || 'Sender_Passport.svg'}
+                                className="p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                title="Download"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAttachment('passport')}
+                                className="p-1 rounded-md text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title="Remove"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex items-center space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickAttach('passport')}
+                                className="px-2 py-1 rounded-md bg-sky-600/20 text-sky-300 hover:bg-sky-600/30 text-[10px] font-semibold transition-colors cursor-pointer"
+                              >
+                                + Sample
+                              </button>
+                              <label className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-sky-600 hover:bg-sky-500 text-white font-bold text-[10px] transition-colors cursor-pointer">
+                                <Upload className="w-3 h-3" />
+                                <span>Upload</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'passport')}
+                                />
+                              </label>
+                            </div>
+                          )}
                         </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-200">
-                            {language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ (Deposit Slip)' : 'Cash Deposit Receipt'}
+                      </td>
+                    </tr>
+
+                    {/* Row 4: Deposit Slip */}
+                    <tr className="hover:bg-slate-900/50 transition-colors">
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="p-1 rounded-md bg-amber-500/20 text-amber-400 shrink-0">
+                            <Receipt className="w-3.5 h-3.5" />
                           </div>
-                          <div className="text-[10px] text-amber-300 font-mono font-semibold">
-                            {selectedTx.sendAmount?.toLocaleString()} {selectedTx.sourceCurrency || selectedTx.sendCurrency}
-                          </div>
+                          <span className="font-semibold text-slate-200">
+                            {language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ (Deposit Slip)' : 'Deposit Slip Receipt'}
+                          </span>
                         </div>
-                      </div>
-                      <div className="flex items-center space-x-1">
-                        <label
-                          className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-bold transition-colors cursor-pointer hover:scale-105 active:scale-95"
-                          title={language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}
-                        >
-                          <Upload className="w-2.5 h-2.5" />
-                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'deposit')}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAttachment('deposit')}
-                          className="text-slate-400 hover:text-rose-400 transition-colors p-1 rounded-md cursor-pointer"
-                          title={language === 'my' ? 'ဖိုင် ဖယ်ရှားမည်' : 'Remove Deposit Receipt'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Thumbnail preview with hover zoom */}
-                    <div className="relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-950 aspect-[16/9] flex items-center justify-center">
-                      <img
-                        src={selectedTx.proofDocumentUrl}
-                        alt="Deposit Receipt"
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ မူရင်း (Deposit Receipt)' : "Remittance Cash Deposit Receipt",
-                            url: selectedTx.proofDocumentUrl,
-                            name: selectedTx.proofDocumentName || 'Deposit_Receipt.svg',
-                            type: selectedTx.proofDocumentType || 'image/svg+xml',
-                            size: selectedTx.proofDocumentSize || '',
-                            idNumber: selectedTx.transactionNo,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
-                        >
-                          <Maximize2 className="w-3 h-3 text-amber-400" />
-                          <span>{language === 'my' ? 'အကြီးကြည့်' : 'Enlarge'}</span>
-                        </button>
-                        <label className="inline-flex items-center space-x-1 py-1 px-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold border border-amber-400/50 transition-colors cursor-pointer shadow-sm">
-                          <Upload className="w-3 h-3" />
-                          <span>{language === 'my' ? 'ပုံအသစ်တင်' : 'Replace Pic'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'deposit')}
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* Metadata & Actions */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span className="truncate max-w-[140px] font-mono" title={selectedTx.proofDocumentName}>
-                          {selectedTx.proofDocumentName || 'Deposit_Receipt.svg'}
-                        </span>
-                        <span className="text-amber-400/80 font-mono font-bold">
-                          {selectedTx.proofDocumentSize || '21 KB'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center space-x-1.5 pt-1 border-t border-slate-800/80">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ မူရင်း (Deposit Receipt)' : "Remittance Cash Deposit Receipt",
-                            url: selectedTx.proofDocumentUrl,
-                            name: selectedTx.proofDocumentName || 'Deposit_Receipt.svg',
-                            type: selectedTx.proofDocumentType || 'image/svg+xml',
-                            size: selectedTx.proofDocumentSize || '',
-                            idNumber: selectedTx.transactionNo,
-                            sender: selectedTx.senderName
-                          })}
-                          className="inline-flex items-center justify-center space-x-1 py-1.5 px-2 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{language === 'my' ? 'ကြည့်ရှု' : 'View'}</span>
-                        </button>
-
-                        {/* PROMINENT REPLACE BUTTON */}
-                        <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-1.5 px-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white border border-amber-400/50 text-[11px] font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02] active:scale-[0.98]">
-                          <Upload className="w-3.5 h-3.5 shrink-0" />
-                          <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်မည်' : 'Replace Picture'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(e, 'deposit')}
-                          />
-                        </label>
-
-                        <a
-                          href={selectedTx.proofDocumentUrl}
-                          download={selectedTx.proofDocumentName || 'Deposit_Receipt.svg'}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                          title="Download Deposit Receipt"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-slate-900/40 border border-dashed border-slate-700/80 rounded-xl p-3 flex flex-col justify-between items-center text-center space-y-2 min-h-[160px]">
-                    <div className="flex flex-col items-center space-y-1 mt-2">
-                      <Receipt className="w-6 h-6 text-slate-500" />
-                      <div className="text-xs font-bold text-slate-400">
-                        {language === 'my' ? 'ငွေသွင်းပြေစာ မရှိပါ' : 'No Deposit Slip Attached'}
-                      </div>
-                      <p className="text-[10px] text-slate-500 max-w-[180px]">
-                        {language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ (သို့) ငွေလွှဲအထောက်အထား တွဲနိုင်ပါသည်' : 'Attach bank deposit receipt or transaction proof'}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-                      <button
-                        type="button"
-                        onClick={() => handleQuickAttach('deposit')}
-                        className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 text-[10px] font-bold transition-colors cursor-pointer"
-                      >
-                        <span>+ {language === 'my' ? 'နမူနာ ပြေစာတွဲ' : 'Sample Slip'}</span>
-                      </button>
-                      <label className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] transition-all shadow-xs cursor-pointer hover:scale-105">
-                        <Upload className="w-3 h-3" />
-                        <span>{language === 'my' ? 'ပြေစာ တင်မည်' : 'Upload Slip'}</span>
-                        <input
-                          type="file"
-                          accept="image/*,.pdf,.svg"
-                          className="hidden"
-                          onChange={(e) => handleFileUpload(e, 'deposit')}
-                        />
-                      </label>
-                    </div>
-                  </div>
-                )}
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-amber-300 font-medium">
+                        {Number(selectedTx.sendAmount || 0).toLocaleString()} {selectedTx.sourceCurrency || selectedTx.sendCurrency || 'MMK'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">
+                        {selectedTx.proofDocumentUrl ? (
+                          <>
+                            <span className="font-mono text-slate-200">
+                              {selectedTx.proofDocumentName || 'Deposit_Receipt.svg'}
+                            </span>{' '}
+                            <span className="text-[10px] text-amber-400 font-bold ml-1">
+                              {selectedTx.proofDocumentSize || '21 KB'}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-500 italic">{language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not attached'}</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {selectedTx.proofDocumentUrl ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold text-[10px]">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span>{language === 'my' ? 'စစ်ဆေးပြီး' : 'Verified'}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-semibold text-[10px]">
+                            Pending
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="flex items-center justify-end space-x-1.5">
+                          {selectedTx.proofDocumentUrl ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openLightbox({
+                                  title: language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ မူရင်း (Deposit Receipt)' : "Remittance Cash Deposit Receipt",
+                                  url: selectedTx.proofDocumentUrl,
+                                  name: selectedTx.proofDocumentName || 'Deposit_Receipt.svg',
+                                  type: selectedTx.proofDocumentType || 'image/svg+xml',
+                                  size: selectedTx.proofDocumentSize || '',
+                                  idNumber: selectedTx.transactionNo,
+                                  sender: selectedTx.senderName
+                                })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs"
+                                title={language === 'my' ? 'မူရင်းပုံ ကြည့်ရှုမည်' : 'Preview Picture'}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Preview</span>
+                              </button>
+                              <label
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
+                                title={language === 'my' ? 'အစားထိုး' : 'Replace'}
+                              >
+                                <Upload className="w-3 h-3 text-slate-400" />
+                                <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'deposit')}
+                                />
+                              </label>
+                              <a
+                                href={selectedTx.proofDocumentUrl}
+                                download={selectedTx.proofDocumentName || 'Deposit_Receipt.svg'}
+                                className="p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                                title="Download"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAttachment('deposit')}
+                                className="p-1 rounded-md text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                                title="Remove"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          ) : (
+                            <div className="flex items-center space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickAttach('deposit')}
+                                className="px-2 py-1 rounded-md bg-amber-600/20 text-amber-300 hover:bg-amber-600/30 text-[10px] font-semibold transition-colors cursor-pointer"
+                              >
+                                + Sample
+                              </button>
+                              <label className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-600 hover:bg-amber-500 text-white font-bold text-[10px] transition-colors cursor-pointer">
+                                <Upload className="w-3 h-3" />
+                                <span>Upload</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf,.svg"
+                                  className="hidden"
+                                  onChange={(e) => handleFileUpload(e, 'deposit')}
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
 
               {/* Identity Verification Checklist */}
@@ -1648,9 +1498,21 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
               />
             </div>
 
-            {/* Modal Action buttons */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
+            {/* End of Scrollable Body */}
+            </div>
+
+            {/* Sticky Modal Action Buttons Footer */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-4 border-t border-slate-800 bg-slate-950/90 shrink-0">
               <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReviewModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors cursor-pointer flex items-center space-x-1"
+                  title={language === 'my' ? 'ပိတ်မည်' : 'Close'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>{language === 'my' ? 'ပိတ်မည်' : 'Close'}</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleHold}
@@ -1658,18 +1520,20 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                 >
                   {t.hold}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowReviewModal(false);
-                    handleOpenEdit(selectedTx);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer hover:scale-[1.02]"
-                  title={language === 'my' ? 'ငွေလွှဲအချက်အလက် ပြင်ဆင်ရန်' : 'Edit Remittance Information'}
-                >
-                  <Edit3 className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{language === 'my' ? 'ပြင်ဆင်ရန် (Review & Edit)' : 'Review & Edit'}</span>
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowReviewModal(false);
+                      handleOpenEdit(selectedTx);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer hover:scale-[1.02]"
+                    title={language === 'my' ? 'ငွေလွှဲအချက်အလက် ပြင်ဆင်ရန်' : 'Edit Remittance Information'}
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{language === 'my' ? 'ပြင်ဆင်ရန် (Review & Edit)' : 'Review & Edit'}</span>
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center space-x-2">
@@ -1700,9 +1564,19 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
       {showRejectModal && selectedTx && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-rose-600 text-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center space-x-2 text-rose-400">
-              <XCircle className="w-5 h-5" />
-              <h3 className="text-base font-bold">{t.reject} - {selectedTx.transactionNo}</h3>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2 text-rose-400">
+                <XCircle className="w-5 h-5" />
+                <h3 className="text-base font-bold">{t.reject} - {selectedTx.transactionNo}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                title={language === 'my' ? 'ပိတ်မည်' : 'Close'}
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
             <p className="text-xs text-slate-300">
               {language === 'my' ? 'ငြင်းပယ်ရသည့် အကြောင်းအရင်းကို အသေးစိတ် ထည့်သွင်းပေးပါ (Audit Log တွင် သိမ်းဆည်းမည်)' : 'Please provide the mandatory rejection reason. This will be recorded in compliance audit.'}

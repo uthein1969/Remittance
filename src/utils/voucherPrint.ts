@@ -1,4 +1,5 @@
 import { RemittanceTransaction, Branch, Company, Language, OperatorProfile } from '../types';
+import { formatToDDMMYYYYWithTime } from '../lib/dateUtils';
 
 export function generateVoucherHtml({
   transaction,
@@ -15,20 +16,7 @@ export function generateVoucherHtml({
 }): string {
   const isOutward = transaction.type === 'OUTWARD';
 
-  let createdDate = '';
-  try {
-    const d = new Date(transaction.createdDate || Date.now());
-    createdDate = isNaN(d.getTime()) ? String(transaction.createdDate || '') : d.toLocaleString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  } catch {
-    createdDate = String(transaction.createdDate || '');
-  }
+  const createdDate = formatToDDMMYYYYWithTime(transaction.createdDate || Date.now());
 
   const op = {
     companyNameMm: operatorProfile?.companyNameMm || 'ရွှေမြန်မာ အပြည်ပြည်ဆိုင်ရာ ငွေလွှဲလုပ်ငန်း',

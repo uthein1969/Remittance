@@ -19,7 +19,8 @@ import {
   HardDriveDownload, 
   Database,
   Users,
-  AlertTriangle
+  AlertTriangle,
+  BarChart3
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { UserRole, NavigationTab, DEFAULT_ROLE_MENU_PERMISSIONS } from '../../types';
@@ -116,6 +117,15 @@ export const RoleMenuPermissionManager: React.FC = () => {
       descriptionEn: 'Outward remittance analytics, transaction statements, and exports',
     },
     {
+      id: 'total_outward_report',
+      labelMm: 'စုစုပေါင်း ငွေလွှဲပို့မှု အစီရင်ခံစာ (Total Outward Report)',
+      labelEn: 'Total Outward Report',
+      category: 'report',
+      icon: BarChart3,
+      descriptionMm: 'နေ့စွဲအလိုက် အစဉ်လိုက် ငွေလွှဲပို့မှု စုစုပေါင်း အစီရင်ခံစာ (နေ့အလိုက် ပေါင်းလဒ်၊ အသေးစိတ် နှင့် Excel/Print Export)',
+      descriptionEn: 'Daily grouped cumulative outward remittance report with chronological ordering and exports',
+    },
+    {
       id: 'inward_report',
       labelMm: 'ငွေလွှဲထုတ်မှု အစီရင်ခံစာ (Inward Report)',
       labelEn: 'Inward Remittance Report',
@@ -123,6 +133,15 @@ export const RoleMenuPermissionManager: React.FC = () => {
       icon: FileText,
       descriptionMm: 'ငွေလွှဲထုတ်ယူမှု မှတ်တမ်းအသေးစိတ် အစီရင်ခံစာနှင့် စာရင်းဇယား',
       descriptionEn: 'Inward remittance analytics, payout statements, and exports',
+    },
+    {
+      id: 'total_inward_report',
+      labelMm: 'စုစုပေါင်း ငွေလွှဲထုတ်မှု အစီရင်ခံစာ (Total Inward Report)',
+      labelEn: 'Total Inward Report',
+      category: 'report',
+      icon: BarChart3,
+      descriptionMm: 'နေ့စွဲအလိုက် အစဉ်လိုက် ငွေလွှဲထုတ်ယူမှု စုစုပေါင်း အစီရင်ခံစာ (နေ့အလိုက် ပေါင်းလဒ်၊ အသေးစိတ် နှင့် Excel/Print Export)',
+      descriptionEn: 'Daily grouped cumulative inward remittance report with chronological ordering and exports',
     },
     {
       id: 'audit_log',
