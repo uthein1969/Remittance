@@ -739,9 +739,25 @@ export const LoginView: React.FC = () => {
                 ? (selectedProvider === 'TURSO' ? tursoUsers : supabaseUsers) 
                 : db.users
               ).map((u) => {
-                const branch = db?.branches?.find(b => b.id === u.branchId);
-                const userCountryCode = u.countryCode || branch?.countryCode || 'MM';
-                const country = db?.countries?.find(c => c.code === userCountryCode);
+                const branch = db?.branches?.find(b => b.id === u.branchId || b.code === u.branchId);
+
+                // Singapore ဘဏ်ခွဲ သို့မဟုတ် အသုံးပြုသူ ဟုတ်/မဟုတ် စစ်ဆေးခြင်း
+                const bId = String(u.branchId || branch?.id || branch?.code || '').toUpperCase();
+                const bCity = String(branch?.city || '').toLowerCase();
+                const uName = String(u.username || '').toLowerCase();
+
+                const isSingapore = 
+                  u.countryCode === 'SG' ||
+                  branch?.countryCode === 'SG' ||
+                  bCity.includes('singapore') ||
+                  bId.includes('SG') ||
+                  bId === 'BR-007' ||
+                  bId === 'BR-008' ||
+                  uName.startsWith('sg-') ||
+                  uName === 'tloo';
+
+                const userCountryCode = isSingapore ? 'SG' : (u.countryCode || branch?.countryCode || 'MM');
+                const country = db?.countries?.find(c => c.code === userCountryCode || (userCountryCode === 'SG' && (c.code === 'SGP' || c.name?.includes('Singapore'))));
                 return (
                   <button
                     key={u.id}
