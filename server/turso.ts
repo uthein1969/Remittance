@@ -368,6 +368,8 @@ export async function syncPushToTurso(data: {
   exchangeRates?: any[];
   customers?: any[];
   auditLogs?: any[];
+  users?: any[];
+  branches?: any[];
 }) {
   const client = initTursoClient();
   await initTursoSchema(client);
@@ -376,8 +378,93 @@ export async function syncPushToTurso(data: {
   let ratesSaved = 0;
   let custSaved = 0;
   let logsSaved = 0;
+  let usersSaved = 0;
+  let branchesSaved = 0;
 
-  // 1. Transactions
+  // 1. Branches (Users များ မထည့်မီ Branch အရင်ရှိရန်)
+  if (data.branches && Array.isArray(data.branches)) {
+    for (const b of data.branches) {
+      if (!b.id && !b.branchCode) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO branches (
+            id, branch_code, country_code, city, phone,
+            name_en, name_mm, manager_name, status, address
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            branch_code=excluded.branch_code,
+            country_code=excluded.country_code,
+            city=excluded.city,
+            phone=excluded.phone,
+            name_en=excluded.name_en,
+            name_mm=excluded.name_mm,
+            manager_name=excluded.manager_name,
+            status=excluded.status,
+            address=excluded.address;`,
+          args: [
+            b.id || `BR-${b.branchCode || Date.now()}`,
+            b.branchCode || b.branch_code || b.id || 'BR-001',
+            b.countryCode || b.country_code || 'MM',
+            b.city || '',
+            b.phone || '',
+            b.nameEn || b.name_en || b.branchName || '',
+            b.nameMm || b.name_mm || '',
+            b.managerName || b.manager_name || '',
+            b.status || 'ACTIVE',
+            b.address || ''
+          ]
+        });
+        branchesSaved++;
+      } catch (bErr: any) {
+        console.warn('Error saving branch to Turso:', b.id, bErr?.message);
+      }
+    }
+  }
+
+  // 2. System Users
+  if (data.users && Array.isArray(data.users)) {
+    for (const u of data.users) {
+      if (!u.id && !u.username) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO system_users (
+            id, username, full_name, role, branch_id,
+            is_active, email, password_hash, phone, status,
+            created_at, last_login
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            username=excluded.username,
+            full_name=excluded.full_name,
+            role=excluded.role,
+            branch_id=excluded.branch_id,
+            is_active=excluded.is_active,
+            email=excluded.email,
+            phone=excluded.phone,
+            status=excluded.status,
+            last_login=excluded.last_login;`,
+          args: [
+            u.id || `USR-${Date.now()}`,
+            u.username || '',
+            u.fullName || u.full_name || '',
+            u.role || 'MAKER',
+            u.branchId || u.branch_id || 'BR-001',
+            u.isActive !== false ? 1 : 0,
+            u.email || '',
+            u.passwordHash || u.password_hash || '',
+            u.phone || '',
+            u.status || 'ACTIVE',
+            u.createdAt || u.created_at || new Date().toISOString(),
+            u.lastLogin || u.last_login || ''
+          ]
+        });
+        usersSaved++;
+      } catch (uErr: any) {
+        console.warn('Error saving user to Turso:', u.id, uErr?.message);
+      }
+    }
+  }
+
+  // 3. Transactions
   if (data.transactions && Array.isArray(data.transactions)) {
     for (const tx of data.transactions) {
       if (!tx.id || !tx.transactionNo) continue;
@@ -484,7 +571,7 @@ export async function syncPushToTurso(data: {
     }
   }
 
-  // 2. Exchange Rates
+  // 4. Exchange Rates
   if (data.exchangeRates && Array.isArray(data.exchangeRates)) {
     for (const rate of data.exchangeRates) {
       if (!rate.id) continue;
@@ -507,7 +594,7 @@ export async function syncPushToTurso(data: {
     }
   }
 
-  // 3. Customers
+  // 5. Customers
   if (data.customers && Array.isArray(data.customers)) {
     for (const c of data.customers) {
       if (!c.id) continue;
@@ -532,7 +619,7 @@ export async function syncPushToTurso(data: {
     }
   }
 
-  // 4. Audit Logs
+  // 6. Audit Logs
   if (data.auditLogs && Array.isArray(data.auditLogs)) {
     for (const log of data.auditLogs) {
       if (!log.id) continue;
@@ -564,6 +651,8 @@ export async function syncPushToTurso(data: {
       exchangeRates: ratesSaved,
       customers: custSaved,
       auditLogs: logsSaved,
+      users: usersSaved,
+      branches: branchesSaved
     },
     syncedAt: new Date().toISOString()
   };
@@ -573,11 +662,13 @@ export async function syncPullFromTurso() {
   const client = initTursoClient();
   await initTursoSchema(client);
 
-  const [txRes, rateRes, custRes, logRes] = await Promise.all([
+  const [txRes, rateRes, custRes, logRes, userRes, branchRes] = await Promise.all([
     client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC;'),
     client.execute('SELECT * FROM exchange_rates ORDER BY updated_at DESC;'),
     client.execute('SELECT * FROM customer_profiles ORDER BY full_name_en ASC;'),
     client.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200;'),
+    client.execute('SELECT * FROM system_users ORDER BY id ASC;'),
+    client.execute('SELECT * FROM branches ORDER BY id ASC;')
   ]);
 
   const transactions = txRes.rows.map((row: any) => ({
@@ -668,6 +759,35 @@ export async function syncPullFromTurso() {
     details: row.details,
   }));
 
+  // 5. System Users
+  const users = userRes.rows.map((row: any) => ({
+    id: String(row.id),
+    username: String(row.username),
+    fullName: String(row.full_name || ''),
+    role: String(row.role || 'MAKER'),
+    branchId: String(row.branch_id || 'BR-001'),
+    isActive: row.is_active !== 0,
+    email: String(row.email || ''),
+    phone: String(row.phone || ''),
+    status: String(row.status || 'ACTIVE'),
+    createdAt: String(row.created_at || ''),
+    lastLogin: String(row.last_login || '')
+  }));
+
+  // 6. Branches
+  const branches = branchRes.rows.map((row: any) => ({
+    id: String(row.id),
+    branchCode: String(row.branch_code || row.id),
+    countryCode: String(row.country_code || 'MM'),
+    city: String(row.city || ''),
+    phone: String(row.phone || ''),
+    nameEn: String(row.name_en || ''),
+    nameMm: String(row.name_mm || ''),
+    managerName: String(row.manager_name || ''),
+    status: String(row.status || 'ACTIVE'),
+    address: String(row.address || '')
+  }));
+
   return {
     success: true,
     data: {
@@ -675,6 +795,8 @@ export async function syncPullFromTurso() {
       exchangeRates,
       customers,
       auditLogs,
+      users,
+      branches
     }
   };
 }
@@ -739,6 +861,54 @@ export async function seedTursoSystemUsers(clientInstance?: Client) {
       branch_id: 'BR-002', 
       is_active: 1, 
       phone: '09-440112233', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-006', 
+      username: 'tloo', 
+      full_name: 'Thein Lwin Oo', 
+      email: 'tloo@remitmyanmar.com', 
+      role: 'ADMIN', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-43095919', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-007', 
+      username: 'sg-maker', 
+      full_name: 'SG Maker', 
+      email: 'sg.maker@remitmyanmar.com', 
+      role: 'MAKER', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-008', 
+      username: 'sg-checker', 
+      full_name: 'SG Checker', 
+      email: 'sg.checker@remitmyanmar.com', 
+      role: 'CHECKER', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-', 
+      status: 'ACTIVE', 
+      password_hash: 'password123' 
+    },
+    { 
+      id: 'USR-009', 
+      username: 'sg-admin', 
+      full_name: 'SG Admin', 
+      email: 'sg.admin@remitmyanmar.com', 
+      role: 'ADMIN', 
+      branch_id: 'BR-001', 
+      is_active: 1, 
+      phone: '09-', 
       status: 'ACTIVE', 
       password_hash: 'password123' 
     }
