@@ -27,7 +27,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const bCode = String(row.code || row.id || '');
       const cityStr = String(row.city || '').toLowerCase();
       const idStr = String(row.id || '').toUpperCase();
-      const countryCode = (cityStr.includes('singapore') || idStr.includes('SG')) ? 'SG' : 'MM';
+      const nameStr = String(row.name_en || '').toLowerCase();
+
+      let countryCode = 'MM';
+      if (cityStr.includes('singapore') || idStr.includes('SG')) {
+        countryCode = 'SG';
+      } else if (cityStr.includes('bangkok') || cityStr.includes('thailand') || idStr.includes('TH') || nameStr.includes('big c')) {
+        countryCode = 'TH';
+      }
 
       return {
         id: String(row.id || bCode),

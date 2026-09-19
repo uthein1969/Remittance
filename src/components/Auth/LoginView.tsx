@@ -31,16 +31,32 @@ import { useRemittance } from '../../lib/store';
 import { User, UserRole } from '../../types';
 import { SUPABASE_SCHEMA_SQL, SUPABASE_DISABLE_RLS_SQL, testSupabaseConnection } from '../../lib/supabase';
 
-// Singapore User သို့မဟုတ် Singapore Branch ဟုတ်/မဟုတ် တိကျစွာ ဆုံးဖြတ်ပေးသော Helper
-export const checkIsSingapore = (user?: Partial<User> | null, branch?: any): boolean => {
+// MM, SG, TH တိကျစွာ ခွဲခြားပေးသော Country Detector Helper
+export const detectUserCountry = (user?: Partial<User> | null, branch?: any): string => {
   const uName = String(user?.username || '').toLowerCase();
   const uCountry = String(user?.countryCode || '').toUpperCase();
   const bId = String(branch?.id || user?.branchId || '').toUpperCase();
   const bCode = String(branch?.code || '').toUpperCase();
   const bCity = String(branch?.city || '').toLowerCase();
+  const bName = String(branch?.nameEn || '').toLowerCase();
   const bCountry = String(branch?.countryCode || '').toUpperCase();
 
-  return (
+  // 1. Thailand (TH) စစ်ဆေးခြင်း
+  if (
+    uCountry === 'TH' ||
+    bCountry === 'TH' ||
+    uName.startsWith('th-') ||
+    bId.includes('TH') ||
+    bCode.startsWith('TH-') ||
+    bCity.includes('bangkok') ||
+    bCity.includes('thailand') ||
+    bName.includes('big c')
+  ) {
+    return 'TH';
+  }
+
+  // 2. Singapore (SG) စစ်ဆေးခြင်း
+  if (
     uCountry === 'SG' ||
     bCountry === 'SG' ||
     uName.startsWith('sg-') ||
@@ -50,9 +66,14 @@ export const checkIsSingapore = (user?: Partial<User> | null, branch?: any): boo
     bId === 'BR-008' ||
     bCode.startsWith('SG-') ||
     bCity.includes('singapore') ||
-    String(branch?.nameEn || '').toLowerCase().includes('china town') ||
-    String(branch?.nameEn || '').toLowerCase().includes('peninsula')
-  );
+    bName.includes('china town') ||
+    bName.includes('peninsula')
+  ) {
+    return 'SG';
+  }
+
+  // 3. Default Myanmar (MM)
+  return 'MM';
 };
 
 export const LoginView: React.FC = () => {
@@ -89,11 +110,7 @@ export const LoginView: React.FC = () => {
 
   const handleCountryChange = (countryCode: string) => {
     setSelectedCountryCode(countryCode);
-    const branchesForCountry = (db?.branches || []).filter(b => {
-      const isSG = checkIsSingapore(null, b);
-      return countryCode === 'SG' ? isSG : !isSG;
-    });
-
+    const branchesForCountry = (db?.branches || []).filter(b => detectUserCountry(null, b) === countryCode);
     if (branchesForCountry.length > 0) {
       if (!branchesForCountry.some(b => b.id === selectedBranchId)) {
         setSelectedBranchId(branchesForCountry[0].id);
@@ -104,8 +121,7 @@ export const LoginView: React.FC = () => {
   const handleBranchChange = (branchId: string) => {
     setSelectedBranchId(branchId);
     const branch = db?.branches?.find(b => b.id === branchId || b.code === branchId);
-    const isSG = checkIsSingapore(null, branch);
-    setSelectedCountryCode(isSG ? 'SG' : 'MM');
+    setSelectedCountryCode(detectUserCountry(null, branch));
   };
 
   // Turso state
@@ -198,21 +214,11 @@ export const LoginView: React.FC = () => {
     setUsernameOrEmail(u.username);
     setPassword(u.password || 'password123');
 
-    // Branch ရှာဖွေခြင်း
     const branch = db?.branches?.find(b => b.id === u.branchId || b.code === u.branchId);
+    const detectedCountry = detectUserCountry(u, branch);
 
-    // Singapore account ဟုတ်/မဟုတ် စစ်ဆေးခြင်း
-    const isSg = checkIsSingapore(u, branch);
-    const detectedCountryCode = isSg ? 'SG' : 'MM';
-
-    // Target Branch ID သတ်မှတ်ခြင်း
-    let targetBranchId = u.branchId;
-    if (!targetBranchId) {
-      targetBranchId = isSg ? 'BR-007' : 'BR-001';
-    }
-
-    setSelectedBranchId(targetBranchId);
-    setSelectedCountryCode(detectedCountryCode);
+    setSelectedBranchId(u.branchId || 'BR-001');
+    setSelectedCountryCode(detectedCountry);
     setErrorMessage(null);
   };
 

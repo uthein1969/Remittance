@@ -98,18 +98,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
 const row: any = userRes.rows[0];
-    const branchIdStr = String(row.branch_id || '');
+    const branchIdStr = String(row.branch_id || '').toUpperCase();
     const usernameStr = String(row.username || '').toLowerCase();
 
-    // Singapore branch (BR-007, BR-008, BR-SG-*) သို့မဟုတ် sg-* user ဖြစ်ပါက SG ဟု တိကျစွာ သတ်မှတ်မည်
-    const isSingapore = 
-      branchIdStr.includes('007') || 
-      branchIdStr.includes('008') || 
-      branchIdStr.includes('SG') || 
-      usernameStr.startsWith('sg-') || 
-      usernameStr === 'tloo';
+    let assignedCountry = 'MM';
+    let countryName = 'Myanmar';
 
-    const assignedCountry = isSingapore ? 'SG' : 'MM';
+    if (
+      usernameStr.startsWith('th-') ||
+      branchIdStr.includes('TH')
+    ) {
+      assignedCountry = 'TH';
+      countryName = 'Thailand';
+    } else if (
+      usernameStr.startsWith('sg-') ||
+      usernameStr === 'tloo' ||
+      branchIdStr.includes('007') ||
+      branchIdStr.includes('008') ||
+      branchIdStr.includes('SG')
+    ) {
+      assignedCountry = 'SG';
+      countryName = 'Singapore';
+    }
 
     const user = {
       id: String(row.id),
@@ -118,10 +128,10 @@ const row: any = userRes.rows[0];
       fullName: String(row.full_name || row.username),
       email: String(row.email || ''),
       role: String(row.role || 'MAKER'),
-      branchId: branchIdStr || (isSingapore ? 'BR-008' : 'BR-001'),
-      branch_id: branchIdStr || (isSingapore ? 'BR-008' : 'BR-001'),
+      branchId: branchIdStr || 'BR-001',
+      branch_id: branchIdStr || 'BR-001',
       countryCode: assignedCountry,
-      country: isSingapore ? 'Singapore' : 'Myanmar',
+      country: countryName,
       country_code: assignedCountry,
       isActive: Boolean(row.is_active ?? true),
       phone: String(row.phone || ''),
