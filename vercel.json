@@ -2,7 +2,11 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|favicon.ico|icon.png|.*\\..*).*)",
+      "source": "/api/turso/:path*",
+      "destination": "/api/turso/:path*"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
