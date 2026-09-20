@@ -260,6 +260,27 @@ CREATE TABLE IF NOT EXISTS purposes (
   requires_doc_proof INTEGER DEFAULT 0,
   max_daily_limit_mmk REAL
 );
+
+CREATE TABLE IF NOT EXISTS operator_profile (
+  id TEXT PRIMARY KEY,
+  company_name_en TEXT,
+  company_name_mm TEXT,
+  license_no TEXT,
+  phone TEXT,
+  hotline TEXT,
+  address_en TEXT,
+  address_mm TEXT,
+  email TEXT,
+  website TEXT,
+  tax_id TEXT,
+  updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT
+);
 `;
 
 export async function initTursoSchema(client?: Client) {
@@ -294,6 +315,35 @@ export async function initTursoSchema(client?: Client) {
     }
   }
 
+  // Auto-migrate exchange_rates columns
+  const rateColumns = [
+    'transfer_rate REAL',
+    'effective_time TEXT',
+    'updated_by TEXT',
+    'note TEXT'
+  ];
+  for (const col of rateColumns) {
+    try {
+      await cli.execute(`ALTER TABLE exchange_rates ADD COLUMN ${col};`);
+    } catch {
+      // Column already exists
+    }
+  }
+
+  // Auto-migrate customer_profiles columns
+  const custColumns = [
+    'passport_number TEXT',
+    'passbook_number TEXT',
+    'notes TEXT'
+  ];
+  for (const col of custColumns) {
+    try {
+      await cli.execute(`ALTER TABLE customer_profiles ADD COLUMN ${col};`);
+    } catch {
+      // Column already exists
+    }
+  }
+
   // Auto-migrate system_users columns if needed
   const userColumns = [
     'email TEXT',
@@ -301,11 +351,38 @@ export async function initTursoSchema(client?: Client) {
     'phone TEXT',
     'status TEXT DEFAULT "ACTIVE"',
     'created_at TEXT',
-    'last_login TEXT'
+    'last_login TEXT',
+    'country_code TEXT DEFAULT "MM"',
+    'default_status_enabled INTEGER DEFAULT 1'
   ];
   for (const col of userColumns) {
     try {
       await cli.execute(`ALTER TABLE system_users ADD COLUMN ${col};`);
+    } catch {
+      // Column already exists
+    }
+  }
+
+  // Auto-migrate branches columns if needed
+  const branchColumns = [
+    'country_code TEXT DEFAULT "MM"'
+  ];
+  for (const col of branchColumns) {
+    try {
+      await cli.execute(`ALTER TABLE branches ADD COLUMN ${col};`);
+    } catch {
+      // Column already exists
+    }
+  }
+
+  // Auto-migrate blacklist columns if needed
+  const blacklistColumns = [
+    'passbook_number TEXT',
+    'note TEXT'
+  ];
+  for (const col of blacklistColumns) {
+    try {
+      await cli.execute(`ALTER TABLE blacklist ADD COLUMN ${col};`);
     } catch {
       // Column already exists
     }
@@ -333,13 +410,24 @@ export async function getTursoStats() {
     // Ensure tables exist
     await initTursoSchema(client);
 
-    const [txCount, custCount, rateCount, logCount, userCount, branchCount] = await Promise.all([
+    const [
+      txCount, custCount, rateCount, logCount,
+      branchCount, userCount, compCount, currCount,
+      countryCount, blCount, purpCount, profCount, settsCount
+    ] = await Promise.all([
       client.execute('SELECT COUNT(*) as cnt FROM remittance_transactions;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
       client.execute('SELECT COUNT(*) as cnt FROM customer_profiles;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
       client.execute('SELECT COUNT(*) as cnt FROM exchange_rates;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
       client.execute('SELECT COUNT(*) as cnt FROM audit_logs;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
-      client.execute('SELECT COUNT(*) as cnt FROM system_users;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
       client.execute('SELECT COUNT(*) as cnt FROM branches;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM system_users;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM companies;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM currencies;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM countries;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM blacklist;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM purposes;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM operator_profile;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
+      client.execute('SELECT COUNT(*) as cnt FROM system_settings;').then(r => Number(r.rows[0]?.cnt || 0)).catch(() => 0),
     ]);
 
     return {
@@ -353,8 +441,15 @@ export async function getTursoStats() {
         customers: custCount,
         exchangeRates: rateCount,
         auditLogs: logCount,
-        users: userCount,
         branches: branchCount,
+        users: userCount,
+        companies: compCount,
+        currencies: currCount,
+        countries: countryCount,
+        blacklist: blCount,
+        purposes: purpCount,
+        operatorProfile: profCount,
+        systemSettings: settsCount,
       }
     };
   } catch (err: any) {
@@ -362,7 +457,11 @@ export async function getTursoStats() {
       connected: false,
       isRemote: config.isRemote,
       error: err?.message || 'Unable to fetch Turso stats',
-      counts: { transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0, users: 0, branches: 0 }
+      counts: {
+        transactions: 0, customers: 0, exchangeRates: 0, auditLogs: 0,
+        branches: 0, users: 0, companies: 0, currencies: 0,
+        countries: 0, blacklist: 0, purposes: 0, operatorProfile: 0, systemSettings: 0
+      }
     };
   }
 }
@@ -372,8 +471,16 @@ export async function syncPushToTurso(data: {
   exchangeRates?: any[];
   customers?: any[];
   auditLogs?: any[];
-  users?: any[];
   branches?: any[];
+  users?: any[];
+  companies?: any[];
+  currencies?: any[];
+  countries?: any[];
+  blacklist?: any[];
+  purposes?: any[];
+  operatorProfile?: any;
+  roleMenuPermissions?: any;
+  defaultStatusConfig?: any;
 }) {
   const client = initTursoClient();
   await initTursoSchema(client);
@@ -382,98 +489,17 @@ export async function syncPushToTurso(data: {
   let ratesSaved = 0;
   let custSaved = 0;
   let logsSaved = 0;
-  let usersSaved = 0;
   let branchesSaved = 0;
+  let usersSaved = 0;
+  let companiesSaved = 0;
+  let currenciesSaved = 0;
+  let countriesSaved = 0;
+  let blacklistSaved = 0;
+  let purposesSaved = 0;
+  let profileSaved = 0;
+  let settingsSaved = 0;
 
-  // 1. Branches (Users များ မထည့်မီ Branch အရင်ရှိရန်)
-  if (data.branches && Array.isArray(data.branches)) {
-    for (const b of data.branches) {
-      const branchCode = b.code || b.branchCode || b.branch_code || b.id;
-      if (!b.id && !branchCode) continue;
-
-      const recordId = b.id && !b.id.startsWith('BR-178') 
-        ? b.id 
-        : (b.code ? `BR-${b.code}` : `BR-${Date.now()}`);
-
-      try {
-        await client.execute({
-          sql: `INSERT INTO branches (
-            id, code, city, phone,
-            name_en, name_mm, manager_name, status, address, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            code=excluded.code,
-            city=excluded.city,
-            phone=excluded.phone,
-            name_en=excluded.name_en,
-            name_mm=excluded.name_mm,
-            manager_name=excluded.manager_name,
-            status=excluded.status,
-            address=excluded.address;`,
-          args: [
-            recordId,
-            branchCode || 'BR-001',
-            b.city || '',
-            b.phone || '',
-            b.nameEn || b.name_en || b.name || b.branchName || '',
-            b.nameMm || b.name_mm || '',
-            b.managerName || b.manager_name || '',
-            b.status || 'ACTIVE',
-            b.address || '',
-            b.createdAt || new Date().toISOString()
-          ]
-        });
-        branchesSaved++;
-      } catch (bErr: any) {
-        console.warn('Error saving branch to Turso:', b.id, bErr?.message);
-      }
-    }
-  }
-
-  // 2. System Users
-  if (data.users && Array.isArray(data.users)) {
-    for (const u of data.users) {
-      if (!u.id && !u.username) continue;
-      try {
-        await client.execute({
-          sql: `INSERT INTO system_users (
-            id, username, full_name, role, branch_id,
-            is_active, email, password_hash, phone, status,
-            created_at, last_login
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            username=excluded.username,
-            full_name=excluded.full_name,
-            role=excluded.role,
-            branch_id=excluded.branch_id,
-            is_active=excluded.is_active,
-            email=excluded.email,
-            phone=excluded.phone,
-            status=excluded.status,
-            last_login=excluded.last_login;`,
-          args: [
-            u.id || `USR-${Date.now()}`,
-            u.username || '',
-            u.fullName || u.full_name || '',
-            u.role || 'MAKER',
-            u.branchId || u.branch_id || 'BR-001',
-            u.isActive !== false ? 1 : 0,
-            u.email || '',
-            u.passwordHash || u.password_hash || '',
-            u.phone || '',
-            u.status || 'ACTIVE',
-            u.createdAt || u.created_at || new Date().toISOString(),
-            u.lastLogin || u.last_login || ''
-          ]
-        });
-        usersSaved++;
-      } catch (uErr: any) {
-        console.warn('Error saving user to Turso:', u.id, uErr?.message);
-      }
-    }
-  }
-
-  // 3. Transactions
+  // 1. Transactions
   if (data.transactions && Array.isArray(data.transactions)) {
     for (const tx of data.transactions) {
       if (!tx.id || !tx.transactionNo) continue;
@@ -580,7 +606,7 @@ export async function syncPushToTurso(data: {
     }
   }
 
-  // 4. Exchange Rates
+  // 2. Exchange Rates
   if (data.exchangeRates && Array.isArray(data.exchangeRates)) {
     for (const rate of data.exchangeRates) {
       if (!rate.id) continue;
@@ -603,7 +629,7 @@ export async function syncPushToTurso(data: {
     }
   }
 
-  // 5. Customers
+  // 3. Customers
   if (data.customers && Array.isArray(data.customers)) {
     for (const c of data.customers) {
       if (!c.id) continue;
@@ -628,7 +654,7 @@ export async function syncPushToTurso(data: {
     }
   }
 
-  // 6. Audit Logs
+  // 4. Audit Logs
   if (data.auditLogs && Array.isArray(data.auditLogs)) {
     for (const log of data.auditLogs) {
       if (!log.id) continue;
@@ -653,6 +679,289 @@ export async function syncPushToTurso(data: {
     }
   }
 
+  // 5. Branches
+  if (data.branches && Array.isArray(data.branches)) {
+    for (const b of data.branches) {
+      if (!b.id) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO branches (
+            id, code, name_en, name_mm, city, phone, address, manager_name, status, country_code, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            code=excluded.code,
+            name_en=excluded.name_en,
+            name_mm=excluded.name_mm,
+            city=excluded.city,
+            phone=excluded.phone,
+            address=excluded.address,
+            manager_name=excluded.manager_name,
+            status=excluded.status,
+            country_code=excluded.country_code;`,
+          args: [
+            b.id, b.code || '', b.nameEn || b.name_en || '', b.nameMm || b.name_mm || '',
+            b.city || '', b.phone || '', b.address || '', b.managerName || b.manager_name || '',
+            b.status || 'ACTIVE', b.countryCode || b.country_code || 'MM', b.createdAt || b.created_at || new Date().toISOString()
+          ]
+        });
+        branchesSaved++;
+      } catch (e: any) {
+        console.warn('Error saving branch to Turso:', b.id, e?.message);
+      }
+    }
+  }
+
+  // 6. Users (System Users)
+  if (data.users && Array.isArray(data.users)) {
+    for (const u of data.users) {
+      if (!u.id) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO system_users (
+            id, username, full_name, email, role, branch_id, is_active, phone, status, password_hash, country_code, created_at, default_status_enabled
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            username=excluded.username,
+            full_name=excluded.full_name,
+            email=excluded.email,
+            role=excluded.role,
+            branch_id=excluded.branch_id,
+            is_active=excluded.is_active,
+            phone=excluded.phone,
+            status=excluded.status,
+            country_code=excluded.country_code,
+            default_status_enabled=excluded.default_status_enabled;`,
+          args: [
+            u.id, u.username || '', u.fullName || u.full_name || '', u.email || '',
+            u.role || 'MAKER', u.branchId || u.branch_id || 'BR-001',
+            u.status === 'INACTIVE' ? 0 : 1, u.phone || '', u.status || 'ACTIVE',
+            u.password || u.password_hash || 'password123', u.countryCode || u.country_code || 'MM',
+            u.createdAt || u.created_at || new Date().toISOString(),
+            u.defaultStatusEnabled !== false ? 1 : 0
+          ]
+        });
+        usersSaved++;
+      } catch (e: any) {
+        console.warn('Error saving user to Turso:', u.id, e?.message);
+      }
+    }
+  }
+
+  // 7. Companies
+  if (data.companies && Array.isArray(data.companies)) {
+    for (const comp of data.companies) {
+      if (!comp.id) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO companies (
+            id, code, name_en, name_mm, country_code, type, swift_code, license_no, phone, email, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            code=excluded.code,
+            name_en=excluded.name_en,
+            name_mm=excluded.name_mm,
+            country_code=excluded.country_code,
+            type=excluded.type,
+            swift_code=excluded.swift_code,
+            license_no=excluded.license_no,
+            phone=excluded.phone,
+            email=excluded.email,
+            status=excluded.status;`,
+          args: [
+            comp.id, comp.code || '', comp.nameEn || comp.name_en || '', comp.nameMm || comp.name_mm || '',
+            comp.countryCode || comp.country_code || 'MM', comp.type || 'BANK', comp.swiftCode || comp.swift_code || '',
+            comp.licenseNo || comp.license_no || '', comp.phone || '', comp.email || '',
+            comp.status || 'ACTIVE', comp.createdAt || comp.created_at || new Date().toISOString()
+          ]
+        });
+        companiesSaved++;
+      } catch (e: any) {
+        console.warn('Error saving company to Turso:', comp.id, e?.message);
+      }
+    }
+  }
+
+  // 8. Currencies
+  if (data.currencies && Array.isArray(data.currencies)) {
+    for (const cur of data.currencies) {
+      if (!cur.id) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO currencies (
+            id, code, name_en, name_mm, symbol, is_base_currency, decimals, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            code=excluded.code,
+            name_en=excluded.name_en,
+            name_mm=excluded.name_mm,
+            symbol=excluded.symbol,
+            is_base_currency=excluded.is_base_currency,
+            decimals=excluded.decimals,
+            status=excluded.status;`,
+          args: [
+            cur.id, cur.code || '', cur.nameEn || cur.name_en || '', cur.nameMm || cur.name_mm || '',
+            cur.symbol || '', cur.isBaseCurrency ? 1 : 0, Number(cur.decimals) || 2, cur.status || 'ACTIVE'
+          ]
+        });
+        currenciesSaved++;
+      } catch (e: any) {
+        console.warn('Error saving currency to Turso:', cur.id, e?.message);
+      }
+    }
+  }
+
+  // 9. Countries
+  if (data.countries && Array.isArray(data.countries)) {
+    for (const cnt of data.countries) {
+      if (!cnt.id) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO countries (
+            id, code, name_en, name_mm, dial_code, flag_emoji, currency_code, is_domestic, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            code=excluded.code,
+            name_en=excluded.name_en,
+            name_mm=excluded.name_mm,
+            dial_code=excluded.dial_code,
+            flag_emoji=excluded.flag_emoji,
+            currency_code=excluded.currency_code,
+            is_domestic=excluded.is_domestic,
+            status=excluded.status;`,
+          args: [
+            cnt.id, cnt.code || '', cnt.nameEn || cnt.name_en || '', cnt.nameMm || cnt.name_mm || '',
+            cnt.dialCode || cnt.dial_code || '', cnt.flagEmoji || cnt.flag_emoji || '',
+            cnt.currencyCode || cnt.currency_code || 'MMK', cnt.isDomestic ? 1 : 0, cnt.status || 'ACTIVE'
+          ]
+        });
+        countriesSaved++;
+      } catch (e: any) {
+        console.warn('Error saving country to Turso:', cnt.id, e?.message);
+      }
+    }
+  }
+
+  // 10. Blacklist
+  if (data.blacklist && Array.isArray(data.blacklist)) {
+    for (const bl of data.blacklist) {
+      if (!bl.id) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO blacklist (
+            id, full_name_en, full_name_mm, nrc_number, passport_number, passbook_number, reason, note, risk_level, added_by, active, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            full_name_en=excluded.full_name_en,
+            full_name_mm=excluded.full_name_mm,
+            nrc_number=excluded.nrc_number,
+            passport_number=excluded.passport_number,
+            passbook_number=excluded.passbook_number,
+            reason=excluded.reason,
+            note=excluded.note,
+            risk_level=excluded.risk_level,
+            added_by=excluded.added_by,
+            active=excluded.active;`,
+          args: [
+            bl.id, bl.fullNameEn || bl.nameEn || '', bl.fullNameMm || bl.nameMm || '',
+            bl.nrcNumber || bl.nrc_number || '', bl.passportNumber || bl.passport_number || '',
+            bl.passbookNumber || bl.passbook_number || '', bl.reason || '', bl.note || '',
+            bl.riskLevel || bl.risk_level || 'HIGH', bl.addedBy || bl.added_by || 'Admin',
+            bl.active !== false ? 1 : 0, bl.createdAt || bl.created_at || new Date().toISOString()
+          ]
+        });
+        blacklistSaved++;
+      } catch (e: any) {
+        console.warn('Error saving blacklist to Turso:', bl.id, e?.message);
+      }
+    }
+  }
+
+  // 11. Purposes
+  if (data.purposes && Array.isArray(data.purposes)) {
+    for (const purp of data.purposes) {
+      if (!purp.id) continue;
+      try {
+        await client.execute({
+          sql: `INSERT INTO purposes (
+            id, code, name_en, name_mm, category, requires_doc_proof, max_daily_limit_mmk
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            code=excluded.code,
+            name_en=excluded.name_en,
+            name_mm=excluded.name_mm,
+            category=excluded.category,
+            requires_doc_proof=excluded.requires_doc_proof,
+            max_daily_limit_mmk=excluded.max_daily_limit_mmk;`,
+          args: [
+            purp.id, purp.code || '', purp.nameEn || purp.name_en || '', purp.nameMm || purp.name_mm || '',
+            purp.category || 'PERSONAL', purp.requiresDocProof ? 1 : 0, Number(purp.maxDailyLimitMMK) || 0
+          ]
+        });
+        purposesSaved++;
+      } catch (e: any) {
+        console.warn('Error saving purpose to Turso:', purp.id, e?.message);
+      }
+    }
+  }
+
+  // 12. Operator Profile
+  if (data.operatorProfile && typeof data.operatorProfile === 'object') {
+    const p = data.operatorProfile;
+    try {
+      await client.execute({
+        sql: `INSERT INTO operator_profile (
+          id, company_name_en, company_name_mm, license_no, phone, hotline, address_en, address_mm, email, website, tax_id, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          company_name_en=excluded.company_name_en,
+          company_name_mm=excluded.company_name_mm,
+          license_no=excluded.license_no,
+          phone=excluded.phone,
+          hotline=excluded.hotline,
+          address_en=excluded.address_en,
+          address_mm=excluded.address_mm,
+          email=excluded.email,
+          website=excluded.website,
+          tax_id=excluded.tax_id,
+          updated_at=excluded.updated_at;`,
+        args: [
+          p.id || 'OP-001', p.companyNameEn || '', p.companyNameMm || '', p.licenseNo || '',
+          p.phone || '', p.hotline || '', p.addressEn || '', p.addressMm || '',
+          p.email || '', p.website || '', p.taxId || '', new Date().toISOString()
+        ]
+      });
+      profileSaved++;
+    } catch (e: any) {
+      console.warn('Error saving operator profile to Turso:', e?.message);
+    }
+  }
+
+  // 13. System Settings
+  if (data.roleMenuPermissions) {
+    try {
+      await client.execute({
+        sql: `INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)
+              ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;`,
+        args: ['role_menu_permissions', JSON.stringify(data.roleMenuPermissions), new Date().toISOString()]
+      });
+      settingsSaved++;
+    } catch (e: any) {
+      console.warn('Error saving roleMenuPermissions to Turso:', e?.message);
+    }
+  }
+  if (data.defaultStatusConfig) {
+    try {
+      await client.execute({
+        sql: `INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)
+              ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;`,
+        args: ['default_status_config', JSON.stringify(data.defaultStatusConfig), new Date().toISOString()]
+      });
+      settingsSaved++;
+    } catch (e: any) {
+      console.warn('Error saving defaultStatusConfig to Turso:', e?.message);
+    }
+  }
+
   return {
     success: true,
     saved: {
@@ -660,8 +969,15 @@ export async function syncPushToTurso(data: {
       exchangeRates: ratesSaved,
       customers: custSaved,
       auditLogs: logsSaved,
+      branches: branchesSaved,
       users: usersSaved,
-      branches: branchesSaved
+      companies: companiesSaved,
+      currencies: currenciesSaved,
+      countries: countriesSaved,
+      blacklist: blacklistSaved,
+      purposes: purposesSaved,
+      operatorProfile: profileSaved,
+      systemSettings: settingsSaved,
     },
     syncedAt: new Date().toISOString()
   };
@@ -671,13 +987,24 @@ export async function syncPullFromTurso() {
   const client = initTursoClient();
   await initTursoSchema(client);
 
-  const [txRes, rateRes, custRes, logRes, userRes, branchRes] = await Promise.all([
-    client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC;'),
-    client.execute('SELECT * FROM exchange_rates ORDER BY updated_at DESC;'),
-    client.execute('SELECT * FROM customer_profiles ORDER BY full_name_en ASC;'),
-    client.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200;'),
-    client.execute('SELECT * FROM system_users ORDER BY id ASC;'),
-    client.execute('SELECT * FROM branches ORDER BY id ASC;')
+  const [
+    txRes, rateRes, custRes, logRes,
+    branchRes, userRes, compRes, currRes,
+    countryRes, blRes, purpRes, profRes, settsRes
+  ] = await Promise.all([
+    client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM exchange_rates ORDER BY updated_at DESC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM customer_profiles ORDER BY full_name_en ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 500;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM branches ORDER BY id ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM system_users ORDER BY id ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM companies ORDER BY id ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM currencies ORDER BY id ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM countries ORDER BY id ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM blacklist ORDER BY id ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM purposes ORDER BY id ASC;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM operator_profile LIMIT 1;').catch(() => ({ rows: [] })),
+    client.execute('SELECT * FROM system_settings;').catch(() => ({ rows: [] })),
   ]);
 
   const transactions = txRes.rows.map((row: any) => ({
@@ -740,6 +1067,10 @@ export async function syncPullFromTurso() {
     centralBankRate: Number(row.central_bank_rate),
     effectiveDate: String(row.effective_date),
     updatedAt: String(row.updated_at),
+    transferRate: Number(row.transfer_rate) || Number(row.sell_rate) || 0,
+    effectiveTime: String(row.effective_time || '09:00'),
+    updatedBy: String(row.updated_by || 'Admin'),
+    note: String(row.note || ''),
   }));
 
   const customers = custRes.rows.map((row: any) => ({
@@ -748,12 +1079,15 @@ export async function syncPullFromTurso() {
     fullNameEn: String(row.full_name_en),
     fullNameMm: String(row.full_name_mm || ''),
     nrcNumber: String(row.nrc_number || ''),
+    passportNumber: String(row.passport_number || row.passbook_number || ''),
+    passbookNumber: String(row.passbook_number || row.passport_number || ''),
     phone: String(row.phone || ''),
     address: String(row.address || ''),
     customerType: String(row.customer_type || 'SENDER'),
     riskRating: String(row.risk_rating || 'LOW'),
     totalTransactions: Number(row.total_transactions) || 0,
     totalVolumeMMK: Number(row.total_volume_mmk) || 0,
+    notes: String(row.notes || ''),
     createdAt: String(row.created_at || ''),
   }));
 
@@ -768,44 +1102,137 @@ export async function syncPullFromTurso() {
     details: row.details,
   }));
 
-  // 5. System Users
-  const users = userRes.rows.map((row: any) => ({
-    id: String(row.id),
-    username: String(row.username),
-    fullName: String(row.full_name || ''),
-    role: String(row.role || 'MAKER'),
-    branchId: String(row.branch_id || 'BR-001'),
-    isActive: row.is_active !== 0,
-    email: String(row.email || ''),
-    phone: String(row.phone || ''),
-    status: String(row.status || 'ACTIVE'),
-    createdAt: String(row.created_at || ''),
-    lastLogin: String(row.last_login || '')
+  const branches = branchRes.rows.map((r: any) => ({
+    id: String(r.id),
+    code: String(r.code),
+    nameEn: String(r.name_en),
+    nameMm: String(r.name_mm || ''),
+    city: String(r.city || ''),
+    phone: String(r.phone || ''),
+    address: String(r.address || ''),
+    managerName: String(r.manager_name || ''),
+    status: (r.status || 'ACTIVE') as 'ACTIVE' | 'INACTIVE',
+    countryCode: String(r.country_code || 'MM'),
+    createdAt: String(r.created_at || ''),
   }));
 
-  // 6. Branches Mapping (city ပေါ်မူတည်၍ Country သတ်မှတ်ခြင်း)
-    const branches = branchRes.rows.map((row: any) => {
-    const branchCode = String(row.code || row.id || '');
-    const cityStr = String(row.city || '').trim().toLowerCase();
-    const idStr = String(row.id || '').toUpperCase();
+  const users = userRes.rows.map((r: any) => ({
+    id: String(r.id),
+    username: String(r.username),
+    fullName: String(r.full_name || ''),
+    email: String(r.email || `${r.username}@remitmyanmar.com`),
+    role: String(r.role || 'MAKER'),
+    branchId: String(r.branch_id || 'BR-001'),
+    countryCode: String(r.country_code || 'MM'),
+    phone: String(r.phone || ''),
+    status: (r.status || (r.is_active === 0 ? 'INACTIVE' : 'ACTIVE')) as 'ACTIVE' | 'INACTIVE',
+    password: String(r.password_hash || 'password123'),
+    createdAt: String(r.created_at || ''),
+    lastLogin: String(r.last_login || ''),
+    defaultStatusEnabled: r.default_status_enabled !== 0,
+  }));
 
-    // city ထဲတွင် 'singapore' ပါဝင်ပါက သို့မဟုတ် ID တွင် 'SG' ပါပါက SG သတ်မှတ်ပြီး ကျန်သည်ကို MM ဟု သတ်မှတ်မည်
-    const countryCode = (cityStr.includes('singapore') || idStr.includes('SG')) ? 'SG' : 'MM';
+  const companies = compRes.rows.map((r: any) => ({
+    id: String(r.id),
+    code: String(r.code),
+    nameEn: String(r.name_en),
+    nameMm: String(r.name_mm || ''),
+    countryCode: String(r.country_code || 'MM'),
+    type: (r.type || 'BANK') as 'BANK' | 'AGENT' | 'FINTECH' | 'MONEY_CHANGER',
+    swiftCode: r.swift_code ? String(r.swift_code) : undefined,
+    licenseNo: String(r.license_no || ''),
+    phone: String(r.phone || ''),
+    email: String(r.email || ''),
+    status: (r.status || 'ACTIVE') as 'ACTIVE' | 'INACTIVE',
+    createdAt: String(r.created_at || ''),
+  }));
 
-    return {
-      id: String(row.id || branchCode),
-      code: branchCode,
-      branchCode: branchCode,
-      countryCode: countryCode, // 'SG' သို့မဟုတ် 'MM'
-      city: String(row.city || ''),
-      phone: String(row.phone || ''),
-      nameEn: String(row.name_en || ''),
-      nameMm: String(row.name_mm || ''),
-      managerName: String(row.manager_name || ''),
-      status: String(row.status || 'ACTIVE'),
-      address: String(row.address || '')
+  const currencies = currRes.rows.map((r: any) => ({
+    id: String(r.id),
+    code: String(r.code),
+    nameEn: String(r.name_en),
+    nameMm: String(r.name_mm || ''),
+    symbol: String(r.symbol || ''),
+    isBaseCurrency: r.is_base_currency === 1,
+    decimals: Number(r.decimals) || 2,
+    status: (r.status || 'ACTIVE') as 'ACTIVE' | 'INACTIVE',
+  }));
+
+  const countries = countryRes.rows.map((r: any) => ({
+    id: String(r.id),
+    code: String(r.code),
+    nameEn: String(r.name_en),
+    nameMm: String(r.name_mm || ''),
+    dialCode: String(r.dial_code || ''),
+    flagEmoji: String(r.flag_emoji || ''),
+    currencyCode: String(r.currency_code || 'MMK'),
+    isDomestic: r.is_domestic === 1,
+    status: (r.status || 'ACTIVE') as 'ACTIVE' | 'INACTIVE',
+  }));
+
+  const blacklist = blRes.rows.map((r: any) => ({
+    id: String(r.id),
+    fullNameEn: String(r.full_name_en),
+    fullNameMm: String(r.full_name_mm || ''),
+    nameEn: String(r.full_name_en),
+    nameMm: String(r.full_name_mm || ''),
+    nrcNumber: String(r.nrc_number || ''),
+    passportNumber: String(r.passport_number || r.passbook_number || ''),
+    passbookNumber: String(r.passbook_number || r.passport_number || ''),
+    reason: String(r.reason || ''),
+    note: String(r.note || ''),
+    riskLevel: (r.risk_level || 'HIGH') as any,
+    addedBy: String(r.added_by || 'Admin'),
+    active: r.active !== 0,
+    createdAt: String(r.created_at || ''),
+  }));
+
+  const purposes = purpRes.rows.map((r: any) => ({
+    id: String(r.id),
+    code: String(r.code),
+    nameEn: String(r.name_en),
+    nameMm: String(r.name_mm || ''),
+    category: (r.category || 'PERSONAL') as any,
+    requiresDocProof: r.requires_doc_proof === 1,
+    maxDailyLimitMMK: r.max_daily_limit_mmk ? Number(r.max_daily_limit_mmk) : undefined,
+  }));
+
+  let operatorProfile: any = undefined;
+  if (profRes.rows && profRes.rows.length > 0) {
+    const pr: any = profRes.rows[0];
+    operatorProfile = {
+      companyNameEn: String(pr.company_name_en || ''),
+      companyNameMm: String(pr.company_name_mm || ''),
+      licenseNo: String(pr.license_no || ''),
+      phone: String(pr.phone || ''),
+      hotline: String(pr.hotline || ''),
+      addressEn: String(pr.address_en || ''),
+      addressMm: String(pr.address_mm || ''),
+      email: String(pr.email || ''),
+      website: pr.website ? String(pr.website) : undefined,
+      taxId: pr.tax_id ? String(pr.tax_id) : undefined,
     };
-  });
+  }
+
+  let roleMenuPermissions: any = undefined;
+  let defaultStatusConfig: any = undefined;
+  if (settsRes.rows && settsRes.rows.length > 0) {
+    for (const row of settsRes.rows as any[]) {
+      if (row.key === 'role_menu_permissions') {
+        try {
+          roleMenuPermissions = JSON.parse(row.value);
+        } catch {
+          // ignore
+        }
+      } else if (row.key === 'default_status_config') {
+        try {
+          defaultStatusConfig = JSON.parse(row.value);
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
 
   return {
     success: true,
@@ -814,8 +1241,16 @@ export async function syncPullFromTurso() {
       exchangeRates,
       customers,
       auditLogs,
+      branches,
       users,
-      branches
+      companies,
+      currencies,
+      countries,
+      blacklist,
+      purposes,
+      operatorProfile,
+      roleMenuPermissions,
+      defaultStatusConfig,
     }
   };
 }
@@ -881,55 +1316,73 @@ export async function seedTursoSystemUsers(clientInstance?: Client) {
       is_active: 1, 
       phone: '09-440112233', 
       status: 'ACTIVE', 
-      password_hash: 'password123' 
+      password_hash: 'password123',
+      country_code: 'MM'
     },
     { 
-      id: 'USR-006', 
-      username: 'tloo', 
-      full_name: 'Thein Lwin Oo', 
-      email: 'tloo@remitmyanmar.com', 
+      id: 'USR-1789831191191', 
+      username: 'th-admin', 
+      full_name: 'Thai Admin (Thailand Operations)', 
+      email: 'th-admin@remit.internal', 
       role: 'ADMIN', 
-      branch_id: 'BR-001', 
+      branch_id: 'BR-1789830806420', 
       is_active: 1, 
-      phone: '09-43095919', 
+      phone: '+66-81-2345678', 
       status: 'ACTIVE', 
-      password_hash: 'password123' 
+      password_hash: 'password123',
+      country_code: 'TH'
     },
     { 
-      id: 'USR-007', 
-      username: 'sg-maker', 
-      full_name: 'SG Maker', 
-      email: 'sg.maker@remitmyanmar.com', 
+      id: 'USR-1789831134773', 
+      username: 'th-maker', 
+      full_name: 'Thai Maker (Bangkok Operator)', 
+      email: 'th-maker@remit.internal', 
       role: 'MAKER', 
-      branch_id: 'BR-001', 
+      branch_id: 'BR-1789830806420', 
       is_active: 1, 
-      phone: '09-', 
+      phone: '+66-81-2345679', 
       status: 'ACTIVE', 
-      password_hash: 'password123' 
+      password_hash: 'password123',
+      country_code: 'TH'
     },
     { 
-      id: 'USR-008', 
-      username: 'sg-checker', 
-      full_name: 'SG Checker', 
-      email: 'sg.checker@remitmyanmar.com', 
+      id: 'USR-1789831165592', 
+      username: 'th-checker', 
+      full_name: 'Thai Checker (Bangkok Approver)', 
+      email: 'th-checker@remit.internal', 
       role: 'CHECKER', 
-      branch_id: 'BR-001', 
+      branch_id: 'BR-1789830806420', 
       is_active: 1, 
-      phone: '09-', 
+      phone: '+66-81-2345680', 
       status: 'ACTIVE', 
-      password_hash: 'password123' 
+      password_hash: 'password123',
+      country_code: 'TH'
     },
     { 
-      id: 'USR-009', 
-      username: 'sg-admin', 
-      full_name: 'SG Admin', 
-      email: 'sg.admin@remitmyanmar.com', 
+      id: 'USR-012', 
+      username: 'sg-admin2', 
+      full_name: 'Admin 2 (Singapore Lead)', 
+      email: 'sg.admin2@remitmyanmar.com', 
       role: 'ADMIN', 
-      branch_id: 'BR-001', 
+      branch_id: 'BR-008', 
       is_active: 1, 
-      phone: '09-', 
+      phone: '+65-6338-0001', 
       status: 'ACTIVE', 
-      password_hash: 'password123' 
+      password_hash: 'password123',
+      country_code: 'SG'
+    },
+    { 
+      id: 'USR-011', 
+      username: 'sg-checker2', 
+      full_name: 'Checker 2 (Singapore Approver)', 
+      email: 'sg.checker2@remitmyanmar.com', 
+      role: 'CHECKER', 
+      branch_id: 'BR-008', 
+      is_active: 1, 
+      phone: '+65-6338-0002', 
+      status: 'ACTIVE', 
+      password_hash: 'password123',
+      country_code: 'SG'
     }
   ];
 
@@ -938,8 +1391,8 @@ export async function seedTursoSystemUsers(clientInstance?: Client) {
     try {
       await client.execute({
         sql: `INSERT INTO system_users (
-          id, username, full_name, email, role, branch_id, is_active, phone, status, password_hash, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          id, username, full_name, email, role, branch_id, is_active, phone, status, password_hash, country_code, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(id) DO UPDATE SET
           username=excluded.username,
           full_name=excluded.full_name,
@@ -949,8 +1402,9 @@ export async function seedTursoSystemUsers(clientInstance?: Client) {
           is_active=excluded.is_active,
           phone=excluded.phone,
           status=excluded.status,
-          password_hash=excluded.password_hash;`,
-        args: [u.id, u.username, u.full_name, u.email, u.role, u.branch_id, u.is_active, u.phone, u.status, u.password_hash]
+          password_hash=excluded.password_hash,
+          country_code=excluded.country_code;`,
+        args: [u.id, u.username, u.full_name, u.email, u.role, u.branch_id, u.is_active, u.phone, u.status, u.password_hash, (u as any).country_code || 'MM']
       });
       inserted++;
     } catch (e: any) {
@@ -966,18 +1420,49 @@ export async function getTursoUsers() {
   await initTursoSchema(client);
 
   const res = await client.execute('SELECT * FROM system_users ORDER BY id ASC;');
-  const users = res.rows.map((r: any) => ({
-    id: String(r.id),
-    username: String(r.username),
-    fullName: String(r.full_name || ''),
-    email: String(r.email || `${r.username}@remitmyanmar.com`),
-    role: String(r.role || 'MAKER'),
-    branchId: String(r.branch_id || 'BR-001'),
-    phone: String(r.phone || ''),
-    status: String(r.status || (r.is_active === 0 ? 'INACTIVE' : 'ACTIVE')),
-    createdAt: String(r.created_at || ''),
-    lastLogin: String(r.last_login || '')
-  }));
+  const users = res.rows.map((r: any) => {
+    let countryCode = String(r.country_code || '').trim().toUpperCase();
+    if (!countryCode || countryCode === 'NULL') {
+      const username = String(r.username || '').toLowerCase();
+      const fullName = String(r.full_name || '').toLowerCase();
+      const branchId = String(r.branch_id || '');
+      if (username.startsWith('th-') || username.includes('thai') || fullName.includes('thai') || branchId.includes('1789830806420')) {
+        countryCode = 'TH';
+      } else if (username.startsWith('sg-') || username.includes('singapore') || fullName.includes('singapore') || branchId === 'BR-007' || branchId === 'BR-008') {
+        countryCode = 'SG';
+      } else if (username.startsWith('my-') || username.includes('malaysia')) {
+        countryCode = 'MY';
+      } else {
+        countryCode = 'MM';
+      }
+    }
+
+    const username = String(r.username || '');
+    let branchId = String(r.branch_id || '');
+    if (!branchId || branchId === 'BR-001') {
+      if (countryCode === 'TH' || username.startsWith('th-')) {
+        branchId = 'BR-1789830806420';
+      } else if (countryCode === 'SG' || username.startsWith('sg-')) {
+        branchId = 'BR-008';
+      } else {
+        branchId = 'BR-001';
+      }
+    }
+
+    return {
+      id: String(r.id),
+      username: username,
+      fullName: String(r.full_name || ''),
+      email: String(r.email || `${r.username}@remitmyanmar.com`),
+      role: String(r.role || 'MAKER'),
+      branchId: branchId,
+      countryCode: countryCode,
+      phone: String(r.phone || ''),
+      status: String(r.status || (r.is_active === 0 ? 'INACTIVE' : 'ACTIVE')),
+      createdAt: String(r.created_at || ''),
+      lastLogin: String(r.last_login || '')
+    };
+  });
 
   return { success: true, users };
 }
@@ -1035,13 +1520,40 @@ export async function loginTursoUser(usernameOrEmail: string, passwordAttempt: s
     // ignore
   }
 
+  let userCountryCode = String(row.country_code || '').trim().toUpperCase();
+  const username = String(row.username || '');
+  const lowerUname = username.toLowerCase();
+  const lowerFull = String(row.full_name || '').toLowerCase();
+  let userBranchId = String(row.branch_id || '');
+
+  if (!userCountryCode || userCountryCode === 'NULL') {
+    if (lowerUname.startsWith('th-') || lowerUname.includes('thai') || lowerFull.includes('thai') || userBranchId.includes('1789830806420')) {
+      userCountryCode = 'TH';
+    } else if (lowerUname.startsWith('sg-') || lowerUname.includes('singapore') || lowerFull.includes('singapore') || userBranchId === 'BR-007' || userBranchId === 'BR-008') {
+      userCountryCode = 'SG';
+    } else if (lowerUname.startsWith('my-') || lowerUname.includes('malaysia')) {
+      userCountryCode = 'MY';
+    } else {
+      userCountryCode = 'MM';
+    }
+  }
+
+  if (!userBranchId || userBranchId === 'BR-001') {
+    if (userCountryCode === 'TH' || lowerUname.startsWith('th-')) {
+      userBranchId = 'BR-1789830806420';
+    } else if (userCountryCode === 'SG' || lowerUname.startsWith('sg-')) {
+      userBranchId = 'BR-008';
+    }
+  }
+
   const user = {
     id: String(row.id),
-    username: String(row.username),
+    username: username,
     fullName: String(row.full_name || ''),
     email: String(row.email || `${row.username}@remitmyanmar.com`),
     role: String(row.role || 'MAKER'),
-    branchId: String(row.branch_id || 'BR-001'),
+    branchId: userBranchId || 'BR-001',
+    countryCode: userCountryCode || 'MM',
     phone: String(row.phone || ''),
     status: 'ACTIVE' as const,
     lastLogin: new Date().toISOString(),
@@ -1053,6 +1565,46 @@ export async function loginTursoUser(usernameOrEmail: string, passwordAttempt: s
     user,
     message: `Logged in successfully with Turso Cloud as ${user.fullName} (${user.role}).`
   };
+}
+
+export async function getTursoBranches() {
+  const client = initTursoClient();
+  await initTursoSchema(client);
+
+  const res = await client.execute('SELECT * FROM branches ORDER BY id ASC;');
+  const branches = res.rows.map((r: any) => {
+    let countryCode = String(r.country_code || '').trim().toUpperCase();
+    const bId = String(r.id || '');
+    const bCode = String(r.code || '').toUpperCase();
+    const bCity = String(r.city || '').toLowerCase();
+    const bName = String(r.name_en || '').toLowerCase();
+
+    if (!countryCode || countryCode === 'NULL') {
+      if (bId.includes('1789830806420') || bCode.startsWith('TH') || bCode.startsWith('BKK') || bCity.includes('bangkok') || bCity.includes('thailand') || bName.includes('bangkok') || bName.includes('thai')) {
+        countryCode = 'TH';
+      } else if (bCode.startsWith('SG') || bCode.startsWith('SIN') || bCity.includes('singapore') || bName.includes('singapore') || bId === 'BR-007' || bId === 'BR-008') {
+        countryCode = 'SG';
+      } else {
+        countryCode = 'MM';
+      }
+    }
+
+    return {
+      id: bId,
+      code: String(r.code || ''),
+      nameEn: String(r.name_en || ''),
+      nameMm: String(r.name_mm || ''),
+      countryCode: countryCode,
+      city: String(r.city || ''),
+      phone: String(r.phone || ''),
+      address: String(r.address || ''),
+      managerName: String(r.manager_name || ''),
+      status: String(r.status || 'ACTIVE'),
+      createdAt: String(r.created_at || '')
+    };
+  });
+
+  return { success: true, branches };
 }
 
 

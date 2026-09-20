@@ -22,16 +22,18 @@ import {
   Maximize2,
   Download,
   Sparkles,
-  Loader2
+  Loader2,
+  Receipt
 } from 'lucide-react';
-import { RemittanceTransaction, PayoutMethod } from '../../types';
+import { RemittanceTransaction, PayoutMethod, RemittanceScope } from '../../types';
 import { useRemittance } from '../../lib/store';
 import { DobDatePicker, formatToDDMMYYYY } from '../Common/DobDatePicker';
 import { DocumentLightboxModal } from '../Common/DocumentLightboxModal';
 import { 
   createSampleMyanmarNrcSvg, 
   createSampleMyanmarNrcBackSvg, 
-  createSampleMyanmarPassportSvg 
+  createSampleMyanmarPassportSvg,
+  createSampleDepositReceiptSvg
 } from '../../lib/sampleDocuments';
 import { extractNrcInfoFromUpload, scanNrcWithAi, ExtractedNrcInfo } from '../../lib/nrcOcrParser';
 import { readFileAsOptimizedDataUrl } from '../../lib/imageCompressor';
@@ -51,7 +53,30 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
   onSuccess,
   onApproveDirectly
 }) => {
-  const { db, language, t, updateTransaction, checkBlacklist } = useRemittance();
+  const { 
+    db, 
+    language, 
+    t, 
+    updateTransaction, 
+    checkBlacklist, 
+    currentUser, 
+    activeBranchId, 
+    activeCountryCode, 
+    defaultStatusConfig 
+  } = useRemittance();
+
+  // Active User / Login Branch & Country context
+  const currentBranch = db.branches.find(b => b.id === (activeBranchId || currentUser.branchId)) || db.branches[0];
+  const currentCountry = db.countries.find(c => c.code === (activeCountryCode || currentUser.countryCode || currentBranch?.countryCode || 'MM'));
+  const userCountryCode = (currentCountry?.code || activeCountryCode || currentUser.countryCode || currentBranch?.countryCode || 'MM').toUpperCase();
+  const isMyanmarLogin = userCountryCode === 'MM';
+
+  // Rule: Default Status Check Box in Admin Setup for User Admin Role:
+  // If User Login by Other Country, Default is International and Passport.
+  // If User Login by Myanmar Country, Default is Domestic and NRC.
+  const isDefaultStatusEnabled = (currentUser?.defaultStatusEnabled !== false) &&
+    (defaultStatusConfig?.autoCountryDefault !== false) &&
+    (defaultStatusConfig?.applyReviewEdit !== false);
 
   const [formData, setFormData] = useState<RemittanceTransaction | null>(null);
   const [editReason, setEditReason] = useState('');
@@ -69,7 +94,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     idNumber?: string;
     sender?: string;
   } | null>(null);
-  const [uploadFeedback, setUploadFeedback] = useState<{ message: string; type: 'nrc-front' | 'nrc-back' | 'passport' } | null>(null);
+  const [uploadFeedback, setUploadFeedback] = useState<{ message: string; type: 'nrc-front' | 'nrc-back' | 'passport' | 'deposit' } | null>(null);
   const [nrcOcrResult, setNrcOcrResult] = useState<ExtractedNrcInfo | null>(null);
   // OCR Checkbox Toggle: Default is unchecked (false), OCR only works when checked (true)
   const [isOcrEnabled, setIsOcrEnabled] = useState<boolean>(false);
@@ -126,7 +151,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     setTimeout(() => setUploadFeedback(null), 5000);
   };
 
-  const handleAttachSample = (type: 'nrc-front' | 'nrc-back' | 'passport') => {
+  const handleAttachSample = (type: 'nrc-front' | 'nrc-back' | 'passport' | 'deposit') => {
     if (!formData) return;
     if (type === 'nrc-front') {
       const nrcUrl = createSampleMyanmarNrcSvg(
@@ -177,6 +202,33 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
         type: 'nrc-back'
       });
       setTimeout(() => setUploadFeedback(null), 5000);
+    } else if (type === 'deposit') {
+      const branch = db.branches.find(b => b.id === formData.sendingBranchId) || db.branches[0];
+      const branchName = branch ? `${branch.nameEn} (${branch.code})` : 'Yangon Main Branch (BR-001)';
+      const amountStr = `${formData.sendAmount.toLocaleString()} ${formData.sourceCurrency}`;
+      const url = createSampleDepositReceiptSvg(
+        formData.senderName || 'U ZAW WIN HTET',
+        formData.senderNrc || '12/BAHANA(N)184920',
+        amountStr,
+        branchName,
+        new Date().toLocaleDateString('en-GB')
+      );
+      const name = `Deposit_Slip_${(formData.senderName || 'Sender').replace(/\s+/g, '_')}_${Date.now().toString().slice(-4)}.svg`;
+      setFormData(prev => prev ? {
+        ...prev,
+        proofDocCategory: 'DEPOSIT_RECEIPT',
+        proofDocumentUrl: url,
+        proofDocumentName: name,
+        proofDocumentType: 'image/svg+xml',
+        proofDocumentSize: '22.5 KB'
+      } : null);
+      setUploadFeedback({
+        message: language === 'my'
+          ? 'ဘဏ်ငွေသွင်းပြေစာ (Deposit Slip Voucher) နမူနာ အောင်မြင်စွာ ပူးတွဲပြီးပါပြီ'
+          : 'Successfully generated and attached Bank Cash Deposit Slip Voucher',
+        type: 'deposit'
+      });
+      setTimeout(() => setUploadFeedback(null), 5000);
     } else {
       const passportUrl = createSampleMyanmarPassportSvg(
         formData.senderPassport || formData.senderPassbook || 'MA-918234',
@@ -206,13 +258,33 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     }
   };
 
-  const handleUploadFile = (e: React.ChangeEvent<HTMLInputElement>, type: 'nrc-front' | 'nrc-back' | 'passport') => {
+  const handleUploadFile = (e: React.ChangeEvent<HTMLInputElement>, type: 'nrc-front' | 'nrc-back' | 'passport' | 'deposit') => {
     const file = e.target.files?.[0];
     if (!file || !formData) return;
 
     readFileAsOptimizedDataUrl(file).then((opt) => {
       const dataUrl = opt.dataUrl;
       const sizeStr = opt.sizeStr;
+
+      if (type === 'deposit') {
+        setFormData(prev => prev ? {
+          ...prev,
+          proofDocCategory: 'DEPOSIT_RECEIPT',
+          proofDocumentUrl: dataUrl,
+          proofDocumentName: opt.name,
+          proofDocumentType: opt.type,
+          proofDocumentSize: sizeStr
+        } : null);
+        setUploadFeedback({
+          message: language === 'my'
+            ? `ဘဏ်ငွေသွင်းပြေစာ ဖိုင်တင်သွင်းပြီးပါပြီ (${opt.name})`
+            : `Successfully attached Deposit Slip Voucher (${opt.name})`,
+          type: 'deposit'
+        });
+        setTimeout(() => setUploadFeedback(null), 5000);
+        return;
+      }
+
       if (type === 'nrc-front' || type === 'nrc-back') {
         setFormData(prev => prev ? {
           ...prev,
@@ -310,7 +382,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     e.target.value = '';
   };
 
-  const handleRemoveDoc = (type: 'nrc-front' | 'nrc-back' | 'passport') => {
+  const handleRemoveDoc = (type: 'nrc-front' | 'nrc-back' | 'passport' | 'deposit') => {
     if (!formData) return;
     if (type === 'nrc-front') {
       setFormData({
@@ -332,6 +404,14 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
         senderNrcBackAttachmentType: undefined,
         senderNrcBackAttachmentSize: undefined
       });
+    } else if (type === 'deposit') {
+      setFormData({
+        ...formData,
+        proofDocumentUrl: undefined,
+        proofDocumentName: undefined,
+        proofDocumentType: undefined,
+        proofDocumentSize: undefined
+      });
     } else {
       setFormData({
         ...formData,
@@ -350,9 +430,16 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
   // Synchronize form when transaction changes or modal opens
   useEffect(() => {
     if (transaction) {
-      // Determine initial ID type:
+      // Determine default Scope & ID type:
+      // If User Login by Other Country, Default is International and Passport.
+      // If User Login by Myanmar Country, Default is Domestic and NRC.
+      const defaultScope: RemittanceScope = isMyanmarLogin ? 'DOMESTIC' : 'INTERNATIONAL';
+      const defaultIdType: 'NRC' | 'PASSPORT' = isMyanmarLogin ? 'NRC' : 'PASSPORT';
+      
+      const effectiveScope: RemittanceScope = transaction.scope || (isDefaultStatusEnabled ? defaultScope : 'INTERNATIONAL');
       const initialIdType: 'NRC' | 'PASSPORT' = transaction.senderIdType || 
-        ((transaction.senderPassport || transaction.senderPassportAttachment) && !transaction.senderNrc && !transaction.senderNrcAttachment ? 'PASSPORT' : 'NRC');
+        (isDefaultStatusEnabled ? defaultIdType : 
+          ((transaction.senderPassport || transaction.senderPassportAttachment) && !transaction.senderNrc && !transaction.senderNrcAttachment ? 'PASSPORT' : 'NRC'));
       
       const frontAttach = transaction.senderNrcFrontAttachment || transaction.senderNrcAttachment;
       const frontName = transaction.senderNrcFrontAttachmentName || transaction.senderNrcAttachmentName;
@@ -373,8 +460,21 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
       const backSize = transaction.senderNrcBackAttachmentSize || 
         (initialIdType === 'NRC' && transaction.senderPassportAttachment ? transaction.senderPassportAttachmentSize : undefined);
 
+      let effectiveRate = transaction.exchangeRate;
+      let effectiveReceive = transaction.receiveAmount;
+      if (transaction.sourceCurrency !== 'MMK' && transaction.targetCurrency === 'MMK' && effectiveRate > 0 && effectiveRate < 1) {
+        effectiveRate = Number((1 / effectiveRate).toFixed(4));
+        effectiveReceive = Number((Number(transaction.sendAmount || 0) * effectiveRate).toFixed(2));
+      } else if (transaction.sourceCurrency === 'MMK' && transaction.targetCurrency !== 'MMK' && effectiveRate > 0 && effectiveRate < 1) {
+        effectiveRate = Number((1 / effectiveRate).toFixed(4));
+        effectiveReceive = Number((Number(transaction.sendAmount || 0) / effectiveRate).toFixed(2));
+      }
+
       setFormData({ 
         ...transaction,
+        exchangeRate: effectiveRate,
+        receiveAmount: effectiveReceive,
+        scope: effectiveScope,
         senderIdType: initialIdType,
         senderNrcAttachment: frontAttach,
         senderNrcAttachmentName: frontName,
@@ -395,7 +495,32 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     } else {
       setFormData(null);
     }
-  }, [transaction, isOpen]);
+  }, [transaction, isOpen, isMyanmarLogin, isDefaultStatusEnabled]);
+
+  const handleApplyDefaultStatus = () => {
+    if (!formData) return;
+    const defaultScope: RemittanceScope = isMyanmarLogin ? 'DOMESTIC' : 'INTERNATIONAL';
+    const defaultIdType: 'NRC' | 'PASSPORT' = isMyanmarLogin ? 'NRC' : 'PASSPORT';
+    setFormData(prev => prev ? {
+      ...prev,
+      scope: defaultScope,
+      senderIdType: defaultIdType,
+      ...(defaultScope === 'DOMESTIC' ? {
+        receiverCountryCode: userCountryCode,
+        targetCurrency: 'MMK'
+      } : {
+        receiverCountryCode: userCountryCode === 'MM' ? 'TH' : 'MM',
+        targetCurrency: userCountryCode === 'MM' ? 'THB' : 'MMK'
+      })
+    } : null);
+    setUploadFeedback({
+      message: language === 'my'
+        ? `မူရင်းသတ်မှတ်ချက်အတိုင်း ပြင်ဆင်ပြီးပါပြီ: ${defaultScope === 'DOMESTIC' ? 'ပြည်တွင်း (Domestic)' : 'နိုင်ငံတကာ (International)'} နှင့် ${defaultIdType === 'NRC' ? 'မှတ်ပုံတင် (NRC)' : 'နိုင်ငံကူးလက်မှတ် (Passport)'}`
+        : `Applied Default Status: ${defaultScope} & ${defaultIdType} (${isMyanmarLogin ? 'Myanmar Login' : 'Other Country Login'})`,
+      type: defaultIdType === 'NRC' ? 'nrc-front' : 'passport'
+    });
+    setTimeout(() => setUploadFeedback(null), 4000);
+  };
 
   if (!isOpen || !formData) return null;
 
@@ -421,9 +546,19 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     serviceFee: number,
     commissionFee: number
   ) => {
-    const receiveAmount = sourceCurrency === 'MMK' && targetCurrency !== 'MMK'
-      ? (exchangeRate > 0 ? Number((sendAmount / exchangeRate).toFixed(2)) : 0)
-      : Number((sendAmount * exchangeRate).toFixed(2));
+    let receiveAmount = 0;
+    const amt = Number(sendAmount || 0);
+    const rate = Number(exchangeRate || 0);
+
+    if (sourceCurrency === targetCurrency) {
+      receiveAmount = amt;
+    } else if (sourceCurrency === 'MMK' && targetCurrency !== 'MMK') {
+      receiveAmount = rate >= 1 ? Number((amt / rate).toFixed(2)) : Number((amt * rate).toFixed(2));
+    } else if (sourceCurrency !== 'MMK' && targetCurrency === 'MMK') {
+      receiveAmount = rate >= 1 ? Number((amt * rate).toFixed(2)) : Number((amt / rate).toFixed(2));
+    } else {
+      receiveAmount = Number((amt * rate).toFixed(2));
+    }
     
     const totalPayable = Number(sendAmount) + Number(serviceFee) + Number(commissionFee);
 
@@ -467,6 +602,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     try {
       const updatedRecord: RemittanceTransaction = {
         ...formData,
+        scope: formData.scope || (isMyanmarLogin ? 'DOMESTIC' : 'INTERNATIONAL'),
         senderIdType: isNrc ? 'NRC' : 'PASSPORT',
         senderNrcAttachment: formData.senderNrcFrontAttachment || formData.senderNrcAttachment,
         senderNrcAttachmentName: formData.senderNrcFrontAttachmentName || formData.senderNrcAttachmentName,
@@ -528,6 +664,7 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
     try {
       const updatedRecord: RemittanceTransaction = {
         ...formData,
+        scope: formData.scope || (isMyanmarLogin ? 'DOMESTIC' : 'INTERNATIONAL'),
         senderIdType: isNrc ? 'NRC' : 'PASSPORT',
         senderNrcAttachment: formData.senderNrcFrontAttachment || formData.senderNrcAttachment,
         senderNrcAttachmentName: formData.senderNrcFrontAttachmentName || formData.senderNrcAttachmentName,
@@ -645,6 +782,67 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
               <span>{language === 'my' ? 'AML အမည်ပျက်စာရင်း စိစစ်ချက် ရှင်းလင်းပါသည် (Clean Record)' : 'AML Screening Passed - Clean Record'}</span>
             </div>
           )}
+
+          {/* Remittance Scope & Country Default Status Control Bar */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-bold">
+                <Globe className="w-4 h-4 text-sky-400" />
+                <span>{language === 'my' ? 'ငွေလွှဲအမျိုးအစား (Scope):' : 'Remittance Scope:'}</span>
+              </div>
+              <div className="inline-flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => prev ? { ...prev, scope: 'INTERNATIONAL' } : null)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    (formData.scope || 'INTERNATIONAL') === 'INTERNATIONAL'
+                      ? 'bg-sky-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {language === 'my' ? 'နိုင်ငံတကာ (International)' : 'International'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => prev ? { ...prev, scope: 'DOMESTIC' } : null)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    formData.scope === 'DOMESTIC'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {language === 'my' ? 'ပြည်တွင်း (Domestic)' : 'Domestic'}
+                </button>
+              </div>
+            </div>
+
+            {/* Default Status Policy Badge & Apply Button */}
+            <div className="flex items-center space-x-2">
+              <div 
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 ${
+                  isMyanmarLogin 
+                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                    : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                }`}
+                title={language === 'my' 
+                  ? `မူရင်းသတ်မှတ်ချက်: ${isMyanmarLogin ? 'မြန်မာ Login ဖြစ်သဖြင့် Domestic & NRC' : 'နိုင်ငံခြား Login ဖြစ်သဖြင့် International & Passport'}`
+                  : `Default Status Policy: ${isMyanmarLogin ? 'Myanmar Login -> Domestic & NRC' : 'Other Country Login -> International & Passport'}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                <span>
+                  {language === 'my' ? 'မူရင်း:' : 'Default:'} {isMyanmarLogin ? 'Domestic & NRC' : 'Intl & Passport'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleApplyDefaultStatus}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] font-semibold border border-slate-700 transition-colors cursor-pointer"
+                title={language === 'my' ? 'နိုင်ငံအလိုက် မူရင်းသတ်မှတ်ချက်အတိုင်း ပြင်ဆင်မည်' : 'Apply country default status'}
+              >
+                ↺ {language === 'my' ? 'မူရင်းသတ်မှတ်မည်' : 'Apply Default'}
+              </button>
+            </div>
+          </div>
 
           {/* Section 1: Sender Information */}
           <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-4">
@@ -1378,6 +1576,125 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                     )}
                   </div>
                 </div>
+
+                {/* ROW 4: BANK DEPOSIT SLIP VOUCHER */}
+                <div className={`p-3 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  formData.proofDocumentUrl ? 'bg-sky-950/20' : 'hover:bg-slate-850/50'
+                }`}>
+                  {/* Words: Document Name & Status */}
+                  <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                    <div className={`p-2 rounded-lg shrink-0 ${
+                      formData.proofDocumentUrl ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      <Receipt className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs text-white">
+                          {language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ (Deposit Slip Voucher)' : 'Bank Deposit Slip Voucher'}
+                        </span>
+                        {formData.proofDocumentUrl ? (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            {language === 'my' ? 'မပူးတွဲရသေးပါ' : 'Not Attached'}
+                          </span>
+                        )}
+                      </div>
+                      {/* File details by words */}
+                      {formData.proofDocumentUrl ? (
+                        <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                          <span className="truncate max-w-[200px] sm:max-w-[280px] text-slate-300" title={formData.proofDocumentName || 'Deposit_Receipt_Voucher.svg'}>
+                            {formData.proofDocumentName || 'Deposit_Receipt_Voucher.svg'}
+                          </span>
+                          <span className="text-sky-400 shrink-0 font-semibold">{formData.proofDocumentSize || '22.5 KB'}</span>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400">
+                          {language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ ဘောက်ချာ ဖိုင် (JPG, PNG, PDF, SVG)' : 'Bank Cash Deposit Receipt or Voucher (JPG, PNG, PDF, SVG)'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons: If Attached show Preview Button */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    {formData.proofDocumentUrl ? (
+                      <>
+                        {/* PREVIEW BUTTON (If Attached) */}
+                        <button
+                          type="button"
+                          id="edit-preview-deposit-slip-btn"
+                          onClick={() => setLightboxDoc({
+                            isOpen: true,
+                            title: language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ (Bank Cash Deposit Receipt)' : 'Bank Cash Deposit Receipt Voucher',
+                            url: formData.proofDocumentUrl,
+                            name: formData.proofDocumentName || 'Deposit_Slip_Voucher.svg',
+                            type: formData.proofDocumentType || 'image/svg+xml',
+                            size: formData.proofDocumentSize || '22.5 KB',
+                            idNumber: formData.senderNrc || 'Cash Deposit',
+                            sender: formData.senderName
+                          })}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                          title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
+                        >
+                          <Eye className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Preview</span>
+                        </button>
+
+                        {/* Replace Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                          <Upload className="w-3 h-3" />
+                          <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf,.svg"
+                            className="hidden"
+                            onChange={(e) => handleUploadFile(e, 'deposit')}
+                          />
+                        </label>
+
+                        {/* Remove Button */}
+                        <button
+                          type="button"
+                          id="edit-remove-deposit-slip-btn"
+                          onClick={() => handleRemoveDoc('deposit')}
+                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/80 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800 transition-colors cursor-pointer"
+                          title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {/* Quick Sample Button */}
+                        <button
+                          type="button"
+                          id="edit-sample-deposit-slip-btn"
+                          onClick={() => handleAttachSample('deposit')}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          <span>+ {language === 'my' ? 'နမူနာတွဲ' : 'Sample'}</span>
+                        </button>
+
+                        {/* Upload Button */}
+                        <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                          <Upload className="w-3 h-3" />
+                          <span>{language === 'my' ? 'ဖိုင်တင်မည်' : 'Upload'}</span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf,.svg"
+                            className="hidden"
+                            onChange={(e) => handleUploadFile(e, 'deposit')}
+                          />
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1584,28 +1901,40 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
 
               {/* Exchange Rate */}
               <div>
-                <label className="block text-slate-400 font-semibold mb-1">
-                  {language === 'my' ? 'ငွေလဲနှုန်း (Exchange Rate) *' : 'Exchange Rate *'}
-                </label>
-                <input
-                  type="number"
-                  step="0.0001"
-                  required
-                  min={0.0001}
-                  value={formData.exchangeRate}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    handleAmountRateChange(
-                      formData.sendAmount,
-                      val,
-                      formData.sourceCurrency,
-                      formData.targetCurrency,
-                      formData.serviceFee,
-                      formData.commissionFee
-                    );
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono font-bold focus:border-emerald-500 focus:outline-none"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-semibold">
+                    {language === 'my' ? 'ငွေလဲနှုန်း (Exchange Rate) *' : 'Exchange Rate *'}
+                  </label>
+                  {formData.sourceCurrency !== formData.targetCurrency && (
+                    <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                      1 {formData.sourceCurrency === 'MMK' ? formData.targetCurrency : formData.sourceCurrency} = {formData.exchangeRate} MMK
+                    </span>
+                  )}
+                </div>
+                <div className="flex rounded-lg overflow-hidden border border-slate-700 focus-within:border-emerald-500">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    required
+                    min={0.0001}
+                    value={formData.exchangeRate}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      handleAmountRateChange(
+                        formData.sendAmount,
+                        val,
+                        formData.sourceCurrency,
+                        formData.targetCurrency,
+                        formData.serviceFee,
+                        formData.commissionFee
+                      );
+                    }}
+                    className="w-full bg-slate-900 px-3 py-2 text-white font-mono font-bold focus:outline-none"
+                  />
+                  <span className="bg-slate-800 px-3 py-2 text-slate-300 font-mono font-bold flex items-center border-l border-slate-700">
+                    {formData.sourceCurrency === formData.targetCurrency ? formData.targetCurrency : 'MMK'}
+                  </span>
+                </div>
               </div>
 
               {/* Receive Amount */}
@@ -1631,22 +1960,27 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                 <label className="block text-slate-400 font-semibold mb-1">
                   {language === 'my' ? 'ဝန်ဆောင်ခ (Service Fee)' : 'Service Fee'}
                 </label>
-                <input
-                  type="number"
-                  value={formData.serviceFee}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    handleAmountRateChange(
-                      formData.sendAmount,
-                      formData.exchangeRate,
-                      formData.sourceCurrency,
-                      formData.targetCurrency,
-                      val,
-                      formData.commissionFee
-                    );
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                />
+                <div className="flex rounded-lg overflow-hidden border border-slate-700 focus-within:border-emerald-500">
+                  <input
+                    type="number"
+                    value={formData.serviceFee}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      handleAmountRateChange(
+                        formData.sendAmount,
+                        formData.exchangeRate,
+                        formData.sourceCurrency,
+                        formData.targetCurrency,
+                        val,
+                        formData.commissionFee
+                      );
+                    }}
+                    className="w-full bg-slate-900 px-3 py-2 text-white font-mono focus:outline-none"
+                  />
+                  <span className="bg-slate-800 px-3 py-2 text-slate-300 font-mono font-bold flex items-center border-l border-slate-700">
+                    {formData.sourceCurrency}
+                  </span>
+                </div>
               </div>
 
               {/* Commission Fee */}
@@ -1654,22 +1988,27 @@ export const EditOutwardModal: React.FC<EditOutwardModalProps> = ({
                 <label className="block text-slate-400 font-semibold mb-1">
                   {language === 'my' ? 'ကော်မရှင်ကြေး (Commission Fee)' : 'Commission Fee'}
                 </label>
-                <input
-                  type="number"
-                  value={formData.commissionFee}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    handleAmountRateChange(
-                      formData.sendAmount,
-                      formData.exchangeRate,
-                      formData.sourceCurrency,
-                      formData.targetCurrency,
-                      formData.serviceFee,
-                      val
-                    );
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                />
+                <div className="flex rounded-lg overflow-hidden border border-slate-700 focus-within:border-emerald-500">
+                  <input
+                    type="number"
+                    value={formData.commissionFee}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      handleAmountRateChange(
+                        formData.sendAmount,
+                        formData.exchangeRate,
+                        formData.sourceCurrency,
+                        formData.targetCurrency,
+                        formData.serviceFee,
+                        val
+                      );
+                    }}
+                    className="w-full bg-slate-900 px-3 py-2 text-white font-mono focus:outline-none"
+                  />
+                  <span className="bg-slate-800 px-3 py-2 text-slate-300 font-mono font-bold flex items-center border-l border-slate-700">
+                    {formData.sourceCurrency}
+                  </span>
+                </div>
               </div>
 
               {/* Total Payable */}

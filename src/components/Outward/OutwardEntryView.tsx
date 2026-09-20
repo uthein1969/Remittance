@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, 
   ShieldAlert, 
@@ -51,10 +51,12 @@ export const OutwardEntryView: React.FC = () => {
     t, 
     checkBlacklist, 
     getExchangeRate, 
+    getCorridorExchangeRate,
     createOutwardRemittance, 
     currentUser,
     activeBranchId,
-    activeCountryCode
+    activeCountryCode,
+    defaultStatusConfig
   } = useRemittance();
 
   // Active User / Login Branch & Country context
@@ -63,14 +65,29 @@ export const OutwardEntryView: React.FC = () => {
   const userCountryCode = (currentCountry?.code || activeCountryCode || currentUser.countryCode || currentBranch?.countryCode || 'MM').toUpperCase();
   const isMyanmarLogin = userCountryCode === 'MM';
 
+  // Rule: Default Status Check Box in Admin Setup for User Admin Role:
+  // If User Login by Other Country, Default is International and Passport.
+  // If User Login by Myanmar Country, Default is Domestic and NRC.
+  const isDefaultStatusEnabled = (currentUser?.defaultStatusEnabled !== false) &&
+    (defaultStatusConfig?.autoCountryDefault !== false) &&
+    (defaultStatusConfig?.applyOutwardEntry !== false);
+
+  const initialScope: RemittanceScope = isDefaultStatusEnabled
+    ? (isMyanmarLogin ? 'DOMESTIC' : 'INTERNATIONAL')
+    : 'INTERNATIONAL';
+
+  const initialIdType: 'NRC' | 'PASSPORT' = isDefaultStatusEnabled
+    ? (isMyanmarLogin ? 'NRC' : 'PASSPORT')
+    : (isMyanmarLogin ? 'NRC' : 'PASSPORT');
+
   // Form State
-  const [scope, setScope] = useState<RemittanceScope>('INTERNATIONAL');
+  const [scope, setScope] = useState<RemittanceScope>(initialScope);
   
   // Sender
   const [senderName, setSenderName] = useState('');
   const [senderNameMm, setSenderNameMm] = useState('');
   // Rule: If User Login by Myanmar Country Default is NRC and Login by other country Default is Passport
-  const [senderIdType, setSenderIdType] = useState<'NRC' | 'PASSPORT'>(() => (isMyanmarLogin ? 'NRC' : 'PASSPORT'));
+  const [senderIdType, setSenderIdType] = useState<'NRC' | 'PASSPORT'>(initialIdType);
   const [senderNrc, setSenderNrc] = useState('');
   const [senderPassport, setSenderPassport] = useState('');
   const [senderPhone, setSenderPhone] = useState('');
@@ -93,15 +110,43 @@ export const OutwardEntryView: React.FC = () => {
   const [receiverPassport, setReceiverPassport] = useState('');
   const [receiverPhone, setReceiverPhone] = useState('');
   const [receiverAddress, setReceiverAddress] = useState('');
-  const [receiverCountryCode, setReceiverCountryCode] = useState('TH');
+  const [receiverCountryCode, setReceiverCountryCode] = useState(() => (initialScope === 'DOMESTIC' ? userCountryCode : (userCountryCode === 'MM' ? 'TH' : 'MM')));
+
+  // Helper for currency-specific default fees
+  const getDefaultFees = (currency: string) => {
+    switch (currency) {
+      case 'THB': return { service: 100, commission: 50 };
+      case 'SGD': return { service: 10, commission: 5 };
+      case 'MYR': return { service: 15, commission: 5 };
+      case 'USD': return { service: 10, commission: 5 };
+      case 'MMK':
+      default: return { service: 15000, commission: 5000 };
+    }
+  };
 
   // Financials
-  const [sourceCurrency, setSourceCurrency] = useState('MMK');
-  const [targetCurrency, setTargetCurrency] = useState('THB');
+  const initialSourceCurr = userCountryCode === 'MM' ? 'MMK' : (userCountryCode === 'TH' ? 'THB' : (userCountryCode === 'SG' ? 'SGD' : (userCountryCode === 'MY' ? 'MYR' : 'MMK')));
+  const initialFees = getDefaultFees(initialSourceCurr);
+  const [sourceCurrency, setSourceCurrency] = useState(initialSourceCurr);
+  const [targetCurrency, setTargetCurrency] = useState(() => (initialScope === 'DOMESTIC' ? initialSourceCurr : (userCountryCode === 'MM' ? 'THB' : 'MMK')));
   const [sendAmount, setSendAmount] = useState<number>(0);
-  const [exchangeRate, setExchangeRate] = useState<number>(134.50);
-  const [serviceFee, setServiceFee] = useState<number>(15000);
-  const [commissionFee, setCommissionFee] = useState<number>(5000);
+  const [exchangeRate, setExchangeRate] = useState<number>(() => {
+    if (initialScope === 'DOMESTIC') return 1;
+    return 134.50;
+  });
+  const [serviceFee, setServiceFee] = useState<number>(initialFees.service);
+  const [commissionFee, setCommissionFee] = useState<number>(initialFees.commission);
+  
+  // Track currency to auto-adjust default fees
+  const prevSourceCurrencyRef = useRef(sourceCurrency);
+  useEffect(() => {
+    if (prevSourceCurrencyRef.current !== sourceCurrency) {
+      prevSourceCurrencyRef.current = sourceCurrency;
+      const fees = getDefaultFees(sourceCurrency);
+      setServiceFee(fees.service);
+      setCommissionFee(fees.commission);
+    }
+  }, [sourceCurrency]);
   
   // Method & Purpose
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod>('CASH_PICKUP');
@@ -117,13 +162,60 @@ export const OutwardEntryView: React.FC = () => {
     }
   }, [activeBranchId]);
 
-  // Sync default sender ID type and country according to user login country:
-  // If User Login by Myanmar Country Default is NRC and Login by other country Default is Passport
+  // Sync default sender ID type and scope according to user login country & admin configuration:
+  // If User Login by Myanmar Country Default is Domestic and NRC; Other Country Default is International and Passport
   useEffect(() => {
-    const defaultType: 'NRC' | 'PASSPORT' = isMyanmarLogin ? 'NRC' : 'PASSPORT';
-    setSenderIdType(defaultType);
+    if (isDefaultStatusEnabled) {
+      const defaultScope: RemittanceScope = isMyanmarLogin ? 'DOMESTIC' : 'INTERNATIONAL';
+      const defaultType: 'NRC' | 'PASSPORT' = isMyanmarLogin ? 'NRC' : 'PASSPORT';
+      setScope(defaultScope);
+      setSenderIdType(defaultType);
+      setSenderCountryCode(userCountryCode);
+      if (defaultScope === 'DOMESTIC') {
+        setReceiverCountryCode(userCountryCode);
+        setSourceCurrency('MMK');
+        setTargetCurrency('MMK');
+      } else {
+        setReceiverCountryCode(userCountryCode === 'MM' ? 'TH' : 'MM');
+        setSourceCurrency(userCountryCode === 'TH' ? 'THB' : (userCountryCode === 'SG' ? 'SGD' : (userCountryCode === 'MY' ? 'MYR' : 'MMK')));
+        setTargetCurrency(userCountryCode === 'MM' ? 'THB' : 'MMK');
+      }
+    }
+  }, [userCountryCode, currentUser.id, isMyanmarLogin, isDefaultStatusEnabled]);
+
+  const handleScopeChange = (newScope: RemittanceScope) => {
+    setScope(newScope);
+    if (newScope === 'DOMESTIC') {
+      setReceiverCountryCode(userCountryCode === 'MM' ? 'MM' : userCountryCode);
+      setTargetCurrency('MMK');
+    } else {
+      setReceiverCountryCode(userCountryCode === 'MM' ? 'TH' : 'MM');
+      setTargetCurrency(userCountryCode === 'MM' ? 'THB' : 'MMK');
+    }
+  };
+
+  const handleApplyCountryDefaultStatus = () => {
+    const defaultScope: RemittanceScope = isMyanmarLogin ? 'DOMESTIC' : 'INTERNATIONAL';
+    const defaultIdType: 'NRC' | 'PASSPORT' = isMyanmarLogin ? 'NRC' : 'PASSPORT';
+    setScope(defaultScope);
+    setSenderIdType(defaultIdType);
     setSenderCountryCode(userCountryCode);
-  }, [userCountryCode, currentUser.id, isMyanmarLogin]);
+    if (defaultScope === 'DOMESTIC') {
+      setReceiverCountryCode(userCountryCode);
+      setSourceCurrency('MMK');
+      setTargetCurrency('MMK');
+    } else {
+      setReceiverCountryCode(userCountryCode === 'MM' ? 'TH' : 'MM');
+      setSourceCurrency(userCountryCode === 'TH' ? 'THB' : (userCountryCode === 'SG' ? 'SGD' : (userCountryCode === 'MY' ? 'MYR' : 'MMK')));
+      setTargetCurrency(userCountryCode === 'MM' ? 'THB' : 'MMK');
+    }
+    setUploadFeedback({
+      message: language === 'my'
+        ? `မူရင်းသတ်မှတ်ချက် အောင်မြင်စွာ သတ်မှတ်ပြီးပါပြီ- ${defaultScope === 'DOMESTIC' ? 'ပြည်တွင်း (Domestic)' : 'နိုင်ငံတကာ (International)'} နှင့် ${defaultIdType === 'NRC' ? 'မှတ်ပုံတင် (NRC)' : 'နိုင်ငံကူးလက်မှတ် (Passport)'}`
+        : `Applied Default Status: ${defaultScope} & ${defaultIdType} (${isMyanmarLogin ? 'Myanmar Login' : 'Other Country Login'})`
+    });
+    setTimeout(() => setUploadFeedback(null), 4000);
+  };
   const [senderNote, setSenderNote] = useState('');
 
   // Transaction Date & Time (User Request #1: Form အပေါ်ပိုင်းမှာ Date Time ဖော်ပြရန်)
@@ -185,26 +277,37 @@ export const OutwardEntryView: React.FC = () => {
   const [createdTx, setCreatedTx] = useState<RemittanceTransaction | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Recalculate exchange rate when currencies change
+  // Recalculate exchange rate when currencies or scope change
   useEffect(() => {
-    const rate = getExchangeRate(targetCurrency, sourceCurrency);
-    setExchangeRate(rate);
-  }, [sourceCurrency, targetCurrency, getExchangeRate]);
+    if (scope === 'DOMESTIC' || sourceCurrency === targetCurrency) {
+      setExchangeRate(1);
+      return;
+    }
+
+    const rate = getCorridorExchangeRate(sourceCurrency, targetCurrency);
+    setExchangeRate(rate > 0 ? rate : 134.50);
+  }, [scope, sourceCurrency, targetCurrency, getCorridorExchangeRate]);
 
   // Adjust default country and currency when scope changes
   useEffect(() => {
     if (scope === 'DOMESTIC') {
-      setReceiverCountryCode('MM');
-      setTargetCurrency('MMK');
-      setSourceCurrency('MMK');
+      const domesticCur = userCountryCode === 'MM' ? 'MMK' : (userCountryCode === 'TH' ? 'THB' : (userCountryCode === 'SG' ? 'SGD' : (userCountryCode === 'MY' ? 'MYR' : 'MMK')));
+      setReceiverCountryCode(userCountryCode === 'MM' ? 'MM' : userCountryCode);
+      setTargetCurrency(domesticCur);
+      setSourceCurrency(domesticCur);
       setExchangeRate(1);
     } else {
-      if (receiverCountryCode === 'MM') {
+      if (userCountryCode === 'MM') {
         setReceiverCountryCode('TH');
+        setSourceCurrency('MMK');
         setTargetCurrency('THB');
+      } else {
+        setReceiverCountryCode('MM');
+        setSourceCurrency(userCountryCode === 'TH' ? 'THB' : (userCountryCode === 'SG' ? 'SGD' : (userCountryCode === 'MY' ? 'MYR' : 'USD')));
+        setTargetCurrency('MMK');
       }
     }
-  }, [scope]);
+  }, [scope, userCountryCode]);
 
   // Real-time screening on sender NRC / Passport / Name
   useEffect(() => {
@@ -219,9 +322,41 @@ export const OutwardEntryView: React.FC = () => {
   }, [receiverNrc, receiverPassport, receiverName, checkBlacklist]);
 
   // Calculations
-  const calculatedReceiveAmount = sourceCurrency === 'MMK' && targetCurrency !== 'MMK'
-    ? (exchangeRate > 0 ? Number((sendAmount / exchangeRate).toFixed(2)) : 0)
-    : Number((sendAmount * exchangeRate).toFixed(2));
+  const calculatedReceiveAmount = (() => {
+    const amt = Number(sendAmount || 0);
+    const rate = Number(exchangeRate || 0);
+    if (amt <= 0 || rate <= 0) return 0;
+
+    if (sourceCurrency === targetCurrency) {
+      return Number(amt.toFixed(2));
+    }
+
+    if (sourceCurrency === 'MMK' && targetCurrency !== 'MMK') {
+      // MMK to foreign (e.g. MMK to THB):
+      // Rate is quoted in MMK per 1 foreign currency unit (e.g. 134.50 MMK per THB)
+      // So receiveAmount in THB = SendAmount / Rate
+      if (rate >= 1) {
+        return Number((amt / rate).toFixed(2));
+      } else {
+        return Number((amt * rate).toFixed(2));
+      }
+    }
+
+    if (sourceCurrency !== 'MMK' && targetCurrency === 'MMK') {
+      // Foreign to MMK (e.g. THB to MMK):
+      // Rate is quoted in MMK per 1 foreign currency unit (e.g. 134.50 MMK per THB)
+      // So receiveAmount in MMK = SendAmount * Rate
+      if (rate >= 1) {
+        return Number((amt * rate).toFixed(2));
+      } else {
+        // Defensive: if reciprocal (e.g. 0.007547) was somehow entered, invert to proper MMK value
+        return Number((amt / rate).toFixed(2));
+      }
+    }
+
+    // Cross-currency
+    return Number((amt * rate).toFixed(2));
+  })();
 
   const totalPayableAmount = Number(sendAmount) + Number(serviceFee) + Number(commissionFee);
 
@@ -777,29 +912,58 @@ export const OutwardEntryView: React.FC = () => {
               </strong>
             </div>
 
-            <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
-              <button
-                type="button"
-                onClick={() => setScope('INTERNATIONAL')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  scope === 'INTERNATIONAL'
-                    ? 'bg-sky-600 text-white shadow'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {t.international}
-              </button>
-              <button
-                type="button"
-                onClick={() => setScope('DOMESTIC')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  scope === 'DOMESTIC'
-                    ? 'bg-sky-600 text-white shadow'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                {t.domestic}
-              </button>
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => handleScopeChange('INTERNATIONAL')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    scope === 'INTERNATIONAL'
+                      ? 'bg-sky-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {t.international}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleScopeChange('DOMESTIC')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    scope === 'DOMESTIC'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {t.domestic}
+                </button>
+              </div>
+
+              {/* Default Status Badge & Reset Button */}
+              <div className="hidden sm:flex items-center space-x-1.5">
+                <div 
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border flex items-center gap-1.5 ${
+                    isMyanmarLogin 
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      : 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                  }`}
+                  title={language === 'my' 
+                    ? `မူရင်းသတ်မှတ်ချက်: ${isMyanmarLogin ? 'မြန်မာ Login ဖြစ်သဖြင့် Domestic & NRC' : 'နိုင်ငံခြား Login ဖြစ်သဖြင့် International & Passport'}`
+                    : `Default Status Policy: ${isMyanmarLogin ? 'Myanmar Login -> Domestic & NRC' : 'Other Country Login -> International & Passport'}`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                  <span>
+                    {language === 'my' ? 'မူရင်း:' : 'Default:'} {isMyanmarLogin ? 'Domestic & NRC' : 'Intl & Passport'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyCountryDefaultStatus}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-semibold border border-slate-700 transition-colors cursor-pointer"
+                  title={language === 'my' ? 'မူရင်းသတ်မှတ်ချက်သို့ ပြန်ထားမည်' : 'Reset to country default status'}
+                >
+                  ↺ Reset
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1881,7 +2045,14 @@ export const OutwardEntryView: React.FC = () => {
 
             {/* Exchange Rate */}
             <div>
-              <label className="block text-slate-400 mb-1 font-medium">{t.exchangeRate}</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-400 font-medium">{t.exchangeRate}</label>
+                {sourceCurrency !== targetCurrency && (
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                    1 {sourceCurrency === 'MMK' ? targetCurrency : sourceCurrency} = {exchangeRate.toLocaleString()} MMK
+                  </span>
+                )}
+              </div>
               <div className="relative">
                 <input
                   type="number"
@@ -1890,7 +2061,9 @@ export const OutwardEntryView: React.FC = () => {
                   onChange={(e) => setExchangeRate(Number(e.target.value))}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-emerald-400 font-mono font-bold text-sm focus:border-sky-500 focus:outline-none"
                 />
-                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">MMK</span>
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">
+                  {sourceCurrency === targetCurrency ? targetCurrency : 'MMK'}
+                </span>
               </div>
             </div>
           </div>
@@ -1912,7 +2085,7 @@ export const OutwardEntryView: React.FC = () => {
                   onFocus={(e) => e.target.select()}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono font-bold text-sm focus:border-sky-500 focus:outline-none"
                 />
-                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">MMK</span>
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">{sourceCurrency}</span>
               </div>
             </div>
 
@@ -1931,33 +2104,41 @@ export const OutwardEntryView: React.FC = () => {
                   onFocus={(e) => e.target.select()}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white font-mono font-bold text-sm focus:border-sky-500 focus:outline-none"
                 />
-                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">MMK</span>
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">{sourceCurrency}</span>
               </div>
             </div>
 
             {/* Quick Presets / Information */}
-            <div className="sm:col-span-2 flex items-center gap-2 pt-5">
+            <div className="sm:col-span-2 flex flex-wrap items-center gap-2 pt-5">
               <span className="text-[11px] text-slate-400">{language === 'my' ? 'အမြန်ပြင်ဆင်ရန်:' : 'Presets:'}</span>
               <button
                 type="button"
                 onClick={() => { setServiceFee(0); setCommissionFee(0); }}
                 className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
               >
-                0 MMK (အခမဲ့)
+                0 {sourceCurrency} ({language === 'my' ? 'အခမဲ့' : 'Free'})
               </button>
               <button
                 type="button"
-                onClick={() => { setServiceFee(15000); setCommissionFee(5000); }}
+                onClick={() => {
+                  const fees = getDefaultFees(sourceCurrency);
+                  setServiceFee(fees.service);
+                  setCommissionFee(fees.commission);
+                }}
                 className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
               >
-                15,000 / 5,000 MMK
+                {sourceCurrency === 'MMK' ? '15,000 / 5,000 MMK' : sourceCurrency === 'THB' ? '100 / 50 THB' : `${getDefaultFees(sourceCurrency).service} / ${getDefaultFees(sourceCurrency).commission} ${sourceCurrency}`}
               </button>
               <button
                 type="button"
-                onClick={() => { setServiceFee(10000); setCommissionFee(0); }}
+                onClick={() => {
+                  const fees = getDefaultFees(sourceCurrency);
+                  setServiceFee(fees.service + fees.commission);
+                  setCommissionFee(0);
+                }}
                 className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
               >
-                10,000 MMK
+                {sourceCurrency === 'MMK' ? '10,000 MMK' : sourceCurrency === 'THB' ? '150 THB' : `${getDefaultFees(sourceCurrency).service + getDefaultFees(sourceCurrency).commission} ${sourceCurrency}`}
               </button>
             </div>
           </div>
@@ -1974,15 +2155,15 @@ export const OutwardEntryView: React.FC = () => {
             <div className="border-r border-slate-800 pr-4">
               <div className="flex justify-between items-center text-xs text-slate-400">
                 <span>{t.serviceFee}:</span>
-                <span className="font-mono text-white font-semibold">{serviceFee.toLocaleString()} MMK</span>
+                <span className="font-mono text-white font-semibold">{serviceFee.toLocaleString()} {sourceCurrency}</span>
               </div>
               <div className="flex justify-between items-center text-xs text-slate-400 mt-1">
                 <span>{t.commissionFee}:</span>
-                <span className="font-mono text-white font-semibold">{commissionFee.toLocaleString()} MMK</span>
+                <span className="font-mono text-white font-semibold">{commissionFee.toLocaleString()} {sourceCurrency}</span>
               </div>
               <div className="flex justify-between items-center text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800">
                 <span>{language === 'my' ? 'အခကြေးငွေ စုစုပေါင်း' : 'Total Fees'}:</span>
-                <span className="font-mono text-sky-400 font-bold">{(serviceFee + commissionFee).toLocaleString()} MMK</span>
+                <span className="font-mono text-sky-400 font-bold">{(serviceFee + commissionFee).toLocaleString()} {sourceCurrency}</span>
               </div>
             </div>
 
@@ -2161,22 +2342,37 @@ export const OutwardEntryView: React.FC = () => {
                   </div>
 
                   {depositReceiptDoc?.url ? (
-                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
-                          <Receipt className="w-4 h-4 text-sky-400" />
-                          <span>{language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ ဘောက်ချာ' : 'Bank Cash Deposit Receipt Voucher'}</span>
-                        </span>
-                        <span className="text-[10px] bg-sky-500/20 text-sky-300 font-bold px-2 py-0.5 rounded-full">
-                          ✓ {language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}
-                        </span>
-                      </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/80 overflow-hidden">
+                      <div className="p-3 bg-sky-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        {/* Words: Document Name, Details & Status */}
+                        <div className="flex items-start sm:items-center space-x-3 min-w-0">
+                          <div className="p-2 rounded-lg shrink-0 bg-sky-500/20 text-sky-400">
+                            <Receipt className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-bold text-xs text-white">
+                                {language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ ဘောက်ချာ' : 'Bank Cash Deposit Receipt Voucher'}
+                              </span>
+                              <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-sky-300 bg-sky-500/20 px-1.5 py-0.5 rounded border border-sky-500/30">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>{language === 'my' ? 'ပူးတွဲပြီး' : 'Attached'}</span>
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400">
+                              <span className="truncate max-w-[200px] sm:max-w-[320px] text-slate-300" title={depositReceiptDoc.name}>
+                                {depositReceiptDoc.name || 'Deposit_Receipt_Voucher.svg'}
+                              </span>
+                              <span className="text-sky-400 shrink-0 font-semibold">{depositReceiptDoc.size || '22.5 KB'}</span>
+                            </div>
+                          </div>
+                        </div>
 
-                      <div className="relative group rounded-xl overflow-hidden border border-slate-700 bg-slate-950 max-h-56 flex items-center justify-center">
-                        <img src={depositReceiptDoc.url} alt="Deposit Slip Voucher" className="w-full h-auto object-contain" />
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 backdrop-blur-[2px]">
+                        {/* Action Buttons: Preview, Replace, Remove */}
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                           <button
                             type="button"
+                            id="preview-deposit-slip-btn"
                             onClick={() => openLightbox({
                               title: language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ (Bank Cash Deposit Receipt)' : 'Bank Cash Deposit Receipt Voucher',
                               url: depositReceiptDoc.url,
@@ -2184,55 +2380,33 @@ export const OutwardEntryView: React.FC = () => {
                               size: depositReceiptDoc.size,
                               idNumber: senderNrc || 'Cash Deposit'
                             })}
-                            className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-700 cursor-pointer"
-                            title="Enlarge"
+                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer hover:scale-[1.02]"
+                            title={language === 'my' ? 'အသေးစိတ် ကြည့်ရှုရန်' : 'Preview Attached Document'}
                           >
-                            <Maximize2 className="w-4 h-4 text-sky-400" />
+                            <Eye className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Preview</span>
+                          </button>
+
+                          <label className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs">
+                            <Upload className="w-3 h-3" />
+                            <span>{language === 'my' ? 'အစားထိုး' : 'Replace'}</span>
+                            <input
+                              type="file"
+                              accept="image/*,.pdf,.svg"
+                              className="hidden"
+                              onChange={(e) => handleUploadFile(e, 'deposit')}
+                            />
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDoc('deposit')}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 cursor-pointer transition-colors"
+                            title={language === 'my' ? 'ပယ်ဖျက်မည်' : 'Remove Attachment'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span className="truncate max-w-[280px] font-mono">{depositReceiptDoc.name}</span>
-                        <span className="text-sky-400 font-mono font-semibold">{depositReceiptDoc.size}</span>
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="flex items-center space-x-2 pt-2 border-t border-slate-800">
-                        <button
-                          type="button"
-                          onClick={() => openLightbox({
-                            title: language === 'my' ? 'ဘဏ်ငွေသွင်းပြေစာ (Bank Cash Deposit Receipt)' : 'Bank Cash Deposit Receipt Voucher',
-                            url: depositReceiptDoc.url,
-                            name: depositReceiptDoc.name,
-                            size: depositReceiptDoc.size,
-                            idNumber: senderNrc || 'Cash Deposit'
-                          })}
-                          className="flex-1 inline-flex items-center justify-center space-x-1.5 py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>{language === 'my' ? 'အသေးစိတ် ကြည့်ရှုမည်' : 'View / Enlarge Voucher'}</span>
-                        </button>
-
-                        <label className="flex-1 inline-flex items-center justify-center space-x-1.5 py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold cursor-pointer transition-colors shadow-sm">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>{language === 'my' ? 'ပုံအသစ် အစားထိုးတင်' : 'Replace Picture'}</span>
-                          <input
-                            type="file"
-                            accept="image/*,.pdf,.svg"
-                            className="hidden"
-                            onChange={(e) => handleUploadFile(e, 'deposit')}
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveDoc('deposit')}
-                          className="p-2 rounded-lg bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-700 cursor-pointer transition-colors"
-                          title="Remove"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                       </div>
                     </div>
                   ) : (

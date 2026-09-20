@@ -693,12 +693,12 @@ export function generateVoucherHtml({
         </tr>
         <tr>
           <td>${language === 'my' ? 'ငွေလွှဲ ဝန်ဆောင်ခ (Service Fee)' : 'Remittance Service Fee'}:</td>
-          <td class="val">${fmtNum(feeAmt)} MMK</td>
+          <td class="val">${fmtNum(feeAmt)} ${sourceCur}</td>
         </tr>
         ${commAmt > 0 ? `
         <tr class="row-alt">
           <td>${language === 'my' ? 'မိတ်ဖက် ကော်မရှင်ခ (Partner Commission)' : 'Partner Commission'}:</td>
-          <td class="val">${fmtNum(commAmt)} MMK</td>
+          <td class="val">${fmtNum(commAmt)} ${sourceCur}</td>
         </tr>` : ''}
         <tr class="total-row">
           <td>${language === 'my' ? 'လက်ခံရရှိငွေ စုစုပေါင်း (Total Payout / Receive Amount)' : 'Total Payout / Receive Amount'}:</td>

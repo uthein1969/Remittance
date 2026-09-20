@@ -15,6 +15,7 @@ import {
   getTursoUsers,
   loginTursoUser,
   seedTursoSystemUsers,
+  getTursoBranches,
   TURSO_SCHEMA_SQL 
 } from './server/turso.js';
 
@@ -124,6 +125,15 @@ app.get('/api/turso/users', async (req, res) => {
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error?.message || 'Failed to fetch Turso users' });
+  }
+});
+
+app.get('/api/turso/branches', async (req, res) => {
+  try {
+    const result = await getTursoBranches();
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to fetch Turso branches' });
   }
 });
 

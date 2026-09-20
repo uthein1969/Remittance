@@ -31,42 +31,6 @@ import { useRemittance } from '../../lib/store';
 import { User, UserRole } from '../../types';
 import { SUPABASE_SCHEMA_SQL, SUPABASE_DISABLE_RLS_SQL, testSupabaseConnection } from '../../lib/supabase';
 
-// မည်သည့်နိုင်ငံမဆို Data ထဲရှိ countryCode ကိုသာ တိုက်ရိုက်ယူပြီး Fallback အနေဖြင့် အလိုအလျောက် ခွဲခြားပေးမည်
-export const detectUserCountry = (user?: Partial<User> | null, branch?: any): string => {
-  const explicitCountry = user?.countryCode || branch?.countryCode || branch?.country_code;
-  if (explicitCountry) return String(explicitCountry).toUpperCase();
-
-  const bCity = String(branch?.city || '').toLowerCase();
-  const bId = String(branch?.id || user?.branchId || '').toUpperCase();
-  const bName = String(branch?.nameEn || '').toLowerCase();
-  const uName = String(user?.username || '').toLowerCase();
-
-  if (
-    uName.startsWith('th-') ||
-    bId.includes('TH') ||
-    bCity.includes('bangkok') ||
-    bCity.includes('thailand') ||
-    bName.includes('big c')
-  ) {
-    return 'TH';
-  }
-
-  if (
-    uName.startsWith('sg-') ||
-    uName === 'tloo' ||
-    bId.includes('SG') ||
-    bId === 'BR-007' ||
-    bId === 'BR-008' ||
-    bCity.includes('singapore') ||
-    bName.includes('china town') ||
-    bName.includes('peninsula')
-  ) {
-    return 'SG';
-  }
-
-  return 'MM';
-};
-
 export const LoginView: React.FC = () => {
   const { 
     db, 
@@ -78,6 +42,7 @@ export const LoginView: React.FC = () => {
     updateSupabaseConfig,
     loginWithTurso,
     fetchTursoUsers,
+    fetchTursoBranches,
     seedUsersToTurso,
     syncAllLocalToTurso,
     isTursoConnected,
@@ -101,18 +66,53 @@ export const LoginView: React.FC = () => {
 
   const handleCountryChange = (countryCode: string) => {
     setSelectedCountryCode(countryCode);
-    const branchesForCountry = (db?.branches || []).filter(b => detectUserCountry(null, b) === countryCode);
+    const branchesForCountry = (db?.branches || []).filter(b => b.countryCode === countryCode);
     if (branchesForCountry.length > 0) {
-      if (!branchesForCountry.some(b => b.id === selectedBranchId)) {
-        setSelectedBranchId(branchesForCountry[0].id);
-      }
+      setSelectedBranchId(branchesForCountry[0].id);
     }
   };
 
   const handleBranchChange = (branchId: string) => {
     setSelectedBranchId(branchId);
-    const branch = db?.branches?.find(b => b.id === branchId || b.code === branchId);
-    setSelectedCountryCode(detectUserCountry(null, branch));
+    const branch = db?.branches?.find(b => b.id === branchId);
+    if (branch && branch.countryCode) {
+      setSelectedCountryCode(branch.countryCode);
+    }
+  };
+
+  // Auto-detect country and branch if user types username
+  const handleUsernameChange = (val: string) => {
+    setUsernameOrEmail(val);
+    const trimmed = val.trim().toLowerCase();
+    if (!trimmed) return;
+
+    const allUsers = [...tursoUsers, ...supabaseUsers, ...(db?.users || [])];
+    const matched = allUsers.find(u => u.username.toLowerCase() === trimmed || u.email?.toLowerCase() === trimmed);
+    if (matched) {
+      let country = matched.countryCode;
+      let branchId = matched.branchId;
+      const lowerU = matched.username.toLowerCase();
+      if (!country || country === 'MM') {
+        if (lowerU.startsWith('th-') || lowerU.includes('thai')) country = 'TH';
+        else if (lowerU.startsWith('sg-') || lowerU.includes('singapore')) country = 'SG';
+      }
+      if (!branchId || branchId === 'BR-001') {
+        if (country === 'TH' || lowerU.startsWith('th-')) branchId = 'BR-1789830806420';
+        else if (country === 'SG' || lowerU.startsWith('sg-')) branchId = 'BR-008';
+      }
+      const b = db?.branches?.find(br => br.id === branchId);
+      if (b?.countryCode) country = b.countryCode;
+      if (country) setSelectedCountryCode(country);
+      if (branchId) setSelectedBranchId(branchId);
+    } else if (trimmed.startsWith('th-') || trimmed.includes('thai')) {
+      setSelectedCountryCode('TH');
+      const thBranch = db?.branches?.find(b => b.countryCode === 'TH');
+      if (thBranch) setSelectedBranchId(thBranch.id);
+    } else if (trimmed.startsWith('sg-') || trimmed.includes('singapore')) {
+      setSelectedCountryCode('SG');
+      const sgBranch = db?.branches?.find(b => b.countryCode === 'SG');
+      if (sgBranch) setSelectedBranchId(sgBranch.id);
+    }
   };
 
   // Turso state
@@ -142,6 +142,7 @@ export const LoginView: React.FC = () => {
       if (res.success && res.users && res.users.length > 0) {
         setTursoUsers(res.users);
       } else {
+        // Fallback to local system users if remote table not seeded yet
         setTursoUsers(db?.users || []);
       }
     } catch {
@@ -164,6 +165,7 @@ export const LoginView: React.FC = () => {
 
   useEffect(() => {
     loadTursoUsers();
+    fetchTursoBranches();
     checkTursoStatus();
   }, []);
 
@@ -179,16 +181,70 @@ export const LoginView: React.FC = () => {
     setSuccessMessage(null);
     setLoading(true);
 
+    let effectiveCountry = selectedCountryCode;
+    let effectiveBranch = selectedBranchId;
+    const trimmedU = usernameOrEmail.trim().toLowerCase();
+    const allUsers = [...tursoUsers, ...supabaseUsers, ...(db?.users || [])];
+    const matchedUser = allUsers.find(u => u.username.toLowerCase() === trimmedU || u.email?.toLowerCase() === trimmedU);
+
+    if (matchedUser) {
+      const uname = matchedUser.username.toLowerCase();
+      const fname = (matchedUser.fullName || '').toLowerCase();
+      let uCountry = matchedUser.countryCode;
+      if (!uCountry || uCountry === 'MM') {
+        if (uname.startsWith('th-') || uname.includes('thai') || fname.includes('thai')) uCountry = 'TH';
+        else if (uname.startsWith('sg-') || uname.includes('singapore') || fname.includes('singapore')) uCountry = 'SG';
+      }
+      let uBranch = matchedUser.branchId;
+      if (!uBranch || uBranch === 'BR-001') {
+        if (uCountry === 'TH' || uname.startsWith('th-')) uBranch = 'BR-1789830806420';
+        else if (uCountry === 'SG' || uname.startsWith('sg-')) uBranch = 'BR-008';
+      }
+      const b = db?.branches?.find(br => br.id === uBranch);
+      if (b?.countryCode) uCountry = b.countryCode;
+
+      if (uCountry && uCountry !== 'MM' && effectiveCountry === 'MM') {
+        effectiveCountry = uCountry;
+        setSelectedCountryCode(uCountry);
+      }
+      if (uBranch && uBranch !== 'BR-001' && effectiveBranch === 'BR-001') {
+        effectiveBranch = uBranch;
+        setSelectedBranchId(uBranch);
+      }
+    } else if (trimmedU.startsWith('th-') && effectiveCountry === 'MM') {
+      effectiveCountry = 'TH';
+      setSelectedCountryCode('TH');
+      const thBranch = db?.branches?.find(b => b.countryCode === 'TH');
+      if (thBranch) {
+        effectiveBranch = thBranch.id;
+        setSelectedBranchId(thBranch.id);
+      }
+    } else if (trimmedU.startsWith('sg-') && effectiveCountry === 'MM') {
+      effectiveCountry = 'SG';
+      setSelectedCountryCode('SG');
+      const sgBranch = db?.branches?.find(b => b.countryCode === 'SG');
+      if (sgBranch) {
+        effectiveBranch = sgBranch.id;
+        setSelectedBranchId(sgBranch.id);
+      }
+    }
+
     if (selectedProvider === 'TURSO') {
-      const result = await loginWithTurso(usernameOrEmail, password, selectedBranchId, selectedCountryCode);
+      const result = await loginWithTurso(usernameOrEmail, password, effectiveBranch, effectiveCountry);
       setLoading(false);
       if (!result.success) {
         setErrorMessage(result.message);
       } else {
+        if (result.user?.countryCode) {
+          setSelectedCountryCode(result.user.countryCode);
+        }
+        if (result.user?.branchId) {
+          setSelectedBranchId(result.user.branchId);
+        }
         setSuccessMessage(result.message);
       }
     } else {
-      const result = await loginWithSupabase(usernameOrEmail, password, selectedBranchId, selectedCountryCode);
+      const result = await loginWithSupabase(usernameOrEmail, password, effectiveBranch, effectiveCountry);
       setLoading(false);
       if (!result.success) {
         setErrorMessage(result.message);
@@ -196,6 +252,12 @@ export const LoginView: React.FC = () => {
           setShowConfigDrawer(true);
         }
       } else {
+        if (result.user?.countryCode) {
+          setSelectedCountryCode(result.user.countryCode);
+        }
+        if (result.user?.branchId) {
+          setSelectedBranchId(result.user.branchId);
+        }
         setSuccessMessage(result.message);
       }
     }
@@ -205,11 +267,38 @@ export const LoginView: React.FC = () => {
     setUsernameOrEmail(u.username);
     setPassword(u.password || 'password123');
 
-    const branch = db?.branches?.find(b => b.id === u.branchId || b.code === u.branchId);
-    const detectedCountry = detectUserCountry(u, branch);
+    const uname = (u.username || '').toLowerCase();
+    const fname = (u.fullName || '').toLowerCase();
 
-    setSelectedBranchId(u.branchId || 'BR-001');
-    setSelectedCountryCode(detectedCountry);
+    let country = u.countryCode;
+    if (!country || country === 'MM') {
+      if (uname.startsWith('th-') || uname.includes('thai') || fname.includes('thai')) {
+        country = 'TH';
+      } else if (uname.startsWith('sg-') || uname.includes('singapore') || fname.includes('singapore')) {
+        country = 'SG';
+      } else if (uname.startsWith('my-') || uname.includes('malaysia')) {
+        country = 'MY';
+      }
+    }
+
+    let branchId = u.branchId;
+    if (!branchId || branchId === 'BR-001') {
+      if (country === 'TH' || uname.startsWith('th-')) {
+        branchId = 'BR-1789830806420';
+      } else if (country === 'SG' || uname.startsWith('sg-')) {
+        branchId = 'BR-008';
+      } else {
+        branchId = 'BR-001';
+      }
+    }
+
+    const branch = db?.branches?.find(b => b.id === branchId);
+    if (branch?.countryCode) {
+      country = branch.countryCode;
+    }
+
+    setSelectedCountryCode(country || 'MM');
+    setSelectedBranchId(branchId || 'BR-001');
     setErrorMessage(null);
   };
 
@@ -352,6 +441,7 @@ export const LoginView: React.FC = () => {
               <span className="text-[10px] text-emerald-400 font-mono">Turso: Default</span>
             </div>
             <div className="grid grid-cols-2 gap-2">
+              {/* Turso Cloud Option (DEFAULT) */}
               <button
                 type="button"
                 onClick={() => {
@@ -374,6 +464,7 @@ export const LoginView: React.FC = () => {
                 </span>
               </button>
 
+              {/* Supabase Cloud Option */}
               <button
                 type="button"
                 onClick={() => {
@@ -406,6 +497,7 @@ export const LoginView: React.FC = () => {
                 </span>
               </div>
               
+              {/* Provider Connection Status Pill */}
               {selectedProvider === 'TURSO' ? (
                 <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border bg-emerald-500/20 text-emerald-300 border-emerald-400/40">
                   <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -440,6 +532,7 @@ export const LoginView: React.FC = () => {
 
           {/* Form Area */}
           <div className="p-6 sm:p-7 space-y-5">
+            {/* Error Message Alert */}
             {errorMessage && (
               <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start space-x-2.5">
                 <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -459,6 +552,7 @@ export const LoginView: React.FC = () => {
               </div>
             )}
 
+            {/* Success Message Alert */}
             {successMessage && (
               <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center space-x-2.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -512,14 +606,15 @@ export const LoginView: React.FC = () => {
                       onChange={(e) => handleBranchChange(e.target.value)}
                       className="w-full text-xs font-medium bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     >
-                      {(db?.branches || []).map(b => {
-                        const bCountry = detectUserCountry(null, b);
-                        return (
+                      {(() => {
+                        const filteredBranches = (db?.branches || []).filter(b => !selectedCountryCode || b.countryCode === selectedCountryCode);
+                        const branchesToShow = filteredBranches.length > 0 ? filteredBranches : (db?.branches || []);
+                        return branchesToShow.map(b => (
                           <option key={b.id} value={b.id}>
-                            [{bCountry}] {language === 'my' ? (b.nameMm || b.nameEn) : b.nameEn} - {b.city}
+                            [{b.countryCode}] {language === 'my' ? (b.nameMm || b.nameEn) : b.nameEn} - {b.city}
                           </option>
-                        );
-                      })}
+                        ));
+                      })()}
                     </select>
                   </div>
                 </div>
@@ -544,8 +639,8 @@ export const LoginView: React.FC = () => {
                     type="text"
                     required
                     value={usernameOrEmail}
-                    onChange={(e) => setUsernameOrEmail(e.target.value)}
-                    placeholder={language === 'my' ? 'ဥပမာ- admin သို့မဟုတ် maker_thura' : 'e.g. admin or maker_thura'}
+                    onChange={(e) => handleUsernameChange(e.target.value)}
+                    placeholder={language === 'my' ? 'ဥပမာ- admin သို့မဟုတ် th-maker' : 'e.g. admin or th-maker'}
                     className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-900 transition-colors"
                   />
                 </div>
@@ -659,6 +754,7 @@ export const LoginView: React.FC = () => {
                   </button>
                 </div>
 
+                {/* Collapsible Supabase Connection Config */}
                 {showConfigDrawer && (
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
@@ -737,6 +833,8 @@ export const LoginView: React.FC = () => {
 
         {/* Right Column: Database Users Directory & Fast Account Selection */}
         <div className="lg:col-span-5 space-y-4">
+          
+          {/* Quick Select User Accounts */}
           <div className="bg-slate-800/90 backdrop-blur-md rounded-2xl border border-slate-700 p-5 text-white shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-700">
               <div className="flex items-center space-x-2">
@@ -769,10 +867,22 @@ export const LoginView: React.FC = () => {
                 ? (selectedProvider === 'TURSO' ? tursoUsers : supabaseUsers) 
                 : db.users
               ).map((u) => {
-                const branch = db?.branches?.find(b => b.id === u.branchId || b.code === u.branchId);
-                const userCountryCode = detectUserCountry(u, branch);
-                const country = db?.countries?.find(c => c.code === userCountryCode);
-                
+                const uname = (u.username || '').toLowerCase();
+                const fname = (u.fullName || '').toLowerCase();
+                let userCountryCode = u.countryCode;
+                if (!userCountryCode || userCountryCode === 'MM') {
+                  if (uname.startsWith('th-') || uname.includes('thai') || fname.includes('thai')) userCountryCode = 'TH';
+                  else if (uname.startsWith('sg-') || uname.includes('singapore') || fname.includes('singapore')) userCountryCode = 'SG';
+                  else if (uname.startsWith('my-') || uname.includes('malaysia')) userCountryCode = 'MY';
+                }
+                let uBranchId = u.branchId;
+                if (!uBranchId || uBranchId === 'BR-001') {
+                  if (userCountryCode === 'TH' || uname.startsWith('th-')) uBranchId = 'BR-1789830806420';
+                  else if (userCountryCode === 'SG' || uname.startsWith('sg-')) uBranchId = 'BR-008';
+                }
+                const branch = db?.branches?.find(b => b.id === uBranchId);
+                if (branch?.countryCode) userCountryCode = branch.countryCode;
+                const country = db?.countries?.find(c => c.code === (userCountryCode || 'MM'));
                 return (
                   <button
                     key={u.id}
@@ -797,7 +907,7 @@ export const LoginView: React.FC = () => {
                         <span>@{u.username}</span>
                         <span>•</span>
                         <span className="text-amber-300/90 font-sans text-[10px] bg-slate-800 px-1.5 py-0.2 rounded border border-slate-700">
-                          {country?.flagEmoji || (userCountryCode === 'TH' ? '🇹🇭' : userCountryCode === 'SG' ? '🇸🇬' : '🇲🇲')} {branch?.nameEn || u.branchId || 'BR-001'}
+                          {country?.flagEmoji || '🌐'} {branch?.nameEn || u.branchId || 'BR-001'}
                         </span>
                       </div>
                     </div>
@@ -831,8 +941,31 @@ export const LoginView: React.FC = () => {
                   onClick={handleSyncAllToTurso}
                   className="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer transition-colors"
                 >
-                  <UploadCloud className={`w-3.5 h-3.5 ${syncingTurso ? 'animate-bounce' : ''}`} />
+                  <UploadCloud className={`w-3 h-3 ${syncingTurso ? 'animate-bounce' : ''}`} />
                   <span>{language === 'my' ? 'Data အားလုံး Sync မည်' : 'Sync All Data'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Supabase Empty Seed Helper */}
+            {selectedProvider === 'SUPABASE' && supabaseUsers.length === 0 && db.supabaseConfig.isConnected && (
+              <div className="mt-3 p-3 rounded-lg bg-blue-900/30 border border-blue-700/50 text-xs">
+                <div className="text-blue-200 font-semibold mb-1">
+                  {language === 'my' ? 'Supabase Table တွင် User မရှိသေးပါသလား?' : 'Empty Users Table on Supabase?'}
+                </div>
+                <p className="text-[11px] text-slate-300 mb-2">
+                  {language === 'my'
+                    ? 'စနစ်တွင်းရှိ မူလ User (၅) ဦးကို Supabase သို့ ချက်ချင်းထည့်သွင်းနိုင်ပါသည်'
+                    : 'Upload 5 pre-configured operator roles (Admin, Maker, Checker, Auditor) to Supabase now.'}
+                </p>
+                <button
+                  type="button"
+                  disabled={seedingSupabaseUsers}
+                  onClick={handleSeedSupabase}
+                  className="w-full py-1.5 px-2.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center space-x-1 cursor-pointer"
+                >
+                  {seedingSupabaseUsers ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  <span>{language === 'my' ? 'User စာရင်းကို Supabase သို့ ပို့မည်' : 'Upload Users to Supabase'}</span>
                 </button>
               </div>
             )}

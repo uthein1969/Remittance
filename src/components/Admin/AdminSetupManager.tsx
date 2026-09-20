@@ -26,13 +26,15 @@ import {
   AlertTriangle,
   Info,
   History,
-  Edit3
+  Edit3,
+  CheckSquare
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import { SetupSubTab } from '../Sidebar';
 import { CompanyProfileModal } from '../CompanyProfileModal';
 import { CompanyProfileSettingForm } from './CompanyProfileSettingForm';
 import { RoleMenuPermissionManager } from './RoleMenuPermissionManager';
+import { DefaultStatusAdminManager } from './DefaultStatusAdminManager';
 import { 
   Branch, 
   User, 
@@ -117,6 +119,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
     { id: 'purpose', labelEn: '9. Purpose of Remit', labelMm: '၉။ လွှဲပို့ရည်ရွယ်ချက်များ', icon: FileCheck2, count: db.purposes.length },
     { id: 'customer', labelEn: '10. Customers Master', labelMm: '၁၀။ ဖောက်သည်များ', icon: UserCheck2, count: db.customers.length },
     { id: 'menu_permission', labelEn: '11. App Menu by Role', labelMm: '၁၁။ မီနူး ခွင့်ပြုချက်များ (Show App Menu)', icon: ShieldCheck, count: 4 },
+    { id: 'default_status', labelEn: '12. Default Status (Country Rule)', labelMm: '၁၂။ မူရင်းအခြေအနေ သတ်မှတ်ချက် (Default Status)', icon: CheckSquare, count: 1 },
   ];
 
   const handleOpenAdd = (type: SetupSubTab, presetData?: Partial<RemittancePurpose>) => {
@@ -365,7 +368,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
             <Building2 className="w-4 h-4 text-inherit" />
             <span>{language === 'my' ? 'ကုမ္ပဏီ အချက်အလက်' : 'Company Info'}</span>
           </button>
-          {currentSubTab !== 'operator_profile' && currentSubTab !== 'menu_permission' && (
+          {currentSubTab !== 'operator_profile' && currentSubTab !== 'menu_permission' && currentSubTab !== 'default_status' && (
             <button
               onClick={() => handleOpenAdd(currentSubTab)}
               className="flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-all shrink-0"
@@ -377,8 +380,8 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
         </div>
       </div>
 
-      {/* Official Orange Rectangular Box: Operating Remittance Company (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) - shown when not in operator_profile and not in menu_permission */}
-      {currentSubTab !== 'operator_profile' && currentSubTab !== 'menu_permission' && (
+      {/* Official Orange Rectangular Box: Operating Remittance Company (လိမ္မော်ရောင်လေးဒေါင့်အကွက်) - shown when not in operator_profile, menu_permission, or default_status */}
+      {currentSubTab !== 'operator_profile' && currentSubTab !== 'menu_permission' && currentSubTab !== 'default_status' && (
         <div className="border-2 border-orange-500 bg-orange-50/60 rounded-xl p-4 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-orange-200/80 pb-2.5">
             <div className="flex items-center space-x-3">
@@ -470,11 +473,13 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
         })}
       </div>
 
-      {/* Content Area: Company Profile Setting Form OR Role Menu Permissions OR Master Data Table */}
+      {/* Content Area: Company Profile Setting Form OR Role Menu Permissions OR Default Status Manager OR Master Data Table */}
       {currentSubTab === 'operator_profile' ? (
         <CompanyProfileSettingForm />
       ) : currentSubTab === 'menu_permission' ? (
         <RoleMenuPermissionManager />
+      ) : currentSubTab === 'default_status' ? (
+        <DefaultStatusAdminManager />
       ) : (
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
           {/* Search Bar & Title Header */}
@@ -772,6 +777,7 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                     <th className="px-4 py-3">{t.country}</th>
                     <th className="px-4 py-3">{t.branch}</th>
                     <th className="px-4 py-3">{t.phone}</th>
+                    <th className="px-4 py-3">{language === 'my' ? 'မူရင်းအခြေအနေ (Default Status)' : 'Default Status'}</th>
                     <th className="px-4 py-3 text-right">{t.actions}</th>
                   </tr>
                 </thead>
@@ -803,6 +809,22 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                           {branch?.nameEn || u.branchId}
                         </td>
                         <td className="px-4 py-3 font-mono text-slate-600">{u.phone}</td>
+                        <td className="px-4 py-3">
+                          {u.defaultStatusEnabled !== false ? (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                              userCountryCode === 'MM'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-sky-100 text-sky-800 border border-sky-200'
+                            }`}>
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>{userCountryCode === 'MM' ? 'Domestic & NRC' : 'International & Passport'}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-500 font-medium">
+                              Manual
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right space-x-1.5">
                           <button onClick={() => handleOpenEdit('user', u)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-3.5 h-3.5 inline" /></button>
                           <button onClick={() => setDeleteConfirmId(u.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 className="w-3.5 h-3.5 inline" /></button>
@@ -1406,6 +1428,48 @@ export const AdminSetupManager: React.FC<AdminSetupProps> = ({ currentSubTab, on
                         onChange={(e) => setEditingItem({ ...editingItem, password: e.target.value })}
                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono"
                       />
+                    </div>
+                  </div>
+
+                  {/* Default Status Checkbox for User Admin Role */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                    <div className="flex items-start space-x-3">
+                      <input
+                        type="checkbox"
+                        id="user-default-status-checkbox"
+                        checked={editingItem.defaultStatusEnabled !== false}
+                        onChange={(e) => setEditingItem({ ...editingItem, defaultStatusEnabled: e.target.checked })}
+                        className="mt-1 w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <label htmlFor="user-default-status-checkbox" className="text-xs cursor-pointer select-none">
+                        <span className="font-bold text-slate-800 block">
+                          {language === 'my' 
+                            ? 'Default Status Check Box: အလိုအလျောက် မူရင်းသတ်မှတ်ချက်ကို အသုံးပြုမည်' 
+                            : 'Default Status Check Box: Enable Country-Based Remittance Defaults'}
+                        </span>
+                        <span className="text-[11px] text-slate-500 block mt-0.5">
+                          {language === 'my'
+                            ? (editingItem.countryCode === 'MM' 
+                                ? '🇲🇲 မြန်မာနိုင်ငံ Login ဖြစ်သဖြင့် Remittance Scope = Domestic နှင့် ID Type = NRC ကို မူရင်းအဖြစ် သတ်မှတ်မည်' 
+                                : `🌐 နိုင်ငံခြား (${editingItem.countryCode || 'Other'}) Login ဖြစ်သဖြင့် Remittance Scope = International နှင့် ID Type = Passport ကို မူရင်းအဖြစ် သတ်မှတ်မည်`)
+                            : (editingItem.countryCode === 'MM'
+                                ? 'Myanmar Login: Defaults to Domestic Remittance and NRC Card'
+                                : `Foreign Login (${editingItem.countryCode || 'Other'}): Defaults to International Remittance and Passport`)}
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-200 text-[11px]">
+                      <span className="font-semibold text-slate-600">Current Default Status:</span>
+                      <span className={`px-2 py-0.5 rounded font-bold ${
+                        (editingItem.countryCode || 'MM') === 'MM'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-sky-100 text-sky-800 border border-sky-300'
+                      }`}>
+                        {(editingItem.countryCode || 'MM') === 'MM'
+                          ? 'Domestic Remittance + NRC Card (Default)'
+                          : 'International Remittance + Passport (Default)'}
+                      </span>
                     </div>
                   </div>
                 </>

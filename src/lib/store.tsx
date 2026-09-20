@@ -19,7 +19,8 @@ import {
   OperatorProfile,
   NavigationTab,
   RoleMenuPermissions,
-  DEFAULT_ROLE_MENU_PERMISSIONS
+  DEFAULT_ROLE_MENU_PERMISSIONS,
+  DefaultStatusConfig
 } from '../types';
 import { initialDatabase, defaultOperatorProfile } from './mockData';
 import { sampleSenderNrcAttachment, sampleSenderPassportAttachment } from './sampleDocuments';
@@ -29,6 +30,7 @@ import {
   tursoWebLogin, 
   tursoWebCheckStatus, 
   tursoWebFetchUsers, 
+  tursoWebFetchBranches,
   tursoWebSyncPush, 
   tursoWebSyncPull 
 } from './tursoWebClient';
@@ -106,6 +108,7 @@ interface RemittanceContextType {
   saveExchangeRate: (rate: ExchangeRate) => void;
   deleteExchangeRate: (id: string) => void;
   getExchangeRate: (from: string, to: string) => number;
+  getCorridorExchangeRate: (sourceCur: string, targetCur: string) => number;
   
   // 7. Blacklist (with Myanmar NRC & Passbook note)
   saveBlacklist: (entry: BlacklistEntry) => void;
@@ -136,6 +139,10 @@ interface RemittanceContextType {
   restoreDatabaseFromJson: (jsonString: string) => boolean;
   resetToDefaultData: () => void;
   resetToDefaultSeed: () => void;
+  
+  // Default Status Configuration (Admin Setup for User Admin Role)
+  defaultStatusConfig: DefaultStatusConfig;
+  updateDefaultStatusConfig: (config: Partial<DefaultStatusConfig>) => void;
   
   // Supabase
   updateSupabaseConfig: (config: Partial<SupabaseConfig>) => void;
@@ -170,6 +177,7 @@ interface RemittanceContextType {
     user?: User;
   }>;
   fetchTursoUsers: () => Promise<{ success: boolean; users?: User[]; message?: string }>;
+  fetchTursoBranches: () => Promise<{ success: boolean; branches?: Branch[]; message?: string }>;
   seedUsersToTurso: () => Promise<{ success: boolean; message: string }>;
   syncDataToTurso: () => Promise<{ success: boolean; message: string; saved?: any }>;
   fetchDataFromTurso: () => Promise<{ success: boolean; message: string; count?: number }>;
@@ -203,6 +211,35 @@ interface RemittanceContextType {
 }
 
 const RemittanceContext = createContext<RemittanceContextType | null>(null);
+
+const sanitizeTransactionsList = (txList: any[]): RemittanceTransaction[] => {
+  if (!Array.isArray(txList)) return [];
+  return txList.map((tx: any) => {
+    if (!tx || typeof tx !== 'object') return tx;
+    // Fix inverted exchange rates for corridor transfers against MMK
+    if (tx.sourceCurrency && tx.targetCurrency && tx.exchangeRate > 0) {
+      if (tx.sourceCurrency !== 'MMK' && tx.targetCurrency === 'MMK' && tx.exchangeRate < 1) {
+        const normalizedRate = Number((1 / tx.exchangeRate).toFixed(4));
+        const normalizedReceive = Number((Number(tx.sendAmount || 0) * normalizedRate).toFixed(2));
+        return {
+          ...tx,
+          exchangeRate: normalizedRate,
+          receiveAmount: normalizedReceive
+        };
+      }
+      if (tx.sourceCurrency === 'MMK' && tx.targetCurrency !== 'MMK' && tx.exchangeRate < 1) {
+        const normalizedRate = Number((1 / tx.exchangeRate).toFixed(4));
+        const normalizedReceive = Number((Number(tx.sendAmount || 0) / normalizedRate).toFixed(2));
+        return {
+          ...tx,
+          exchangeRate: normalizedRate,
+          receiveAmount: normalizedReceive
+        };
+      }
+    }
+    return tx;
+  });
+};
 
 export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [db, setDb] = useState<AppDatabase>(() => {
@@ -258,7 +295,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             },
             branches: Array.isArray(parsed.branches) && parsed.branches.length > 0 ? parsed.branches : initialDatabase.branches,
             users: Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : initialDatabase.users,
-            transactions: Array.isArray(parsed.transactions) ? parsed.transactions : initialDatabase.transactions,
+            transactions: Array.isArray(parsed.transactions) ? sanitizeTransactionsList(parsed.transactions) : initialDatabase.transactions,
             currencies: Array.isArray(parsed.currencies) && parsed.currencies.length > 0 ? parsed.currencies : initialDatabase.currencies,
             countries: Array.isArray(parsed.countries) && parsed.countries.length > 0 ? parsed.countries : initialDatabase.countries,
             exchangeRates: Array.isArray(parsed.exchangeRates) && parsed.exchangeRates.length > 0 ? parsed.exchangeRates : initialDatabase.exchangeRates,
@@ -299,6 +336,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             return {
               ...prev,
               ...idbDb,
+              transactions: sanitizeTransactionsList(idbDb.transactions),
               operatorProfile: {
                 ...prev.operatorProfile,
                 ...(idbDb.operatorProfile || {})
@@ -677,6 +715,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       try {
         const isConnected = await checkTursoStatus();
         if (isConnected && isMounted) {
+          await fetchTursoBranches();
           await fetchDataFromTurso();
 
           // Push any unsynced local records & audit logs if present
@@ -934,6 +973,28 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     return 1;
   }, [db.exchangeRates]);
+
+  // Corridor rate lookup - always returns the base rate in MMK per 1 foreign unit (e.g. 134.50 MMK per THB, 4580 MMK per USD)
+  const getCorridorExchangeRate = useCallback((sourceCur: string, targetCur: string): number => {
+    if (sourceCur === targetCur) return 1;
+    
+    // Foreign to MMK (e.g. THB -> MMK)
+    if (sourceCur !== 'MMK' && targetCur === 'MMK') {
+      const match = db.exchangeRates.find(r => r.fromCurrency === sourceCur && r.toCurrency === 'MMK');
+      if (match) return match.transferRate || match.buyRate || match.sellRate || 1;
+    }
+    // MMK to Foreign (e.g. MMK -> THB)
+    if (sourceCur === 'MMK' && targetCur !== 'MMK') {
+      const match = db.exchangeRates.find(r => r.fromCurrency === targetCur && r.toCurrency === 'MMK');
+      if (match) return match.transferRate || match.sellRate || match.buyRate || 1;
+    }
+    
+    // Direct match
+    const direct = db.exchangeRates.find(r => r.fromCurrency === sourceCur && r.toCurrency === targetCur);
+    if (direct) return direct.transferRate || direct.sellRate;
+
+    return getExchangeRate(sourceCur, targetCur);
+  }, [db.exchangeRates, getExchangeRate]);
 
   // Generate unique MTCN
   const generateMtcn = () => {
@@ -1812,6 +1873,45 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     );
   };
 
+  // Default Status Configuration (Country-Based Remittance Defaults configured by Admin Role)
+  const defaultStatusConfig: DefaultStatusConfig = db.defaultStatusConfig || initialDatabase.defaultStatusConfig || {
+    autoCountryDefault: true,
+    applyOutwardEntry: true,
+    applyReviewEdit: true,
+    enforceNonMyanmarPassport: true,
+    enforceMyanmarNrc: true,
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'System Admin',
+  };
+
+  const updateDefaultStatusConfig = (config: Partial<DefaultStatusConfig>) => {
+    setDb(prev => {
+      const current = prev.defaultStatusConfig || initialDatabase.defaultStatusConfig || {
+        autoCountryDefault: true,
+        applyOutwardEntry: true,
+        applyReviewEdit: true,
+        enforceNonMyanmarPassport: true,
+        enforceMyanmarNrc: true,
+      };
+      const updated: DefaultStatusConfig = {
+        ...current,
+        ...config,
+        updatedAt: new Date().toISOString(),
+        updatedBy: `${currentUser.username} (${currentUser.fullName}, Role: ${currentUser.role})`
+      };
+      return {
+        ...prev,
+        defaultStatusConfig: updated
+      };
+    });
+    logActionDirect(
+      'UPDATE',
+      'SYSTEM',
+      'DEFAULT_STATUS_CONFIG',
+      `Admin updated Remittance Default Status Rules: Auto Country Default=${config.autoCountryDefault ?? defaultStatusConfig.autoCountryDefault}`
+    );
+  };
+
   // Supabase Sync
   const updateSupabaseConfig = (config: Partial<SupabaseConfig>) => {
     setDb(prev => {
@@ -2455,36 +2555,72 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       // Determine user's assigned branch and country
       const localUser = db.users.find(u => u.username.toLowerCase() === authenticatedUser.username.toLowerCase() || u.id === authenticatedUser.id);
-      const userBranchId = authenticatedUser.branchId || localUser?.branchId || 'BR-001';
+      const uname = authenticatedUser.username.toLowerCase();
+      const fname = (authenticatedUser.fullName || '').toLowerCase();
+
+      let userCountryCode = authenticatedUser.countryCode || localUser?.countryCode;
+      if (!userCountryCode || userCountryCode === 'MM') {
+        if (uname.startsWith('th-') || uname.includes('thai') || fname.includes('thai')) {
+          userCountryCode = 'TH';
+        } else if (uname.startsWith('sg-') || uname.includes('singapore') || fname.includes('singapore')) {
+          userCountryCode = 'SG';
+        } else if (uname.startsWith('my-') || uname.includes('malaysia')) {
+          userCountryCode = 'MY';
+        }
+      }
+
+      let userBranchId = authenticatedUser.branchId || localUser?.branchId;
+      if (!userBranchId || userBranchId === 'BR-001') {
+        if (userCountryCode === 'TH' || uname.startsWith('th-')) {
+          userBranchId = 'BR-1789830806420';
+        } else if (userCountryCode === 'SG' || uname.startsWith('sg-')) {
+          userBranchId = 'BR-008';
+        } else {
+          userBranchId = 'BR-001';
+        }
+      }
+
       const assignedBranch = db.branches.find(b => b.id === userBranchId);
-      const userCountryCode = authenticatedUser.countryCode || localUser?.countryCode || assignedBranch?.countryCode || 'MM';
+      if (assignedBranch?.countryCode) {
+        userCountryCode = assignedBranch.countryCode;
+      }
       authenticatedUser.branchId = userBranchId;
-      authenticatedUser.countryCode = userCountryCode;
+      authenticatedUser.countryCode = userCountryCode || 'MM';
+
+      // Auto-align if untouched default MM/BR-001 was passed for non-MM operator
+      let effectiveCountry = selectedCountryCode;
+      let effectiveBranch = selectedBranchId;
+      if (userCountryCode !== 'MM' && selectedCountryCode === 'MM') {
+        effectiveCountry = userCountryCode;
+      }
+      if (userBranchId !== 'BR-001' && selectedBranchId === 'BR-001') {
+        effectiveBranch = userBranchId;
+      }
 
       // MANDATORY COUNTRY & BRANCH VALIDATION ("Country and Branch ကိုရွေးပြီး မှန်မှ Application ကိုပေးသုံးပါမယ်")
-      if (selectedCountryCode && selectedCountryCode !== userCountryCode) {
+      if (effectiveCountry && effectiveCountry !== userCountryCode) {
         const expectedCountry = db.countries.find(c => c.code === userCountryCode);
-        const selectedCountry = db.countries.find(c => c.code === selectedCountryCode);
+        const selectedCountry = db.countries.find(c => c.code === effectiveCountry);
         const expectedName = language === 'my' ? (expectedCountry?.nameMm || expectedCountry?.nameEn) : expectedCountry?.nameEn;
         const selectedName = language === 'my' ? (selectedCountry?.nameMm || selectedCountry?.nameEn) : selectedCountry?.nameEn;
         return {
           success: false,
           message: language === 'my'
-            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော နိုင်ငံ (${selectedName || selectedCountryCode}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော နိုင်ငံ (${expectedName || userCountryCode}) နှင့် မကိုက်ညီပါ။`
-            : `Access Denied: The selected Country (${selectedName || selectedCountryCode}) does not match this user's assigned Country (${expectedName || userCountryCode}).`
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော နိုင်ငံ (${selectedName || effectiveCountry}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော နိုင်ငံ (${expectedName || userCountryCode}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Country (${selectedName || effectiveCountry}) does not match this user's assigned Country (${expectedName || userCountryCode}).`
         };
       }
 
-      if (selectedBranchId && selectedBranchId !== userBranchId) {
+      if (effectiveBranch && effectiveBranch !== userBranchId) {
         const expectedBranch = db.branches.find(b => b.id === userBranchId);
-        const selectedBranch = db.branches.find(b => b.id === selectedBranchId);
+        const selectedBranch = db.branches.find(b => b.id === effectiveBranch);
         const expectedBranchName = language === 'my' ? (expectedBranch?.nameMm || expectedBranch?.nameEn) : expectedBranch?.nameEn;
         const selectedBranchName = language === 'my' ? (selectedBranch?.nameMm || selectedBranch?.nameEn) : selectedBranch?.nameEn;
         return {
           success: false,
           message: language === 'my'
-            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော ဘဏ်ခွဲ (${selectedBranchName || selectedBranchId}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော ဘဏ်ခွဲ (${expectedBranchName || userBranchId}) နှင့် မကိုက်ညီပါ။`
-            : `Access Denied: The selected Branch (${selectedBranchName || selectedBranchId}) does not match this user's assigned Branch (${expectedBranchName || userBranchId}).`
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော ဘဏ်ခွဲ (${selectedBranchName || effectiveBranch}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော ဘဏ်ခွဲ (${expectedBranchName || userBranchId}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Branch (${selectedBranchName || effectiveBranch}) does not match this user's assigned Branch (${expectedBranchName || userBranchId}).`
         };
       }
 
@@ -2723,36 +2859,72 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       // Determine user's assigned branch and country
       const localUser = db.users.find(u => u.username.toLowerCase() === authenticatedUser!.username.toLowerCase() || u.id === authenticatedUser!.id);
-      const userBranchId = authenticatedUser.branchId || localUser?.branchId || 'BR-001';
+      const uname = authenticatedUser!.username.toLowerCase();
+      const fname = (authenticatedUser!.fullName || '').toLowerCase();
+
+      let userCountryCode = authenticatedUser!.countryCode || localUser?.countryCode;
+      if (!userCountryCode || userCountryCode === 'MM') {
+        if (uname.startsWith('th-') || uname.includes('thai') || fname.includes('thai')) {
+          userCountryCode = 'TH';
+        } else if (uname.startsWith('sg-') || uname.includes('singapore') || fname.includes('singapore')) {
+          userCountryCode = 'SG';
+        } else if (uname.startsWith('my-') || uname.includes('malaysia')) {
+          userCountryCode = 'MY';
+        }
+      }
+
+      let userBranchId = authenticatedUser!.branchId || localUser?.branchId;
+      if (!userBranchId || userBranchId === 'BR-001') {
+        if (userCountryCode === 'TH' || uname.startsWith('th-')) {
+          userBranchId = 'BR-1789830806420';
+        } else if (userCountryCode === 'SG' || uname.startsWith('sg-')) {
+          userBranchId = 'BR-008';
+        } else {
+          userBranchId = 'BR-001';
+        }
+      }
+
       const assignedBranch = db.branches.find(b => b.id === userBranchId);
-      const userCountryCode = authenticatedUser.countryCode || localUser?.countryCode || assignedBranch?.countryCode || 'MM';
-      authenticatedUser.branchId = userBranchId;
-      authenticatedUser.countryCode = userCountryCode;
+      if (assignedBranch?.countryCode) {
+        userCountryCode = assignedBranch.countryCode;
+      }
+      authenticatedUser!.branchId = userBranchId;
+      authenticatedUser!.countryCode = userCountryCode || 'MM';
+
+      // Auto-align if untouched default MM/BR-001 was passed for non-MM operator
+      let effectiveCountry = selectedCountryCode;
+      let effectiveBranch = selectedBranchId;
+      if (userCountryCode !== 'MM' && selectedCountryCode === 'MM') {
+        effectiveCountry = userCountryCode;
+      }
+      if (userBranchId !== 'BR-001' && selectedBranchId === 'BR-001') {
+        effectiveBranch = userBranchId;
+      }
 
       // MANDATORY COUNTRY & BRANCH VALIDATION ("Country and Branch ကိုရွေးပြီး မှန်မှ Application ကိုပေးသုံးပါမယ်")
-      if (selectedCountryCode && selectedCountryCode !== userCountryCode) {
+      if (effectiveCountry && effectiveCountry !== userCountryCode) {
         const expectedCountry = db.countries.find(c => c.code === userCountryCode);
-        const selectedCountry = db.countries.find(c => c.code === selectedCountryCode);
+        const selectedCountry = db.countries.find(c => c.code === effectiveCountry);
         const expectedName = language === 'my' ? (expectedCountry?.nameMm || expectedCountry?.nameEn) : expectedCountry?.nameEn;
         const selectedName = language === 'my' ? (selectedCountry?.nameMm || selectedCountry?.nameEn) : selectedCountry?.nameEn;
         return {
           success: false,
           message: language === 'my'
-            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော နိုင်ငံ (${selectedName || selectedCountryCode}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော နိုင်ငံ (${expectedName || userCountryCode}) နှင့် မကိုက်ညီပါ။`
-            : `Access Denied: The selected Country (${selectedName || selectedCountryCode}) does not match this user's assigned Country (${expectedName || userCountryCode}).`
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော နိုင်ငံ (${selectedName || effectiveCountry}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော နိုင်ငံ (${expectedName || userCountryCode}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Country (${selectedName || effectiveCountry}) does not match this user's assigned Country (${expectedName || userCountryCode}).`
         };
       }
 
-      if (selectedBranchId && selectedBranchId !== userBranchId) {
+      if (effectiveBranch && effectiveBranch !== userBranchId) {
         const expectedBranch = db.branches.find(b => b.id === userBranchId);
-        const selectedBranch = db.branches.find(b => b.id === selectedBranchId);
+        const selectedBranch = db.branches.find(b => b.id === effectiveBranch);
         const expectedBranchName = language === 'my' ? (expectedBranch?.nameMm || expectedBranch?.nameEn) : expectedBranch?.nameEn;
         const selectedBranchName = language === 'my' ? (selectedBranch?.nameMm || selectedBranch?.nameEn) : selectedBranch?.nameEn;
         return {
           success: false,
           message: language === 'my'
-            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော ဘဏ်ခွဲ (${selectedBranchName || selectedBranchId}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော ဘဏ်ခွဲ (${expectedBranchName || userBranchId}) နှင့် မကိုက်ညီပါ။`
-            : `Access Denied: The selected Branch (${selectedBranchName || selectedBranchId}) does not match this user's assigned Branch (${expectedBranchName || userBranchId}).`
+            ? `ဝင်ရောက်ခွင့်မပြုပါ - ရွေးချယ်ထားသော ဘဏ်ခွဲ (${selectedBranchName || effectiveBranch}) သည် ဤအသုံးပြုသူ၏ သတ်မှတ်ထားသော ဘဏ်ခွဲ (${expectedBranchName || userBranchId}) နှင့် မကိုက်ညီပါ။`
+            : `Access Denied: The selected Branch (${selectedBranchName || effectiveBranch}) does not match this user's assigned Branch (${expectedBranchName || userBranchId}).`
         };
       }
 
@@ -2837,6 +3009,46 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return { success: true, users: db.users };
     } catch {
       return { success: true, users: db.users };
+    }
+  };
+
+  const fetchTursoBranches = async (): Promise<{ success: boolean; branches?: Branch[]; message?: string }> => {
+    try {
+      const { ok, data } = await safeFetchJson('/api/turso/branches');
+      if (ok && data?.success && Array.isArray(data.branches) && data.branches.length > 0) {
+        setDb(prev => {
+          const merged = [...prev.branches];
+          for (const b of data.branches) {
+            const idx = merged.findIndex(existing => existing.id === b.id);
+            if (idx >= 0) {
+              merged[idx] = { ...merged[idx], ...b };
+            } else {
+              merged.push(b);
+            }
+          }
+          return { ...prev, branches: merged };
+        });
+        return { success: true, branches: data.branches };
+      }
+      const webRes = await tursoWebFetchBranches();
+      if (webRes.success && webRes.branches && webRes.branches.length > 0) {
+        setDb(prev => {
+          const merged = [...prev.branches];
+          for (const b of webRes.branches!) {
+            const idx = merged.findIndex(existing => existing.id === b.id);
+            if (idx >= 0) {
+              merged[idx] = { ...merged[idx], ...b };
+            } else {
+              merged.push(b);
+            }
+          }
+          return { ...prev, branches: merged };
+        });
+        return { success: true, branches: webRes.branches };
+      }
+      return { success: true, branches: db.branches };
+    } catch {
+      return { success: true, branches: db.branches };
     }
   };
 
@@ -3096,6 +3308,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         saveExchangeRate,
         deleteExchangeRate,
         getExchangeRate,
+        getCorridorExchangeRate,
         saveBlacklist,
         deleteBlacklist,
         savePurpose,
@@ -3109,6 +3322,8 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         restoreDatabaseFromJson: restoreBackupJson,
         resetToDefaultData,
         resetToDefaultSeed: resetToDefaultData,
+        defaultStatusConfig,
+        updateDefaultStatusConfig,
         updateSupabaseConfig,
         syncDataToSupabase,
         fetchDataFromSupabase,
@@ -3126,6 +3341,7 @@ export const RemittanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         syncTursoBidirectional,
         loginWithTurso,
         fetchTursoUsers,
+        fetchTursoBranches,
         seedUsersToTurso,
         syncDataToTurso,
         fetchDataFromTurso,

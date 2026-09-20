@@ -527,14 +527,14 @@ export const VoucherModal: React.FC<VoucherModalProps> = ({ transaction, isOpen,
               <div className="px-4 py-2 flex justify-between">
                 <span className="text-slate-600">{language === 'my' ? 'ငွေလွှဲ ဝန်ဆောင်ခ' : 'Remittance Service Fee'}:</span>
                 <span className="font-mono text-slate-800">
-                  {Number(transaction.serviceFee || 0).toLocaleString()} MMK
+                  {Number(transaction.serviceFee || 0).toLocaleString()} {transaction.sourceCurrency || 'MMK'}
                 </span>
               </div>
               {Number(transaction.commissionFee || 0) > 0 && (
                 <div className="px-4 py-2 flex justify-between bg-slate-50/50">
                   <span className="text-slate-600">{language === 'my' ? 'မိတ်ဖက် ကော်မရှင်ခ' : 'Partner Commission'}:</span>
                   <span className="font-mono text-slate-800">
-                    {Number(transaction.commissionFee || 0).toLocaleString()} MMK
+                    {Number(transaction.commissionFee || 0).toLocaleString()} {transaction.sourceCurrency || 'MMK'}
                   </span>
                 </div>
               )}

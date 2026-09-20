@@ -9,10 +9,12 @@ import {
   Terminal,
   Copy,
   ExternalLink,
+  Server,
   HardDrive,
-  Users,
-  Building2,
-  Sparkles
+  Cpu,
+  Layers,
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 import { useRemittance } from '../../lib/store';
 import {
@@ -87,29 +89,38 @@ export const TursoSyncTab: React.FC<TursoSyncTabProps> = ({ onNotify }) => {
     }
   };
 
-  // Push Data: transactions, customers, exchangeRates, auditLogs အပြင် users နှင့် branches ပါ ထည့်သွင်းပို့ဆောင်ခြင်း
   const handlePushData = async () => {
     setIsSyncing(true);
     try {
       const res = await pushDataToTurso({
         transactions: db.transactions,
         exchangeRates: db.exchangeRates,
-        customers: (db as any).customers || (db as any).customerProfiles || [],
+        customers: db.customers,
         auditLogs: db.auditLogs,
+        branches: db.branches,
         users: db.users,
-        branches: db.branches
+        companies: db.companies,
+        currencies: db.currencies,
+        countries: db.countries,
+        blacklist: db.blacklist,
+        purposes: db.purposes,
+        operatorProfile: db.operatorProfile,
+        roleMenuPermissions: db.roleMenuPermissions,
+        defaultStatusConfig: db.defaultStatusConfig,
       });
 
       if (res.success) {
         await loadStatus();
+        const saved = res.saved || {};
+        const totalPushed = (saved.transactions || 0) + (saved.exchangeRates || 0) + (saved.customers || 0) + (saved.branches || 0) + (saved.users || 0) + (saved.companies || 0) + (saved.currencies || 0) + (saved.countries || 0) + (saved.blacklist || 0) + (saved.purposes || 0) + (saved.auditLogs || 0) + (saved.operatorProfile || 0) + (saved.systemSettings || 0);
         onNotify(
           'success',
           language === 'my'
-            ? `Turso Database သို့ အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ! (Users: ${db.users.length}, Branches: ${db.branches.length}, ငွေလွှဲမှတ်တမ်း: ${db.transactions.length})`
-            : `Successfully pushed all data to Turso! (Users: ${db.users.length}, Branches: ${db.branches.length}, Transactions: ${db.transactions.length})`
+            ? `Turso Database သို့ Table အားလုံး (${totalPushed || res.count || 0} records) အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!`
+            : `Successfully pushed all tables (${totalPushed || res.count || 0} records) to Turso Database!`
         );
       } else {
-        onNotify('error', res.error || 'Failed to push data to Turso');
+        onNotify('error', res.error || (res as any).message || 'Failed to push data to Turso');
       }
     } catch (err: any) {
       onNotify('error', err?.message || 'Sync error');
@@ -118,79 +129,90 @@ export const TursoSyncTab: React.FC<TursoSyncTabProps> = ({ onNotify }) => {
     }
   };
 
-  // Pull Data: Turso မှ users နှင့် branches အပါအဝင် ဒေတာအားလုံးကို Local State သို့ merge ပြုလုပ်ခြင်း
   const handlePullData = async () => {
     setIsPulling(true);
     try {
       const res = await pullDataFromTurso();
       if (res.success && res.data) {
-        const pulledTxCount = res.data.transactions?.length || 0;
-        const pulledRateCount = res.data.exchangeRates?.length || 0;
-        const pulledCustCount = res.data.customers?.length || 0;
-        const pulledUsersCount = res.data.users?.length || 0;
-        const pulledBranchesCount = res.data.branches?.length || 0;
+        const d = res.data;
+        const pulledTxCount = d.transactions?.length || 0;
+        const pulledRateCount = d.exchangeRates?.length || 0;
+        const pulledCustCount = d.customers?.length || 0;
+        const pulledBranchCount = d.branches?.length || 0;
+        const pulledUserCount = d.users?.length || 0;
+        const pulledCompCount = d.companies?.length || 0;
+        const pulledCurrCount = d.currencies?.length || 0;
+        const pulledCountryCount = d.countries?.length || 0;
+        const pulledBlCount = d.blacklist?.length || 0;
+        const pulledPurpCount = d.purposes?.length || 0;
+        const pulledLogCount = d.auditLogs?.length || 0;
 
         setDb((prev) => {
           const updated = { ...prev };
-          if (res.data.transactions?.length > 0) {
-            const existingIds = new Set(prev.transactions.map((t) => t.id));
-            const newTxs = res.data.transactions.filter((t: any) => !existingIds.has(t.id));
-            updated.transactions = [...res.data.transactions, ...prev.transactions.filter((t) => !res.data.transactions.some((rt: any) => rt.id === t.id))];
+          if (d.transactions && d.transactions.length > 0) {
+            const map = new Map<string, any>();
+            prev.transactions.forEach((t) => map.set(t.id, t));
+            d.transactions.forEach((t: any) => map.set(t.id, { ...map.get(t.id), ...t }));
+            updated.transactions = Array.from(map.values());
           }
-          if (res.data.exchangeRates?.length > 0) {
-            updated.exchangeRates = res.data.exchangeRates;
+          if (d.exchangeRates && d.exchangeRates.length > 0) {
+            updated.exchangeRates = d.exchangeRates;
           }
-          if (res.data.customers?.length > 0) {
-            if ((updated as any).customers) {
-              (updated as any).customers = res.data.customers;
-            }
-            if ((updated as any).customerProfiles) {
-              (updated as any).customerProfiles = res.data.customers;
-            }
+          if (d.customers && d.customers.length > 0) {
+            const map = new Map<string, any>();
+            prev.customers.forEach((c) => map.set(c.id, c));
+            d.customers.forEach((c: any) => map.set(c.id, { ...map.get(c.id), ...c }));
+            updated.customers = Array.from(map.values());
           }
-          // Merge Users
-          if (res.data.users?.length > 0) {
-            const normalizedUsers = res.data.users.map((u: any) => ({
-              id: u.id,
-              username: u.username,
-              fullName: u.full_name || u.fullName,
-              email: u.email || '',
-              role: u.role,
-              branchId: u.branch_id || u.branchId || 'BR-001',
-              phone: u.phone || '',
-              status: u.status || 'ACTIVE',
-              isActive: u.is_active !== 0
-            }));
-            updated.users = normalizedUsers;
+          if (d.branches && d.branches.length > 0) {
+            updated.branches = d.branches;
           }
-          // Merge Branches
-          if (res.data.branches?.length > 0) {
-            const normalizedBranches = res.data.branches.map((b: any) => ({
-              id: b.id,
-              branchCode: b.branch_code || b.branchCode || b.id,
-              countryCode: b.country_code || b.countryCode || 'MM',
-              city: b.city || '',
-              phone: b.phone || '',
-              nameEn: b.name_en || b.nameEn || '',
-              nameMm: b.name_mm || b.nameMm || '',
-              managerName: b.manager_name || b.managerName || '',
-              status: b.status || 'ACTIVE',
-              address: b.address || ''
-            }));
-            updated.branches = normalizedBranches;
+          if (d.users && d.users.length > 0) {
+            updated.users = d.users;
+          }
+          if (d.companies && d.companies.length > 0) {
+            updated.companies = d.companies;
+          }
+          if (d.currencies && d.currencies.length > 0) {
+            updated.currencies = d.currencies;
+          }
+          if (d.countries && d.countries.length > 0) {
+            updated.countries = d.countries;
+          }
+          if (d.blacklist && d.blacklist.length > 0) {
+            updated.blacklist = d.blacklist;
+          }
+          if (d.purposes && d.purposes.length > 0) {
+            updated.purposes = d.purposes;
+          }
+          if (d.auditLogs && d.auditLogs.length > 0) {
+            const map = new Map<string, any>();
+            prev.auditLogs.forEach((l) => map.set(l.id, l));
+            d.auditLogs.forEach((l: any) => map.set(l.id, l));
+            updated.auditLogs = Array.from(map.values());
+          }
+          if (d.operatorProfile) {
+            updated.operatorProfile = d.operatorProfile;
+          }
+          if (d.roleMenuPermissions) {
+            updated.roleMenuPermissions = d.roleMenuPermissions;
+          }
+          if (d.defaultStatusConfig) {
+            updated.defaultStatusConfig = d.defaultStatusConfig;
           }
           return updated;
         });
 
         await loadStatus();
+        const totalPulled = pulledTxCount + pulledRateCount + pulledCustCount + pulledBranchCount + pulledUserCount + pulledCompCount + pulledCurrCount + pulledCountryCount + pulledBlCount + pulledPurpCount + pulledLogCount;
         onNotify(
           'success',
           language === 'my'
-            ? `Turso မှ ဒေတာများ အောင်မြင်စွာ ရယူပြီးပါပြီ! (Users: ${pulledUsersCount}, Branches: ${pulledBranchesCount}, ငွေလွှဲမှတ်တမ်း: ${pulledTxCount})`
-            : `Successfully pulled data from Turso! (${pulledUsersCount} users, ${pulledBranchesCount} branches, ${pulledTxCount} transactions)`
+            ? `Turso မှ Table အားလုံး (${totalPulled} records) အောင်မြင်စွာ ရယူပြီးပါပြီ!`
+            : `Successfully pulled all tables (${totalPulled} records) from Turso Database!`
         );
       } else {
-        onNotify('error', res.error || 'Failed to pull data from Turso');
+        onNotify('error', res.error || (res as any).message || 'Failed to pull data from Turso');
       }
     } catch (err: any) {
       onNotify('error', err?.message || 'Sync pull error');
@@ -234,7 +256,7 @@ turso db tokens create remittance-db`;
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
+      {/* Top Banner: Turso Overview */}
       <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-teal-950/80 border border-emerald-800/40 rounded-2xl p-6 shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start space-x-3.5">
@@ -255,8 +277,8 @@ turso db tokens create remittance-db`;
               </div>
               <p className="text-xs text-slate-300 mt-1 leading-relaxed max-w-2xl">
                 {language === 'my'
-                  ? 'Turso LibSQL Cloud Database နှင့် ချိတ်ဆက်ထားပြီး Users၊ Branches၊ ငွေလွှဲဒေတာများနှင့် စနစ်အချက်အလက်အားလုံးကို အချိန်နှင့်တပြေးညီ Push/Pull ထပ်တူပြုနိုင်ပါသည်။'
-                  : 'Fast SQLite-compatible cloud database. Seamlessly push and pull system users, branches, transactions, and audit records with real-time replication.'}
+                  ? 'Turso သည် SQLite အခြေခံ Serverless Cloud Database ဖြစ်ပြီး 9GB အခမဲ့ သိုလှောင်ခွင့်နှင့် အလွန်မြန်ဆန်သော LibSQL engine ပါဝင်ပါသည်။ စနစ်သည် Local Embedded SQLite ဖြင့် အဆင်သင့် စတင်အလုပ်လုပ်ပြီး Remote Turso URL ထည့်သွင်းရုံဖြင့် Cloud Database အဖြစ် ပြောင်းလဲအသုံးပြုနိုင်ပါသည်။'
+                  : 'Turso is a fast SQLite-compatible cloud database offering 9GB free storage with LibSQL engine. The app works instantly with an embedded engine, and automatically switches to remote cloud when configured.'}
               </p>
             </div>
           </div>
@@ -283,81 +305,60 @@ turso db tokens create remittance-db`;
           </div>
         </div>
 
-        {/* Live Status Pill Grid: 6 Indicators */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-5 border-t border-slate-800/80">
-          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span className="text-[10px] text-slate-400 block mb-1">
-              {language === 'my' ? 'အခြေအနေ' : 'Status'}
+        {/* Live Status Pill Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-6 pt-5 border-t border-slate-800/80">
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[11px] text-slate-400 block mb-1">
+              {language === 'my' ? 'ချိတ်ဆက်မှု အခြေအနေ' : 'Connection Status'}
             </span>
-            <div className="flex items-center space-x-1.5">
-              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
-              <span className="text-[11px] font-bold text-white truncate">
-                {isConnected ? (isRemote ? 'Cloud DB' : 'Embedded') : 'Offline'}
+            <div className="flex items-center space-x-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+              <span className="text-xs font-bold text-white">
+                {isConnected 
+                  ? (isRemote ? 'Remote Turso Cloud' : 'Embedded SQLite Engine') 
+                  : 'Disconnected'}
               </span>
             </div>
           </div>
 
-          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span className="text-[10px] text-slate-400 block mb-1">
-              {language === 'my' ? 'အသုံးပြုသူများ' : 'Users'}
-            </span>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-mono font-bold text-purple-400">
-                {(status as any)?.counts?.users ?? db.users.length}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono">users</span>
-            </div>
-          </div>
-
-          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span className="text-[10px] text-slate-400 block mb-1">
-              {language === 'my' ? 'ဘဏ်ခွဲများ' : 'Branches'}
-            </span>
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-mono font-bold text-blue-400">
-                {(status as any)?.counts?.branches ?? db.branches.length}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono">branches</span>
-            </div>
-          </div>
-
-          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span className="text-[10px] text-slate-400 block mb-1">
-              {language === 'my' ? 'ငွေလွှဲမှတ်တမ်း' : 'Transactions'}
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[11px] text-slate-400 block mb-1">
+              {language === 'my' ? 'ငွေလွှဲမှတ်တမ်း (Transactions)' : 'Stored Transactions'}
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-emerald-400">
-                {(status as any)?.counts?.transactions ?? db.transactions.length}
+                {status?.counts?.transactions ?? db.transactions.length}
               </span>
-              <span className="text-[9px] text-slate-500 font-mono">txs</span>
+              <span className="text-[10px] text-slate-500 font-mono">records</span>
             </div>
           </div>
 
-          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span className="text-[10px] text-slate-400 block mb-1">
-              {language === 'my' ? 'ဖောက်သည်များ' : 'Customers'}
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[11px] text-slate-400 block mb-1">
+              {language === 'my' ? 'ဖောက်သည် စာရင်း (Customers)' : 'Customers Profile'}
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-sky-400">
-                {(status as any)?.counts?.customers ?? ((db as any)?.customers?.length || (db as any)?.customerProfiles?.length || 0)}
+                {status?.counts?.customers ?? db.customers.length}
               </span>
-              <span className="text-[9px] text-slate-500 font-mono">records</span>
+              <span className="text-[10px] text-slate-500 font-mono">records</span>
             </div>
           </div>
 
-          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <span className="text-[10px] text-slate-400 block mb-1">
-              {language === 'my' ? 'ငွေလဲနှုန်း' : 'Rates'}
+          <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+            <span className="text-[11px] text-slate-400 block mb-1">
+              {language === 'my' ? 'ငွေလဲနှုန်းများ (Exchange Rates)' : 'Exchange Rates'}
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-amber-400">
-                {(status as any)?.counts?.exchangeRates ?? db.exchangeRates.length}
+                {status?.counts?.exchangeRates ?? db.exchangeRates.length}
               </span>
-              <span className="text-[9px] text-slate-500 font-mono">rates</span>
+              <span className="text-[10px] text-slate-500 font-mono">currencies</span>
             </div>
           </div>
         </div>
 
+        {/* Endpoint address info */}
         {status?.url && (
           <div className="mt-3 flex items-center justify-between bg-slate-950/50 border border-slate-800/80 px-3.5 py-2 rounded-xl text-[11px] text-slate-400">
             <div className="flex items-center space-x-2 truncate">
@@ -385,30 +386,58 @@ turso db tokens create remittance-db`;
             </div>
             <p className="text-xs text-slate-400 mt-3 leading-relaxed">
               {language === 'my'
-                ? 'အသုံးပြုသူများ (Users)၊ ဘဏ်ခွဲများ (Branches)၊ ငွေလွှဲမှတ်တမ်းများနှင့် အချက်အလက်အားလုံးကို Turso Cloud Database ထဲသို့ ပို့ဆောင်သိမ်းဆည်းပါမည်။'
-                : 'Uploads all system users, branches, transactions, exchange rates, customer profiles, and audit records into Turso LibSQL.'}
+                ? 'လက်ရှိ Remittance စနစ်အတွင်းရှိ Table အားလုံး (ငွေလွှဲမှတ်တမ်း၊ ငွေလဲနှုန်း၊ Customer profiles၊ ဘဏ်ခွဲများ၊ User စာရင်းများ၊ ကုမ္ပဏီများ၊ Currencies၊ နိုင်ငံများ၊ Blacklist၊ ရည်ရွယ်ချက်များ၊ Audit Logs နှင့် System Settings) ကို Turso Database သို့ အကုန်အပြည့်အစုံ ပို့ဆောင်သိမ်းဆည်းပါမည် (Full 13 Tables Upsert).'
+                : 'Uploads all 13 database tables (Transactions, Exchange Rates, Customers, Branches, Users, Companies, Currencies, Countries, Blacklist, Purposes, Audit Logs, Profile, Settings) into Turso LibSQL.'}
             </p>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 mt-4 text-xs font-mono">
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5 mt-4 text-xs font-mono max-h-56 overflow-y-auto">
               <div className="flex justify-between text-slate-400">
-                <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-purple-400" /> System Users to Push:</span>
-                <span className="text-white font-bold">{db.users.length}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-blue-400" /> Branches to Push:</span>
-                <span className="text-white font-bold">{db.branches.length}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Transactions to Push:</span>
+                <span>Transactions (ငွေလွှဲမှတ်တမ်း):</span>
                 <span className="text-white font-bold">{db.transactions.length}</span>
               </div>
               <div className="flex justify-between text-slate-400">
-                <span>Customer Records to Push:</span>
-                <span className="text-white font-bold">{((db as any)?.customers?.length || (db as any)?.customerProfiles?.length || 0)}</span>
+                <span>Exchange Rates (ငွေလဲနှုန်း):</span>
+                <span className="text-white font-bold">{db.exchangeRates.length}</span>
               </div>
               <div className="flex justify-between text-slate-400">
-                <span>Audit Records to Push:</span>
+                <span>Customer Profiles (ဖောက်သည်):</span>
+                <span className="text-white font-bold">{db.customers.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Branches (ဘဏ်ခွဲများ):</span>
+                <span className="text-white font-bold">{db.branches.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>System Users (ဝန်ထမ်းများ):</span>
+                <span className="text-white font-bold">{db.users.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Companies (မိတ်ဖက်ကုမ္ပဏီများ):</span>
+                <span className="text-white font-bold">{db.companies.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Currencies (ငွေကြေးအမျိုးအစားများ):</span>
+                <span className="text-white font-bold">{db.currencies.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Countries (နိုင်ငံများ):</span>
+                <span className="text-white font-bold">{db.countries.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Blacklist Entries (နာမည်ပျက်စာရင်း):</span>
+                <span className="text-white font-bold">{db.blacklist.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Purposes (လွှဲပို့ရည်ရွယ်ချက်များ):</span>
+                <span className="text-white font-bold">{db.purposes.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Audit Logs (စနစ်မှတ်တမ်းများ):</span>
                 <span className="text-white font-bold">{db.auditLogs.length}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Operator Profile & Settings:</span>
+                <span className="text-emerald-400 font-bold">{db.operatorProfile ? 'Configured' : 'Default'}</span>
               </div>
             </div>
           </div>
@@ -423,8 +452,8 @@ turso db tokens create remittance-db`;
             <UploadCloud className={`w-4 h-4 ${isSyncing ? 'animate-bounce' : ''}`} />
             <span>
               {isSyncing
-                ? (language === 'my' ? 'Turso သို့ ပို့ဆောင်နေပါသည်...' : 'Pushing Data to Turso...')
-                : (language === 'my' ? 'Turso သို့ ဒေတာများ အားလုံး သိမ်းဆည်းမည် (Push to Turso)' : 'Push Data to Turso Database')}
+                ? (language === 'my' ? 'Turso သို့ Table အားလုံး ပို့ဆောင်နေပါသည်...' : 'Pushing All Tables to Turso...')
+                : (language === 'my' ? 'Turso သို့ Table အားလုံး သိမ်းဆည်းမည် (Push All Tables)' : 'Push All Tables to Turso Database')}
             </span>
           </button>
         </div>
@@ -440,43 +469,58 @@ turso db tokens create remittance-db`;
             </div>
             <p className="text-xs text-slate-400 mt-3 leading-relaxed">
               {language === 'my'
-                ? 'Turso Cloud Database ထဲတွင် သိမ်းဆည်းထားသော Users၊ Branches နှင့် ဒေတာအားလုံးကို ဆွဲယူပြီး Local State နှင့် ထပ်တူပြုပါမည်။'
-                : 'Pulls cloud-stored users, branches, transactions, rates, and customers from Turso and merges them with the local active state.'}
+                ? 'Turso Database ထဲတွင် သိမ်းဆည်းထားသော Table အားလုံး (ငွေလွှဲ၊ ငွေလဲနှုန်း၊ ဖောက်သည်၊ ဘဏ်ခွဲ၊ အသုံးပြုသူ၊ ကုမ္ပဏီ၊ ငွေကြေး၊ နိုင်ငံ၊ Blacklist၊ စနစ်မှတ်တမ်း စသည်) ကို Remittance System ထဲသို့ ပြန်လည်ဆွဲယူပြီး ရောစပ်ဖြည့်သွင်းပါမည် (Full 13 Tables Pull & Merge).'
+                : 'Pulls all 13 cloud tables from Turso LibSQL and safely merges them with the local active state.'}
             </p>
 
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 mt-4 text-xs font-mono">
-              <div className="flex justify-between text-slate-400">
-                <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-purple-400" /> Cloud Users:</span>
-                <span className="text-emerald-400 font-bold">
-                  {(status as any)?.counts?.users ?? (db?.users?.length || 15)}
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-blue-400" /> Cloud Branches:</span>
-                <span className="text-emerald-400 font-bold">
-                  {(status as any)?.counts?.branches ?? (db?.branches?.length || 9)}
-                </span>
-              </div>
-
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5 mt-4 text-xs font-mono max-h-56 overflow-y-auto">
               <div className="flex justify-between text-slate-400">
                 <span>Cloud Transactions:</span>
-                <span className="text-emerald-400 font-bold">
-                  {(status as any)?.counts?.transactions ?? (db?.transactions?.length || 10)}
-                </span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.transactions ?? 'Check'}</span>
               </div>
-
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Exchange Rates:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.exchangeRates ?? 'Check'}</span>
+              </div>
               <div className="flex justify-between text-slate-400">
                 <span>Cloud Customers:</span>
-                <span className="text-emerald-400 font-bold">
-                  {(status as any)?.counts?.customers ?? ((db as any)?.customers?.length || (db as any)?.customerProfiles?.length || 6)}
-                </span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.customers ?? 'Check'}</span>
               </div>
-
               <div className="flex justify-between text-slate-400">
-                <span>Cloud Audit Records:</span>
-                <span className="text-emerald-400 font-bold">
-                  {(status as any)?.counts?.auditRecords ?? (db?.auditLogs?.length || 227)}
-                </span>
+                <span>Cloud Branches:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.branches ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud System Users:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.users ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Companies:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.companies ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Currencies:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.currencies ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Countries:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.countries ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Blacklist:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.blacklist ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Purposes:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.purposes ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Audit Logs:</span>
+                <span className="text-emerald-400 font-bold">{status?.counts?.auditLogs ?? 'Check'}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Operator & Settings:</span>
+                <span className="text-emerald-400 font-bold">Synced</span>
               </div>
             </div>
           </div>
@@ -491,21 +535,21 @@ turso db tokens create remittance-db`;
             <DownloadCloud className={`w-4 h-4 ${isPulling ? 'animate-bounce' : ''}`} />
             <span>
               {isPulling
-                ? (language === 'my' ? 'Turso မှ ဒေတာများ ဆွဲယူနေပါသည်...' : 'Pulling Data from Turso...')
-                : (language === 'my' ? 'Turso မှ ဒေတာများ အားလုံး ရယူမည် (Pull from Turso)' : 'Pull Data from Turso Database')}
+                ? (language === 'my' ? 'Turso မှ Table အားလုံး ဆွဲယူနေပါသည်...' : 'Pulling All Tables from Turso...')
+                : (language === 'my' ? 'Turso မှ Table အားလုံး ရယူမည် (Pull All Tables)' : 'Pull All Tables from Turso Database')}
             </span>
           </button>
         </div>
       </div>
 
-      {/* Guide Section */}
+      {/* Setup Guide: How to configure remote Turso Cloud */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center space-x-2.5">
             <Sparkles className="w-5 h-5 text-amber-400" />
             <div>
               <h4 className="text-sm font-bold text-white">
-                {language === 'my' ? 'အခမဲ့ Turso Cloud Database ချိတ်ဆက်အသုံးပြုနည်း' : 'How to Connect Free Remote Turso Cloud Database'}
+                {language === 'my' ? 'အခမဲ့ Turso Cloud Database ချိတ်ဆက်အသုံးပြုနည်း (Quick Guide)' : 'How to Connect Free Remote Turso Cloud Database'}
               </h4>
               <p className="text-[11px] text-slate-400">
                 {language === 'my'
@@ -563,7 +607,7 @@ turso db tokens create remittance-db`;
         </div>
       </div>
 
-      {/* Schema DDL Preview */}
+      {/* Turso Schema SQL DDL Preview */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center space-x-2.5">
@@ -574,7 +618,7 @@ turso db tokens create remittance-db`;
               </h4>
               <p className="text-[11px] text-slate-400">
                 {language === 'my'
-                  ? 'ဤ Schema ကို Turso CLI Shell သို့မဟုတ် DBeaver တွင် တိုက်ရိုက် run နိုင်ပါသည်'
+                  ? 'ဤ Schema ကို Turso CLI Shell (turso db shell) သို့မဟုတ် DBeaver/TablePlus တွင်လည်း တိုက်ရိုက် run နိုင်ပါသည်'
                   : 'Ready-to-run SQLite/LibSQL DDL for tables, indexes and constraints.'}
               </p>
             </div>

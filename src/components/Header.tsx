@@ -51,8 +51,11 @@ export const Header: React.FC<HeaderProps> = ({
   const [showBranchSwitcher, setShowBranchSwitcher] = React.useState(false);
 
   const pendingCount = db.transactions.filter(t => t.status === 'PENDING_APPROVAL').length;
-  const currentBranch = db.branches.find(b => b.id === (activeBranchId || currentUser.branchId)) || db.branches[0];
-  const currentCountry = db.countries.find(c => c.code === (activeCountryCode || currentUser.countryCode || currentBranch?.countryCode || 'MM'));
+  const effectiveCountryCode = activeCountryCode || currentUser.countryCode || 'MM';
+  const currentBranch = db.branches.find(b => b.id === (activeBranchId || currentUser.branchId)) 
+    || db.branches.find(b => b.countryCode === effectiveCountryCode)
+    || db.branches[0];
+  const currentCountry = db.countries.find(c => c.code === (currentBranch?.countryCode || effectiveCountryCode || 'MM'));
 
   return (
     <header className="h-14 bg-white border-b border-slate-200 sticky top-0 z-40 px-4 sm:px-6 flex items-center justify-between shrink-0 shadow-xs">

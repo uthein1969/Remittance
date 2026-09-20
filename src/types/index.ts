@@ -100,6 +100,7 @@ export interface User {
   lastLogin?: string;
   createdAt: string;
   password?: string;
+  defaultStatusEnabled?: boolean;
 }
 
 export interface Company {
@@ -355,6 +356,16 @@ export interface TursoConfig {
   };
 }
 
+export interface DefaultStatusConfig {
+  autoCountryDefault: boolean; // default true: Myanmar -> Domestic & NRC, Other Country -> International & Passport
+  applyOutwardEntry: boolean; // default true
+  applyReviewEdit: boolean; // default true
+  enforceNonMyanmarPassport: boolean; // default true
+  enforceMyanmarNrc: boolean; // default true
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface AppDatabase {
   operatorProfile?: OperatorProfile;
   branches: Branch[];
@@ -373,4 +384,5 @@ export interface AppDatabase {
   activeLanguage: Language;
   currentUserId: string;
   roleMenuPermissions?: RoleMenuPermissions;
+  defaultStatusConfig?: DefaultStatusConfig;
 }

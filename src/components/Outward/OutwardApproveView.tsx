@@ -630,7 +630,16 @@ export const OutwardApproveView: React.FC<OutwardApproveViewProps> = ({
                   <tr key={tx.id} className="hover:bg-slate-800/50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="font-mono font-bold text-white">{tx.transactionNo}</div>
-                      <div className="font-mono text-amber-400 text-[11px]">MTCN: {tx.mtcn}</div>
+                      <div className="flex items-center gap-1.5 my-0.5">
+                        <span className="font-mono text-amber-400 text-[11px]">MTCN: {tx.mtcn}</span>
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                          tx.scope === 'DOMESTIC' 
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                        }`}>
+                          {tx.scope || 'INTERNATIONAL'}
+                        </span>
+                      </div>
                       <div className="text-[10px] text-slate-500 font-mono">{formatToDDMMYYYY(tx.createdDate)}</div>
                     </td>
                     <td className="px-4 py-3">

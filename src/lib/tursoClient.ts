@@ -16,6 +16,15 @@ export interface TursoStatusResponse {
     customers: number;
     exchangeRates: number;
     auditLogs: number;
+    branches?: number;
+    users?: number;
+    companies?: number;
+    currencies?: number;
+    countries?: number;
+    blacklist?: number;
+    purposes?: number;
+    operatorProfile?: number;
+    systemSettings?: number;
   };
 }
 
@@ -91,6 +100,16 @@ export async function pushDataToTurso(dbData: {
   exchangeRates?: any[];
   customers?: any[];
   auditLogs?: any[];
+  branches?: any[];
+  users?: any[];
+  companies?: any[];
+  currencies?: any[];
+  countries?: any[];
+  blacklist?: any[];
+  purposes?: any[];
+  operatorProfile?: any;
+  roleMenuPermissions?: any;
+  defaultStatusConfig?: any;
 }) {
   try {
     const { ok, data } = await safeFetchJson('/api/turso/sync-push', {

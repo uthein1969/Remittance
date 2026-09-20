@@ -54,7 +54,8 @@ export type SetupSubTab =
   | 'blacklist'
   | 'purpose'
   | 'customer'
-  | 'menu_permission';
+  | 'menu_permission'
+  | 'default_status';
 
 interface SidebarProps {
   activeTab: NavigationTab;
@@ -130,6 +131,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'menu_permission', 
       label: language === 'my' ? '၁၁။ မီနူး ခွင့်ပြုချက်များ' : '11. Role Menu Permissions', 
       icon: ShieldCheck 
+    },
+    { 
+      id: 'default_status', 
+      label: language === 'my' ? '၁၂။ မူရင်း အခြေအနေ (Default Status)' : '12. Default Status Settings', 
+      icon: CheckSquare 
     },
   ];
 
