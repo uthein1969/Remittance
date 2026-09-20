@@ -94,7 +94,7 @@ export const TursoSyncTab: React.FC<TursoSyncTabProps> = ({ onNotify }) => {
       const res = await pushDataToTurso({
         transactions: db.transactions,
         exchangeRates: db.exchangeRates,
-        customers: db.customers,
+        customers: (db as any).customers || (db as any).customerProfiles || [],
         auditLogs: db.auditLogs,
         users: db.users,
         branches: db.branches
@@ -141,7 +141,12 @@ export const TursoSyncTab: React.FC<TursoSyncTabProps> = ({ onNotify }) => {
             updated.exchangeRates = res.data.exchangeRates;
           }
           if (res.data.customers?.length > 0) {
-            updated.customers = res.data.customers;
+            if ((updated as any).customers) {
+              (updated as any).customers = res.data.customers;
+            }
+            if ((updated as any).customerProfiles) {
+              (updated as any).customerProfiles = res.data.customers;
+            }
           }
           // Merge Users
           if (res.data.users?.length > 0) {
@@ -298,7 +303,7 @@ turso db tokens create remittance-db`;
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-purple-400">
-                {status?.counts?.users ?? db.users.length}
+                {(status as any)?.counts?.users ?? db.users.length}
               </span>
               <span className="text-[9px] text-slate-500 font-mono">users</span>
             </div>
@@ -310,7 +315,7 @@ turso db tokens create remittance-db`;
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-blue-400">
-                {status?.counts?.branches ?? db.branches.length}
+                {(status as any)?.counts?.branches ?? db.branches.length}
               </span>
               <span className="text-[9px] text-slate-500 font-mono">branches</span>
             </div>
@@ -322,7 +327,7 @@ turso db tokens create remittance-db`;
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-emerald-400">
-                {status?.counts?.transactions ?? db.transactions.length}
+                {(status as any)?.counts?.transactions ?? db.transactions.length}
               </span>
               <span className="text-[9px] text-slate-500 font-mono">txs</span>
             </div>
@@ -334,7 +339,7 @@ turso db tokens create remittance-db`;
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-sky-400">
-                {status?.counts?.customers ?? db.customers.length}
+                {(status as any)?.counts?.customers ?? ((db as any)?.customers?.length || (db as any)?.customerProfiles?.length || 0)}
               </span>
               <span className="text-[9px] text-slate-500 font-mono">records</span>
             </div>
@@ -346,7 +351,7 @@ turso db tokens create remittance-db`;
             </span>
             <div className="flex items-center justify-between">
               <span className="text-sm font-mono font-bold text-amber-400">
-                {status?.counts?.exchangeRates ?? db.exchangeRates.length}
+                {(status as any)?.counts?.exchangeRates ?? db.exchangeRates.length}
               </span>
               <span className="text-[9px] text-slate-500 font-mono">rates</span>
             </div>
@@ -399,7 +404,7 @@ turso db tokens create remittance-db`;
               </div>
               <div className="flex justify-between text-slate-400">
                 <span>Customer Records to Push:</span>
-                <span className="text-white font-bold">{db.customers.length}</span>
+                <span className="text-white font-bold">{((db as any)?.customers?.length || (db as any)?.customerProfiles?.length || 0)}</span>
               </div>
               <div className="flex justify-between text-slate-400">
                 <span>Audit Records to Push:</span>
@@ -440,39 +445,41 @@ turso db tokens create remittance-db`;
             </p>
 
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 mt-4 text-xs font-mono">
-            <div className="flex justify-between text-slate-400">
-              <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-purple-400" /> Cloud Users:</span>
-              <span className="text-emerald-400 font-bold">
-                {(status as any)?.counts?.users ?? (db?.users?.length || 15)}
-              </span>
-            </div>
-            <div className="flex justify-between text-slate-400">
-              <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-blue-400" /> Cloud Branches:</span>
-              <span className="text-emerald-400 font-bold">
-                {(status as any)?.counts?.branches ?? (db?.branches?.length || 9)}
-              </span>
-            </div>
+              <div className="flex justify-between text-slate-400">
+                <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5 text-purple-400" /> Cloud Users:</span>
+                <span className="text-emerald-400 font-bold">
+                  {(status as any)?.counts?.users ?? (db?.users?.length || 15)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span className="flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-blue-400" /> Cloud Branches:</span>
+                <span className="text-emerald-400 font-bold">
+                  {(status as any)?.counts?.branches ?? (db?.branches?.length || 9)}
+                </span>
+              </div>
 
-            <div className="flex justify-between text-slate-400">
-              <span>Cloud Transactions:</span>
-              <span className="text-emerald-400 font-bold">
-                {(status as any)?.counts?.transactions ?? (db?.transactions?.length || 10)}
-              </span>
-            </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Transactions:</span>
+                <span className="text-emerald-400 font-bold">
+                  {(status as any)?.counts?.transactions ?? (db?.transactions?.length || 10)}
+                </span>
+              </div>
 
-            <div className="flex justify-between text-slate-400">
-              <span>Cloud Customers:</span>
-              <span className="text-emerald-400 font-bold">
-                {(status as any)?.counts?.customers ?? ((db as any)?.customers?.length || (db as any)?.customerProfiles?.length || 6)}
-              </span>
-            </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Customers:</span>
+                <span className="text-emerald-400 font-bold">
+                  {(status as any)?.counts?.customers ?? ((db as any)?.customers?.length || (db as any)?.customerProfiles?.length || 6)}
+                </span>
+              </div>
 
-            <div className="flex justify-between text-slate-400">
-              <span>Cloud Audit Records:</span>
-              <span className="text-emerald-400 font-bold">
-                {(status as any)?.counts?.auditRecords ?? (db?.auditLogs?.length || 227)}
-              </span>
+              <div className="flex justify-between text-slate-400">
+                <span>Cloud Audit Records:</span>
+                <span className="text-emerald-400 font-bold">
+                  {(status as any)?.counts?.auditRecords ?? (db?.auditLogs?.length || 227)}
+                </span>
+              </div>
             </div>
+          </div>
 
           <button
             type="button"
