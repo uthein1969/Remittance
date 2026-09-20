@@ -14,26 +14,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       authToken: process.env.TURSO_AUTH_TOKEN
     });
 
+    // Cloud DB မှ Tables များကို တစ်ပြိုင်နက် ဖတ်ယူခြင်း
     const [txRes, rateRes, custRes, auditRes, userRes, branchRes] = await Promise.all([
-      client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC LIMIT 500;'),
-      client.execute('SELECT * FROM exchange_rates;'),
-      client.execute('SELECT * FROM customer_profiles;'),
-      client.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200;'),
-      client.execute('SELECT * FROM system_users;'),
-      client.execute('SELECT * FROM branches;')
+      client.execute('SELECT * FROM remittance_transactions ORDER BY created_at DESC LIMIT 500;').catch(() => ({ rows: [] })),
+      client.execute('SELECT * FROM exchange_rates;').catch(() => ({ rows: [] })),
+      client.execute('SELECT * FROM customer_profiles;').catch(() => ({ rows: [] })),
+      client.execute('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200;').catch(() => ({ rows: [] })),
+      client.execute('SELECT * FROM system_users;').catch(() => ({ rows: [] })),
+      client.execute('SELECT * FROM branches;').catch(() => ({ rows: [] }))
     ]);
 
+    // Branches Data ကို Dynamic Country Detection ဖြင့် Map လုပ်ခြင်း
     const branches = branchRes.rows.map((row: any) => {
       const bCode = String(row.code || row.id || '');
+      const rawCountry = String(row.country_code || row.countryCode || '').toUpperCase();
       const cityStr = String(row.city || '').toLowerCase();
       const idStr = String(row.id || '').toUpperCase();
       const nameStr = String(row.name_en || '').toLowerCase();
 
-      let countryCode = 'MM';
-      if (cityStr.includes('singapore') || idStr.includes('SG')) {
-        countryCode = 'SG';
-      } else if (cityStr.includes('bangkok') || cityStr.includes('thailand') || idStr.includes('TH') || nameStr.includes('big c')) {
-        countryCode = 'TH';
+      // DB ထဲတွင် country_code ပါလျှင် တိုက်ရိုက်ယူမည်၊ မပါလျှင် စာသားများမှ အလိုအလျောက် ခွဲခြားမည်
+      let countryCode = rawCountry;
+      if (!countryCode) {
+        if (cityStr.includes('singapore') || idStr.includes('SG') || nameStr.includes('peninsula') || nameStr.includes('china town')) {
+          countryCode = 'SG';
+        } else if (cityStr.includes('bangkok') || cityStr.includes('thailand') || idStr.includes('TH') || nameStr.includes('big c')) {
+          countryCode = 'TH';
+        } else {
+          countryCode = 'MM';
+        }
       }
 
       return {
@@ -41,9 +49,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         code: bCode,
         branchCode: bCode,
         countryCode,
+        country_code: countryCode,
         city: String(row.city || ''),
         phone: String(row.phone || ''),
-        nameEn: String(row.name_en || ''),
+        nameEn: String(row.name_en || row.name || ''),
         nameMm: String(row.name_mm || ''),
         managerName: String(row.manager_name || ''),
         status: String(row.status || 'ACTIVE'),
@@ -51,18 +60,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     });
 
-    const users = userRes.rows.map((row: any) => ({
-      id: String(row.id),
-      username: String(row.username),
-      name: String(row.full_name || row.username),
-      fullName: String(row.full_name || row.username),
-      email: String(row.email || ''),
-      role: String(row.role || 'MAKER'),
-      branchId: String(row.branch_id || 'BR-001'),
-      isActive: Boolean(row.is_active ?? true),
-      phone: String(row.phone || ''),
-      status: String(row.status || 'ACTIVE')
-    }));
+    // Branches Map ထဲမှ Branch ID အလိုက် Country ရှာဖွေနိုင်ရန် Map တည်ဆောက်ခြင်း
+    const branchCountryMap = new Map<string, string>();
+    branches.forEach((b: any) => {
+      branchCountryMap.set(b.id, b.countryCode);
+      branchCountryMap.set(b.code, b.countryCode);
+    });
+
+    // Users Data ကို Dynamic Country Assignment ဖြင့် Map လုပ်ခြင်း
+    const users = userRes.rows.map((row: any) => {
+      const branchId = String(row.branch_id || 'BR-001');
+      const rawUserCountry = String(row.country_code || row.countryCode || '').toUpperCase();
+      const uName = String(row.username || '').toLowerCase();
+
+      let userCountry = rawUserCountry;
+      if (!userCountry) {
+        if (branchCountryMap.has(branchId)) {
+          userCountry = branchCountryMap.get(branchId)!;
+        } else if (uName.startsWith('th-')) {
+          userCountry = 'TH';
+        } else if (uName.startsWith('sg-') || uName === 'tloo') {
+          userCountry = 'SG';
+        } else {
+          userCountry = 'MM';
+        }
+      }
+
+      return {
+        id: String(row.id),
+        username: String(row.username).replace(/^@/, ''),
+        name: String(row.full_name || row.username),
+        fullName: String(row.full_name || row.username),
+        email: String(row.email || ''),
+        role: String(row.role || 'MAKER'),
+        branchId,
+        branch_id: branchId,
+        countryCode: userCountry,
+        country_code: userCountry,
+        isActive: Boolean(row.is_active ?? true),
+        phone: String(row.phone || ''),
+        status: String(row.status || 'ACTIVE')
+      };
+    });
 
     return res.status(200).json({
       success: true,

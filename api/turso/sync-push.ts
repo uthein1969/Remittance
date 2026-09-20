@@ -18,6 +18,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       authToken: process.env.TURSO_AUTH_TOKEN
     });
 
+    // country_code column မရှိသေးပါက Auto-Migration ပြုလုပ်ခြင်း
+    await client.execute("ALTER TABLE branches ADD COLUMN country_code TEXT DEFAULT 'MM';").catch(() => {});
+    await client.execute("ALTER TABLE system_users ADD COLUMN country_code TEXT DEFAULT 'MM';").catch(() => {});
+
     let body = req.body;
     if (typeof body === 'string') {
       try {
@@ -32,16 +36,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let branchesSaved = 0;
     let usersSaved = 0;
 
-    // ၁။ Branches Data များ သိမ်းဆည်းခြင်း
+    // ၁။ Branches Data များကို country_code အပြည့်အစုံဖြင့် Push လုပ်ခြင်း
     for (const b of branches) {
       const branchCode = b.code || b.branchCode || b.branch_code || b.id;
       if (!b.id && !branchCode) continue;
 
+      const cityStr = String(b.city || '').toLowerCase();
+      const idStr = String(b.id || branchCode || '').toUpperCase();
+      const nameStr = String(b.nameEn || b.name_en || b.name || '').toLowerCase();
+
+      // Dynamic Country Code ဆုံးဖြတ်ခြင်း
+      let countryCode = String(b.countryCode || b.country_code || '').toUpperCase();
+      if (!countryCode) {
+        if (cityStr.includes('singapore') || idStr.includes('SG') || nameStr.includes('peninsula') || nameStr.includes('china town')) {
+          countryCode = 'SG';
+        } else if (cityStr.includes('bangkok') || cityStr.includes('thailand') || idStr.includes('TH') || nameStr.includes('big c')) {
+          countryCode = 'TH';
+        } else {
+          countryCode = 'MM';
+        }
+      }
+
       await client.execute({
         sql: `INSERT INTO branches (
           id, code, city, phone,
-          name_en, name_mm, manager_name, status, address, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          name_en, name_mm, manager_name, status, address, country_code, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           code=excluded.code,
           city=excluded.city,
@@ -50,7 +70,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           name_mm=excluded.name_mm,
           manager_name=excluded.manager_name,
           status=excluded.status,
-          address=excluded.address;`,
+          address=excluded.address,
+          country_code=excluded.country_code;`,
         args: [
           b.id || `BR-${branchCode}`,
           branchCode || 'BR-001',
@@ -61,13 +82,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           b.managerName || b.manager_name || '',
           b.status || 'ACTIVE',
           b.address || '',
+          countryCode,
           b.createdAt || new Date().toISOString()
         ]
       });
       branchesSaved++;
     }
 
-    // ၂။ Users Data များ system_users Table သို့ သိမ်းဆည်းခြင်း
+    // ၂။ Users Data များကို country_code အပြည့်အစုံဖြင့် Push လုပ်ခြင်း
     for (const u of users) {
       const username = String(u.username || '').trim().replace(/^@/, '');
       if (!username) continue;
@@ -81,10 +103,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const status = u.status || 'ACTIVE';
       const isActive = u.isActive ?? u.is_active ?? 1;
 
+      // User Country Code ဆုံးဖြတ်ခြင်း
+      let userCountry = String(u.countryCode || u.country_code || '').toUpperCase();
+      if (!userCountry) {
+        if (branchId.includes('TH') || username.toLowerCase().startsWith('th-')) {
+          userCountry = 'TH';
+        } else if (branchId.includes('SG') || branchId === 'BR-007' || branchId === 'BR-008' || username.toLowerCase().startsWith('sg-') || username.toLowerCase() === 'tloo') {
+          userCountry = 'SG';
+        } else {
+          userCountry = 'MM';
+        }
+      }
+
       await client.execute({
         sql: `INSERT INTO system_users (
-          id, username, full_name, email, role, branch_id, is_active, phone, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, username, full_name, email, role, branch_id, is_active, phone, status, country_code, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           username=excluded.username,
           full_name=excluded.full_name,
@@ -93,7 +127,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           branch_id=excluded.branch_id,
           is_active=excluded.is_active,
           phone=excluded.phone,
-          status=excluded.status;`,
+          status=excluded.status,
+          country_code=excluded.country_code;`,
         args: [
           userId,
           username,
@@ -104,6 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           isActive ? 1 : 0,
           phone,
           status,
+          userCountry,
           u.createdAt || new Date().toISOString()
         ]
       });

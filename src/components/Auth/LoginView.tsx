@@ -31,23 +31,19 @@ import { useRemittance } from '../../lib/store';
 import { User, UserRole } from '../../types';
 import { SUPABASE_SCHEMA_SQL, SUPABASE_DISABLE_RLS_SQL, testSupabaseConnection } from '../../lib/supabase';
 
-// MM, SG, TH တိကျစွာ ခွဲခြားပေးသော Country Detector Helper
+// မည်သည့်နိုင်ငံမဆို Data ထဲရှိ countryCode ကိုသာ တိုက်ရိုက်ယူပြီး Fallback အနေဖြင့် အလိုအလျောက် ခွဲခြားပေးမည်
 export const detectUserCountry = (user?: Partial<User> | null, branch?: any): string => {
-  const uName = String(user?.username || '').toLowerCase();
-  const uCountry = String(user?.countryCode || '').toUpperCase();
-  const bId = String(branch?.id || user?.branchId || '').toUpperCase();
-  const bCode = String(branch?.code || '').toUpperCase();
-  const bCity = String(branch?.city || '').toLowerCase();
-  const bName = String(branch?.nameEn || '').toLowerCase();
-  const bCountry = String(branch?.countryCode || '').toUpperCase();
+  const explicitCountry = user?.countryCode || branch?.countryCode || branch?.country_code;
+  if (explicitCountry) return String(explicitCountry).toUpperCase();
 
-  // 1. Thailand (TH) စစ်ဆေးခြင်း
+  const bCity = String(branch?.city || '').toLowerCase();
+  const bId = String(branch?.id || user?.branchId || '').toUpperCase();
+  const bName = String(branch?.nameEn || '').toLowerCase();
+  const uName = String(user?.username || '').toLowerCase();
+
   if (
-    uCountry === 'TH' ||
-    bCountry === 'TH' ||
     uName.startsWith('th-') ||
     bId.includes('TH') ||
-    bCode.startsWith('TH-') ||
     bCity.includes('bangkok') ||
     bCity.includes('thailand') ||
     bName.includes('big c')
@@ -55,16 +51,12 @@ export const detectUserCountry = (user?: Partial<User> | null, branch?: any): st
     return 'TH';
   }
 
-  // 2. Singapore (SG) စစ်ဆေးခြင်း
   if (
-    uCountry === 'SG' ||
-    bCountry === 'SG' ||
     uName.startsWith('sg-') ||
     uName === 'tloo' ||
     bId.includes('SG') ||
     bId === 'BR-007' ||
     bId === 'BR-008' ||
-    bCode.startsWith('SG-') ||
     bCity.includes('singapore') ||
     bName.includes('china town') ||
     bName.includes('peninsula')
@@ -72,7 +64,6 @@ export const detectUserCountry = (user?: Partial<User> | null, branch?: any): st
     return 'SG';
   }
 
-  // 3. Default Myanmar (MM)
   return 'MM';
 };
 
@@ -522,11 +513,10 @@ export const LoginView: React.FC = () => {
                       className="w-full text-xs font-medium bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     >
                       {(db?.branches || []).map(b => {
-                        const isSG = checkIsSingapore(null, b);
-                        const flag = isSG ? 'SG' : 'MM';
+                        const bCountry = detectUserCountry(null, b);
                         return (
                           <option key={b.id} value={b.id}>
-                            [{flag}] {language === 'my' ? (b.nameMm || b.nameEn) : b.nameEn} - {b.city}
+                            [{bCountry}] {language === 'my' ? (b.nameMm || b.nameEn) : b.nameEn} - {b.city}
                           </option>
                         );
                       })}
@@ -780,9 +770,8 @@ export const LoginView: React.FC = () => {
                 : db.users
               ).map((u) => {
                 const branch = db?.branches?.find(b => b.id === u.branchId || b.code === u.branchId);
-                const isSingapore = checkIsSingapore(u, branch);
-                const userCountryCode = isSingapore ? 'SG' : 'MM';
-                const country = db?.countries?.find(c => c.code === userCountryCode || (userCountryCode === 'SG' && (c.code === 'SGP' || c.name?.includes('Singapore'))));
+                const userCountryCode = detectUserCountry(u, branch);
+                const country = db?.countries?.find(c => c.code === userCountryCode);
                 
                 return (
                   <button
@@ -808,7 +797,7 @@ export const LoginView: React.FC = () => {
                         <span>@{u.username}</span>
                         <span>•</span>
                         <span className="text-amber-300/90 font-sans text-[10px] bg-slate-800 px-1.5 py-0.2 rounded border border-slate-700">
-                          {country?.flagEmoji || (isSingapore ? '🇸🇬' : '🇲🇲')} {branch?.nameEn || u.branchId || 'BR-001'}
+                          {country?.flagEmoji || (userCountryCode === 'TH' ? '🇹🇭' : userCountryCode === 'SG' ? '🇸🇬' : '🇲🇲')} {branch?.nameEn || u.branchId || 'BR-001'}
                         </span>
                       </div>
                     </div>
